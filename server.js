@@ -4,10 +4,10 @@ import crypto from "node:crypto";
 import express from "express";
 
 const { EBAY_CLIENT_ID: ID, EBAY_CLIENT_SECRET: SECRET, PORT = 3000, ENABLE_SOLD } = process.env;
-if (!ID || !SECRET) {
-  console.error("Set EBAY_CLIENT_ID and EBAY_CLIENT_SECRET in .env (see .env.example)");
-  process.exit(1);
-}
+// Keys are only needed to fetch listings; the app still starts without them so the
+// eBay account-deletion endpoint can answer. Names only are logged, never values.
+console.log("Settings found:", ["EBAY_CLIENT_ID", "EBAY_CLIENT_SECRET", "EBAY_VERIFICATION_TOKEN", "EBAY_ENDPOINT_URL"].filter((k) => process.env[k]).join(", ") || "none");
+if (!ID || !SECRET) console.warn("EBAY_CLIENT_ID / EBAY_CLIENT_SECRET not set: listings will not load until they are added.");
 
 const API = "https://api.ebay.com";
 const MARKET = "EBAY_US";
@@ -19,6 +19,7 @@ const SCOPE_INSIGHTS = "https://api.ebay.com/oauth/api_scope/buy.marketplace.ins
 
 const tokens = {};
 async function token(scope) {
+  if (!ID || !SECRET) throw new Error("eBay keys are not set yet");
   const t = tokens[scope];
   if (t && t.exp > Date.now() + 60000) return t.value;
   const r = await fetch(`${API}/identity/v1/oauth2/token`, {
