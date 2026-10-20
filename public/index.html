@@ -1,1 +1,104 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pokémon Card Price Scatter</title>
+<style>
+:root{--bg:#f6f7f9;--fg:#15181d;--mut:#667080;--panel:#fff;--line:#dde1e7;--sold:#1f6f8b;--act:#c2377a;color-scheme:light dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121418;--fg:#eceff3;--mut:#98a2b0;--panel:#1b1e24;--line:#2d323b;--sold:#4cb4d6;--act:#ee6aa7}}
+:root[data-theme="dark"]{--bg:#121418;--fg:#eceff3;--mut:#98a2b0;--panel:#1b1e24;--line:#2d323b;--sold:#4cb4d6;--act:#ee6aa7}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:860px;margin:0 auto;padding:16px 14px 28px}
+h1{font-size:20px;margin:0 0 12px;font-weight:650}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+input,select,button{font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+input{flex:1;min-width:160px}
+button[aria-pressed="true"]{border-color:var(--fg)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.stat b{display:block;font-size:18px}.stat span{color:var(--mut);font-size:12px}
+#chart{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:4px}
+svg{display:block;width:100%;height:auto;touch-action:manipulation}
+.pt{cursor:pointer}.pt:focus{outline:none}.pt:focus .dot,.pt:hover .dot{stroke:var(--fg);stroke-width:2}
+.lg{display:flex;gap:14px;color:var(--mut);font-size:13px;margin:8px 2px}
+.lg i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+#detail{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-height:44px}
+#detail a{color:var(--fg);font-weight:600}
+#status{color:var(--mut);font-size:12.5px;margin:8px 2px}
+</style></head><body><main>
+<h1>Pokémon card price scatter</h1>
+<form class="row" id="f">
+<input id="q" type="search" placeholder="Search any card, e.g. charizard base set holo" aria-label="Search listings" autocomplete="off" enterkeyhint="search" autofocus>
+<button type="submit">Search</button>
+</form>
+<div class="row" id="gr" role="group" aria-label="Grading company"></div>
+<div class="row">
+<select id="range" aria-label="Time range"><option value="30">30 days</option><option value="60">60 days</option><option value="90" selected>90 days</option><option value="180">6 months</option><option value="365">1 year</option></select>
+<select id="gn" aria-label="Grade" hidden><option value="">Any grade</option><option>10</option><option>9.5</option><option>9</option><option>8.5</option><option>8</option><option>7</option></select>
+<button id="tS" type="button" aria-pressed="true">Sold</button><button id="tA" type="button" aria-pressed="true">For sale</button>
+</div>
+<div class="stats"><div class="stat"><b id="s1">–</b><span>Median sold</span></div><div class="stat"><b id="s2">–</b><span>Lowest for sale</span></div><div class="stat"><b id="s3">–</b><span>Listings shown</span></div></div>
+<div id="chart"></div>
+<div class="lg"><span><i style="background:var(--sold)"></i>Sold</span><span><i style="border:2px solid var(--act)"></i>For sale (stacked on today)</span></div>
+<div id="detail">Tap a point to open its listing.</div>
+<div id="hist" style="color:var(--mut);font-size:12.5px;margin:0 2px 4px"></div><div id="status">Search for a card to see its listings.</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt=v=>"$"+v.toLocaleString(undefined,{minimumFractionDigits:v<100?2:0,maximumFractionDigits:2});
+const day=d=>{const t=new Date();t.setDate(t.getDate()-d);return t.toLocaleDateString(undefined,{month:"short",day:"numeric"})};
+let data=[],show={S:true,A:true},mode="all",live=false;
+const MODES=[["all","All"],["raw","Raw"],["PSA","PSA"],["BGS","Beckett"],["CGC","CGC"],["TAG","TAG"]];
+$("gr").innerHTML=MODES.map(([k,l])=>`<button type="button" data-m="${k}" aria-pressed="${k===mode}">${l}</button>`).join("");
+$("gr").onclick=e=>{const k=e.target.dataset.m;if(!k)return;mode=k;
+ $("gr").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.m===k));
+ $("gn").hidden=!/^(PSA|BGS|CGC|TAG)$/.test(k);if($("gn").hidden)$("gn").value="";
+ load()};
+$("gn").onchange=draw;
+const pass=x=>{const n=+$("gn").value;return mode==="all"||(mode==="raw"?!x.grader:x.grader===mode&&(!n||x.grade===n))};
 
+function sample(q){let s=[...q].reduce((a,c)=>a+c.charCodeAt(0),7);const r=()=>(s=(s*1664525+1013904223)%4294967296)/4294967296,b=50+r()*300,G=[null,null,"PSA","BGS","CGC","TAG"],L=[];
+const mk=(type,d)=>{const g=G[Math.floor(r()*6)],n=g?[10,9.5,9,8][Math.floor(r()*4)]:null,m=g?(n===10?3:n>=9?1.6:1.1):1;
+ return {type,d,grader:g,grade:n,price:+(b*m*(.9+.0003*(365-d)+(r()-.5)*.35)).toFixed(2),title:`Sample ${g?g+" "+n:"raw"} ${type.toLowerCase()} listing`,url:"https://www.ebay.com/sch/i.html?_nkw="+encodeURIComponent(q)}};
+const L2=[];for(let i=0;i<160;i++)L2.push(mk("Sold",Math.floor(r()*365)));for(let i=0;i<24;i++)L2.push(mk("For sale",0));return L2}
+
+async function load(){
+ const q=$("q").value.trim();if(!q)return;
+ $("status").textContent="Loading…";
+ try{
+  const r=await fetch("/api/listings?q="+encodeURIComponent(q)+"&grader="+encodeURIComponent(mode));
+  const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);
+  const now=Date.now();
+  live=true;data=j.listings.map(x=>({...x,d:x.type==="Sold"?Math.max(0,Math.floor((now-new Date(x.date))/864e5)):0}));
+  $("status").textContent=[`${data.length} listings loaded.`,j.soldEnabled?"":"Sold data is off (needs Marketplace Insights access).",...(j.warnings||[])].join(" ");
+ }catch(e){live=false;data=sample(q);$("status").textContent="Backend unavailable ("+e.message+"). Showing sample data."}
+ draw();
+}
+
+function draw(){
+ const R=+$("range").value;
+ const pts=data.filter(x=>pass(x)&&x.d<=R&&((x.type==="Sold"&&show.S)||(x.type==="For sale"&&show.A)));
+ const sold=data.filter(x=>pass(x)&&x.type==="Sold"&&x.d<=R).map(x=>x.price).sort((a,b)=>a-b),act=data.filter(x=>pass(x)&&x.type==="For sale").map(x=>x.price);
+ $("s1").textContent=sold.length?fmt(sold[Math.floor(sold.length/2)]):"–";$("s2").textContent=act.length?fmt(Math.min(...act)):"–";$("s3").textContent=pts.length;
+ const all=data.filter(x=>x.type==="Sold").map(x=>x.d),span=all.length?Math.max(...all):0;
+ $("hist").textContent=live&&R>90&&all.length&&span<R-7?`Sold history so far reaches back ${span} days. eBay shares 90 days at a time, so older sales build up as the backend keeps collecting.`:"";
+ const lab=d=>R>120?new Date(Date.now()-d*864e5).toLocaleDateString(undefined,{month:"short",year:"2-digit"}):day(d);
+ const W=Math.max(300,$("chart").clientWidth-8),H=Math.round(Math.min(380,W*.72)),m={l:50,r:14,t:12,b:28},iw=W-m.l-m.r,ih=H-m.t-m.b;
+ const top=(Math.max(1,...pts.map(x=>x.price)))*1.08,X=d=>m.l+(R-d)/(R+1)*iw,Y=p=>m.t+ih-p/top*ih;
+ let g="";
+ for(let i=0;i<=4;i++){const v=top*i/4,y=Y(v);g+=`<line x1="${m.l}" x2="${W-m.r}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="${m.l-6}" y="${y+4}" text-anchor="end" font-size="11" fill="var(--mut)">${fmt(Math.round(v))}</text>`}
+ for(let i=0;i<=4;i++){const d=Math.round(R-R*i/4);g+=`<text x="${X(d)}" y="${H-8}" text-anchor="${i==4?"end":i==0?"start":"middle"}" font-size="11" fill="var(--mut)">${i==4?"Today":lab(d)}</text>`}
+ pts.forEach((x,i)=>{const cx=X(x.d),cy=Y(x.price),a=x.type==="For sale";
+  g+=`<g class="pt" data-i="${i}" tabindex="0" role="link" aria-label="${x.type} ${fmt(x.price)}"><circle cx="${cx}" cy="${cy}" r="14" fill="transparent"/><circle class="dot" cx="${cx}" cy="${cy}" r="5" fill="${a?"var(--panel)":"var(--sold)"}" fill-opacity="${a?1:.8}" stroke="${a?"var(--act)":"var(--sold)"}" stroke-width="${a?2:1}"/></g>`});
+ $("chart").innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Scatter plot of card prices over time">${g}</svg>`;
+ $("chart").querySelectorAll(".pt").forEach(el=>{const pick=()=>{const x=pts[+el.dataset.i];
+  $("detail").innerHTML=`<b>${x.type}</b> ${fmt(x.price)}, ${x.d?day(x.d):"today"}<br>${esc(x.title)}<br><a href="${esc(x.url)}" target="_blank" rel="noopener">Open listing</a>`;
+  window.open(x.url,"_blank","noopener")};
+  el.addEventListener("click",pick);el.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();pick()}})})}
+
+$("f").onsubmit=e=>{e.preventDefault();load()};
+$("range").onchange=draw;
+$("tS").onclick=e=>{show.S=!show.S;e.target.setAttribute("aria-pressed",show.S);draw()};
+$("tA").onclick=e=>{show.A=!show.A;e.target.setAttribute("aria-pressed",show.A);draw()};
+addEventListener("resize",draw);draw();
+</script></body></html>
