@@ -1,5 +1,6 @@
 import "dotenv/config";
 import fs from "node:fs";
+import crypto from "node:crypto";
 import express from "express";
 
 const { EBAY_CLIENT_ID: ID, EBAY_CLIENT_SECRET: SECRET, PORT = 3000, ENABLE_SOLD } = process.env;
@@ -155,5 +156,18 @@ app.get("/api/listings", async (req, res) => {
     res.status(502).json({ error: e.message });
   }
 });
+
+// eBay "Marketplace Account Deletion" notifications (required to keep your keys enabled).
+// This app stores no eBay user data, so there is nothing to delete: we only answer eBay's
+// challenge and acknowledge notifications.
+const VERIFY = process.env.EBAY_VERIFICATION_TOKEN;
+const ENDPOINT = process.env.EBAY_ENDPOINT_URL; // e.g. https://your-app.onrender.com/ebay/deletion
+app.get("/ebay/deletion", (req, res) => {
+  const code = String(req.query.challenge_code || "");
+  if (!code || !VERIFY || !ENDPOINT) return res.status(400).json({ error: "Not configured" });
+  const challengeResponse = crypto.createHash("sha256").update(code).update(VERIFY).update(ENDPOINT).digest("hex");
+  res.status(200).json({ challengeResponse });
+});
+app.post("/ebay/deletion", (req, res) => res.sendStatus(200));
 
 app.listen(PORT, () => console.log(`Running at http://localhost:${PORT}`));
