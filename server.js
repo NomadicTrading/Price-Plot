@@ -376,7 +376,7 @@ app.get("/api/tcg", async (req, res) => {
 
 // TCGplayer market prices by condition and printing, with up to 1 year of daily history, via JustTCG
 // (an independent service). Set JUSTTCG_API_KEY to use it. The free plan allows about 100 requests a day,
-// so each search is cached for 12 hours and uses 1 to 3 requests.
+// so each search is cached for 24 hours (prices only update about daily) and uses 1 to 3 requests.
 const JT_KEY = process.env.JUSTTCG_API_KEY;
 const jtCache = new Map();
 let jtLeft = null; // requests left today, as last reported by JustTCG
@@ -458,7 +458,7 @@ app.get("/api/tcgmarket", async (req, res) => {
         })),
       }));
     const data = { cards };
-    jtCache.set(key, { exp: Date.now() + 12 * 3600e3, data });
+    jtCache.set(key, { exp: Date.now() + 24 * 3600e3, data });
     res.json({ ...data, left: jtLeft });
   } catch (e) {
     console.error(e);

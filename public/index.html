@@ -478,6 +478,12 @@ $("tcg").onclick=e=>{const d=e.target.closest("button")?.dataset;if(!d||!TM)retu
  else if(d.tr)trng=d.tr;else return;
  drawTcg()};
 addEventListener("resize",()=>{if(tab==="tcg"&&TM&&$("tch"))drawTcg()});
+/* TCGplayer results are saved on this device for 24 hours, so repeat searches cost no lookups,
+   even after the server restarts. Keeps the 15 most recent searches. */
+function tmGet(k){try{const x=JSON.parse(localStorage.getItem(k)||"null");return x&&Date.now()-x.t<864e5?x.j:null}catch{return null}}
+function tmPut(k,j){try{const keys=Object.keys(localStorage).filter(x=>x.startsWith("pp:tm:")).map(x=>{let t=0;try{t=JSON.parse(localStorage.getItem(x)).t}catch{}return[x,t]}).sort((a,b)=>a[1]-b[1]);
+ while(keys.length>=15)localStorage.removeItem(keys.shift()[0]);
+ const v=JSON.stringify({t:Date.now(),j});try{localStorage.setItem(k,v)}catch{keys.forEach(([x])=>localStorage.removeItem(x));localStorage.setItem(k,v)}}catch{}}
 async function loadTcg(){
  const q=$("q").value.trim(),bx=$("tcg");
  if(!q){bx.innerHTML='<p class="sm">Search for a card first, then come back to this tab.</p>';return}
@@ -487,7 +493,8 @@ async function loadTcg(){
  if(q!==$("q").value.trim())return;
  const ex=basic&&(basic.cards||[]).find(c=>c.exact);
  const ps=new URLSearchParams({q});if(ex){ps.set("name",ex.name||"");ps.set("set",ex.set||"");ps.set("n",String(+String(ex.number).replace(/\D/g,"")||""));if(ex.printedTotal)ps.set("d",ex.printedTotal)}
- try{const r=await fetch("/api/tcgmarket?"+ps);const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);
+ try{const ck="pp:tm:"+ps,hit=tmGet(ck);let j;
+  if(hit)j={...hit,left:null};else{const r=await fetch("/api/tcgmarket?"+ps);j=await r.json();if(!r.ok)throw new Error(j.error||r.status);if(j.cards&&j.cards.length)tmPut(ck,j)}
   if(q!==$("q").value.trim())return;
   tcgQ=q;tQ=q;tBasic=basic;
   if(!j.cards||!j.cards.length){TM=null;renderTcgBasic(basic,q,"No condition prices found for this search.");return}
