@@ -653,7 +653,7 @@ pillBar("ed",[["any","Any edition"],["1st","1st Edition"],["shadowless","Shadowl
 pillBar("sf",[["any","For sale: any"],["auction","Auction"],["bin","Buy It Now"],["offer","Best Offer"]],smode,k=>smode=k);
 function ptxt(){$("pt").textContent=(pr.a?fmt(Math.round(pv(pr.a))):fmt(pr.min))+" to "+(pr.b<200?fmt(Math.round(pv(pr.b))):"no limit")}
 function initPrice(){const a=data.filter(x=>x.rel!==false).map(x=>x.price);if(!a.length)return;
- pr={min:Math.floor(Math.min(...a)),max:Math.ceil(Math.max(...a)),a:0,b:200};pdr.lo=0;pdr.hi=200;pdr.paint();$("pw2").hidden=pr.max<=pr.min;ptxt()}
+ pr={min:Math.floor(Math.min(...a)),max:Math.ceil(Math.max(...a)),a:0,b:200};Object.assign(pdr,{min:0,max:200,step:1,lo:0,hi:200});pdr.paint();$("pw2").hidden=pr.max<=pr.min;ptxt()}
 function updBad(){$("tX").hidden=!bad.size;$("tX").textContent=`Show ${bad.size} hidden seller${bad.size===1?"":"s"}`}
 $("tX").onclick=()=>{bad.clear();updBad();draw()};
 $("tP").onclick=e=>{shipOn=!shipOn;e.target.setAttribute("aria-pressed",shipOn);tag();initPrice();view=null;scrub=null;draw()};
