@@ -19,6 +19,13 @@ header{border-bottom:1px solid var(--line)}
 .pill,select{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:999px;padding:6px 14px;cursor:pointer}
 .pill[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg);font-weight:700}
 .sep{width:1px;height:22px;background:var(--line);margin:0 2px}
+.py{display:flex;align-items:center;gap:10px;padding-top:14px}
+.py .pl{font-weight:700;white-space:nowrap}
+.dr{position:relative;flex:1;min-width:0;height:32px;margin:0 12px;touch-action:none;cursor:pointer;user-select:none;-webkit-user-select:none}
+.dr .tr{position:absolute;left:0;right:0;top:14px;height:4px;border-radius:2px;background:var(--line)}
+.dr .fl{position:absolute;top:14px;height:4px;background:var(--blue)}
+.dr .th{position:absolute;top:4px;width:24px;height:24px;margin-left:-12px;border-radius:50%;background:var(--bg);border:2px solid var(--blue);box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.py b{white-space:nowrap;font-size:13px;min-width:84px;text-align:center}
 .ch-h{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-top:22px}
 .ch-h h2{margin:0;font-size:24px;letter-spacing:-.3px}
 #chg{font-size:15px;font-weight:600;margin-top:2px}.mu{color:var(--mut);font-weight:400}
@@ -28,8 +35,11 @@ header{border-bottom:1px solid var(--line)}
 .seg.tg{flex:none}.seg.tg button{padding:8px 16px}
 #rg{margin:10px 0 4px}
 #cw{position:relative;margin-top:6px}
+#chart{position:relative}
 svg{display:block;width:100%;height:auto;user-select:none;-webkit-user-select:none}
-.zc{position:absolute;top:4px;left:4px}
+.az{position:absolute;touch-action:none;z-index:2}
+.ay{cursor:ns-resize}.ax{cursor:ew-resize}
+.zc{position:absolute;top:4px;left:4px;z-index:3}
 .zc .rs{border-radius:999px;border:1px solid var(--bd);background:var(--bg);color:var(--fg);font:600 13px/1 inherit;padding:8px 12px;cursor:pointer}
 .pt{cursor:pointer}.pt:focus{outline:none}.pt:focus .dot,.pt:hover .dot{stroke:var(--fg);stroke-width:2}
 .lg{display:flex;gap:16px;flex-wrap:wrap;color:var(--mut);font-size:12.5px;margin:8px 2px}
@@ -40,6 +50,8 @@ svg{display:block;width:100%;height:auto;user-select:none;-webkit-user-select:no
 #detail{border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-height:48px;background:var(--soft);margin-top:12px}
 #detail a{color:var(--link);font-size:15px}#detail .p{font-size:20px;font-weight:700;margin:2px 0}#detail .m{color:var(--mut);font-size:12.5px}
 #scrub{border-radius:8px;padding:8px 12px;margin:8px 0 2px;background:var(--soft);min-height:48px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;font-size:13.5px}#scrub b{font-size:18px}#scrub span{color:var(--mut);font-size:12.5px}
+.mf{margin-top:10px}.mf summary{cursor:pointer;font-weight:700;padding:8px 0}
+#qc{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;background:var(--soft);border-radius:10px;padding:10px 14px;margin-top:16px}#qc b{font-size:22px}#qc span{color:var(--mut);font-size:12.5px}
 .sm{color:var(--mut);font-size:12.5px;margin:8px 2px}
 .tabs{margin-top:12px}
 .tc{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
@@ -56,19 +68,33 @@ footer{border-top:1px solid var(--line);margin-top:22px;padding:12px 0;color:var
 <form id="f"><input id="q" type="search" placeholder="Search a card, e.g. charizard 4/102 base set" aria-label="Search listings" autocomplete="off" enterkeyhint="search" autofocus><button class="go" type="submit">Search</button></form></div></header>
 <main class="wrap">
 <div class="seg tabs" id="tb" role="group" aria-label="Data source"><button type="button" data-t="ebay" aria-pressed="true">eBay sales</button><button type="button" data-t="tcg" aria-pressed="false">TCGplayer</button></div>
+<div class="bar" id="sv"></div>
 <div id="ebay">
 <div class="bar" id="gr" role="group" aria-label="Grading company"></div>
 <div class="bar" id="cd" role="group" aria-label="Condition"></div>
+<div class="bar" id="fn" role="group" aria-label="Finish"></div>
 <div class="bar">
 <select id="gn" aria-label="Grade" hidden><option value="">Any grade</option><option>10</option><option>9.5</option><option>9</option><option>8.5</option><option>8</option><option>7</option></select>
 <button class="pill" id="tS" type="button" aria-pressed="true">Sold</button><button class="pill" id="tA" type="button" aria-pressed="true">For sale</button><span class="sep"></span><button class="pill" id="tU" type="button" aria-pressed="true">No condition listed</button><button class="pill" id="tR" type="button" aria-pressed="true">Hide unrelated</button>
 </div>
+<details class="mf" id="mf"><summary>More filters</summary>
+<div class="bar" id="ln" role="group" aria-label="Language"></div>
+<div class="bar" id="ed" role="group" aria-label="Edition"></div>
+<div class="bar" id="sf" role="group" aria-label="For sale format"></div>
+<div class="py" id="pw2"><span class="pl">Price</span><div class="dr" id="pd" role="group" aria-label="Price range"></div><b id="pt"></b></div>
+<div class="bar"><button class="pill" id="tP" type="button" aria-pressed="false">Price + shipping</button><button class="pill" id="tO" type="button" aria-pressed="false">Hide price outliers</button><button class="pill" id="tD" type="button" aria-pressed="true">Hide duplicates</button><button class="pill" id="tX" type="button" hidden></button><button class="pill" id="ex" type="button">Export CSV</button></div>
+</details>
+<div id="pw" hidden>
+<div class="py" id="py"><span class="pl">Print year</span><div class="dr" id="yd" role="group" aria-label="Print year range"></div><b id="yt"></b></div>
+<div class="bar" id="pc" role="group" aria-label="Print sets"></div>
+</div>
+<div id="qc" hidden></div>
 <div class="ch-h"><div><h2>Sales History</h2><div id="chg"></div></div>
-<div class="seg tg" id="vm" role="group" aria-label="Chart view"><button type="button" data-v="trend" aria-pressed="true">Trend</button><button type="button" data-v="sales" aria-pressed="false">Sales</button></div></div>
+<div class="seg tg" id="vm" role="group" aria-label="Chart view"><button type="button" data-v="trend" aria-pressed="true">Trend</button><button type="button" data-v="daily" aria-pressed="false">Daily</button><button type="button" data-v="sales" aria-pressed="false">Sales</button></div></div>
 <div id="scrub"></div>
 <div id="cw"><div id="chart"></div><div class="zc"><button id="zr" class="rs" type="button" hidden>Reset zoom</button></div></div>
 <div class="seg" id="rg" role="group" aria-label="Time range"></div>
-<div class="lg"><span><i style="background:var(--dot)"></i>Sold</span><span><i style="border:2px solid var(--act)"></i>For sale (stacked on today)</span><span><i style="background:var(--gray);opacity:.5"></i>No condition or grade listed</span><span>The blue line is the trend, the shaded area is the usual price range.</span><span>Slide one finger to read the trend, pinch with two to zoom and move, tap a dot to open it.</span></div>
+<div class="lg"><span><i style="background:var(--dot)"></i>Sold</span><span><i style="border:2px solid var(--act)"></i>For sale (grouped beside today)</span><span><i style="background:var(--gray);opacity:.5"></i>No condition or grade listed</span><span>The blue line is the trend and the shaded area is the usual price range. Where sales are sparse the line is estimated between them.</span><span>Daily groups sales into one median dot per day or so. Slide one finger to read the trend, pinch with two to zoom and move, drag the prices up or down or the dates left or right to stretch the chart, tap a dot to open it.</span></div>
 <div id="sl"></div>
 <div id="detail">Tap a dot to see its listing.</div>
 <div class="sm" id="hid"></div><div class="sm" id="hist"></div><div class="sm" id="status">Search for a card to see its listings.</div>
@@ -83,10 +109,25 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"
 const fmt=v=>"$"+v.toLocaleString(undefined,{minimumFractionDigits:Number.isInteger(v)?0:2,maximumFractionDigits:2});
 const money=v=>"$"+v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 const nice=s=>{const p=Math.pow(10,Math.floor(Math.log10(s))),n=s/p;return(n<=1?1:n<=2?2:n<=5?5:10)*p};
-let data=[],show={S:true,A:true,U:true,R:true},cmode="any",mode="all",rsel="90",vm="trend",live=false,view=null,full=null,G={},scrub=null;
+const nrm=t=>String(t).normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/['’.\-]/g,"");
+const MAXD=1000,NS=150;
+function dual(id,cb){const el=$(id),st={min:0,max:100,step:1,lo:0,hi:100};let h=null;
+ const pos=v=>(st.max>st.min?(v-st.min)/(st.max-st.min):0)*100;
+ st.paint=()=>{el.innerHTML=`<div class="tr"></div><div class="fl" style="left:${pos(st.lo)}%;right:${100-pos(st.hi)}%"></div><div class="th" data-h="0" style="left:${pos(st.lo)}%"></div><div class="th" data-h="1" style="left:${pos(st.hi)}%"></div>`};
+ const val=e=>{const r=el.getBoundingClientRect();return st.min+Math.min(1,Math.max(0,(e.clientX-r.left)/(r.width||1)))*(st.max-st.min)};
+ const mv=e=>{if(h==null)return;let v=Math.round(val(e)/st.step)*st.step;v=Math.min(st.max,Math.max(st.min,v));
+  if(h===0)st.lo=Math.min(v,st.hi);else st.hi=Math.max(v,st.lo);st.paint();cb(st)};
+ el.addEventListener("pointerdown",e=>{const d=e.target.dataset&&e.target.dataset.h,v=val(e);
+  h=d!=null&&d!==""?+d:(Math.abs(v-st.lo)<Math.abs(v-st.hi)||(v<=st.lo&&st.lo===st.hi)?0:1);
+  try{el.setPointerCapture(e.pointerId)}catch{}if(e.preventDefault)e.preventDefault();mv(e)});
+ el.addEventListener("pointermove",mv);const end=()=>{h=null};el.addEventListener("pointerup",end);el.addEventListener("pointercancel",end);
+ st.paint();return st}
+let data=[],prints=[],pre=[],show={S:true,A:true,U:true,R:true,P:true},cmode="any",fmode="any",mode="all",rsel="90",vm="trend",live=false,view=null,full=null,G={},scrub=null,SPAN=90,ser=[],yr={lo:0,hi:0,min:0,max:0},psel=new Set(),axis=null;
+let lmode="any",emode="any",smode="any",shipOn=false,outl=false,dedupe=true,bad=new Set(),pr={min:0,max:0,a:0,b:200},expRows=[];
+const ydr=dual("yd",s=>{yr.lo=s.lo;yr.hi=s.hi;ytxt();view=null;scrub=null;draw()}),pdr=dual("pd",s=>{pr.a=s.lo;pr.b=s.hi;ptxt();view=null;scrub=null;draw()});
 const MODES=[["all","All"],["raw","Raw"],["PSA","PSA"],["BGS","Beckett"],["CGC","CGC"],["TAG","TAG"]];
 const RNG=[["14","2W","Past 2 Weeks"],["30","1M","Past Month"],["90","3M","Past 3 Months"],["180","6M","Past 6 Months"],["365","1Y","Past Year"],["all","All","All Time"]];
-const rangeDays=()=>{if(rsel!=="all")return +rsel;const d=data.filter(x=>x.type==="Sold").map(x=>x.d);return d.length?Math.max(30,Math.ceil(Math.max(...d))+1):90};
+const rangeDays=()=>rsel==="all"?MAXD:+rsel;
 $("gr").innerHTML=MODES.map(([k,l])=>`<button class="pill" type="button" data-m="${k}" aria-pressed="${k===mode}">${l}</button>`).join("");
 $("gr").onclick=e=>{const k=e.target.dataset.m;if(!k)return;mode=k;
  $("gr").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.m===k));
@@ -102,18 +143,76 @@ const CND=[["any","Any"],["NM","NM"],["LP","LP"],["MP","MP"],["HP","HP"],["DMG",
 $("cd").innerHTML=CND.map(([k,l])=>`<button class="pill" type="button" data-c="${k}" aria-pressed="${k===cmode}">${l}</button>`).join("");
 $("cd").onclick=e=>{const k=e.target.dataset.c;if(!k)return;cmode=k;
  $("cd").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.c===k));view=null;scrub=null;draw()};
+const FIN=[["any","Any finish"],["holo","Holo"],["reverse","Reverse holo"],["nonholo","Non-holo"],["none","Unspecified"]];
+$("fn").innerHTML=FIN.map(([k,l])=>`<button class="pill" type="button" data-f="${k}" aria-pressed="${k===fmode}">${l}</button>`).join("");
+$("fn").onclick=e=>{const k=e.target.dataset.f;if(!k)return;fmode=k;
+ $("fn").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.f===k));view=null;scrub=null;draw()};
 const gradeOk=x=>{const n=+$("gn").value;return mode==="all"||(mode==="raw"?!x.grader:x.grader===mode&&(!n||x.grade===n))};
 const condOk=x=>cmode==="any"||(cmode==="none"?!x.cond&&!x.grader:x.cond===cmode);
-const pass=x=>gradeOk(x)&&condOk(x)&&(show.U||x.grader||x.cond)&&(!show.R||x.rel!==false);
+const finOk=x=>fmode==="any"||(fmode==="none"?!x.f2:x.f2===fmode);
+const yrOn=()=>yr.max>yr.min&&(yr.lo>yr.min||yr.hi<yr.max);
+const printOk=x=>{const ks=x.sets&&x.sets.length,ky=x.yrs&&x.yrs.length;
+ if(psel.size&&!(ks?x.sets.some(s=>psel.has(s)):show.P))return false;
+ if(yrOn()&&!(ky?x.yrs.some(y=>y>=yr.lo&&y<=yr.hi):show.P))return false;
+ return true};
+const langOk=x=>lmode==="any"||(lmode==="en"?!x.lang||x.lang==="en":x.lang===lmode);
+const edOk=x=>emode==="any"||(emode==="none"?!x.ed:x.ed===emode);
+const fmtOk=x=>smode==="any"||x.type==="Sold"||(smode==="offer"?!!x.offer:x.fmt===smode);
+const pv=i=>pr.min+(pr.max-pr.min)*Math.pow(i/200,2);
+const priceOk=x=>(!pr.a||x.price>=pv(pr.a))&&(pr.b>=200||x.price<=pv(pr.b));
+const pass=x=>gradeOk(x)&&condOk(x)&&finOk(x)&&printOk(x)&&langOk(x)&&edOk(x)&&fmtOk(x)&&priceOk(x)&&!(x.seller&&bad.has(x.seller))&&(show.U||x.grader||x.cond)&&(!show.R||x.rel!==false);
 
 function sample(q){let s=[...q].reduce((a,c)=>a+c.charCodeAt(0),7);const r=()=>(s=(s*1664525+1013904223)%4294967296)/4294967296,b=50+r()*300,G=[null,null,"PSA","BGS","CGC","TAG"];
 const mk=(type,d)=>{const g=G[Math.floor(r()*6)],n=g?[10,9.5,9,8][Math.floor(r()*4)]:null,m=g?(n===10?3:n>=9?1.6:1.1):1,cn=g?null:[null,null,"NM","NM","LP","MP","HP"][Math.floor(r()*7)];
- return {type,d,grader:g,grade:n,cond:cn,rel:r()>.08,price:+(b*m*(.9+.0003*(365-d)+(r()-.5)*.35)).toFixed(2),title:`Sample ${g?g+" "+n:"raw"} ${type.toLowerCase()} listing`,url:"https://www.ebay.com/sch/i.html?_nkw="+encodeURIComponent(q)}};
-const L=[];for(let i=0;i<160;i++)L.push(mk("Sold",r()*365));for(let i=0;i<24;i++)L.push(mk("For sale",0));return L}
+ return {type,d,grader:g,grade:n,cond:cn,fin:[null,"holo","holo","reverse","nonholo"][Math.floor(r()*5)],sample:true,sets:[],yrs:[1999+Math.floor(r()*23)],rel:r()>.08,price:+(b*m*(.9+.0001*(1000-d)+(r()-.5)*.35)).toFixed(2),title:`Sample ${g?g+" "+n:"raw"} ${type.toLowerCase()} listing`,url:"https://www.ebay.com/sch/i.html?_nkw="+encodeURIComponent(q)}};
+const L=[];for(let i=0;i<220;i++)L.push(mk("Sold",r()*600));for(let i=0;i<24;i++)L.push(mk("For sale",0));return L}
+
+/* ---- matching listings to print sets (set name, then year in the title, then printed total) ---- */
+const GEN=new Set(["base","classic","set"]);
+function compile(){pre=prints.map(p=>{const nm=nrm(p.set).replace(/[^a-z0-9 ]+/g," ").trim().replace(/\s+/g," ");if(!nm)return null;
+ const ph=[nm+" set"];if(!GEN.has(nm))ph.push(nm);
+ return{p,len:nm.length,res:ph.map(x=>new RegExp("(^|[^a-z0-9])"+x.replace(/ /g,"\\s+")+"(?!\\s?2(?![\\d/]))(?=$|[^a-z0-9])"))}}).filter(Boolean)}
+function classify(title){
+ const t=nrm(title).replace(/[^a-z0-9\/ ]+/g," ");
+ let best=[],bl=0;
+ for(const c of pre)if(c.res.some(r=>r.test(t))){if(c.len>bl){best=[c.p];bl=c.len}else if(c.len===bl)best.push(c.p)}
+ if(best.length)return{sets:best.map(p=>p.id),yrs:[...new Set(best.map(p=>p.year).filter(Boolean))]};
+ const ym=t.match(/\b(199[6-9]|20[0-2]\d)\b/);
+ if(ym&&+ym[1]<=new Date().getFullYear()){const y=+ym[1];return{sets:prints.filter(p=>p.year===y).map(p=>p.id),yrs:[y]}}
+ for(const m of t.matchAll(/(\d{1,3})\s*\/\s*(\d{1,3})/g)){
+  const c=prints.filter(p=>Number.isFinite(+p.number)&&+p.number===+m[1]&&+p.printedTotal===+m[2]);
+  if(c.length)return{sets:c.map(p=>p.id),yrs:[...new Set(c.map(p=>p.year).filter(Boolean))]}}
+ return{sets:[],yrs:[]}}
+function tag(){for(const x of data){x.p0=x.p0??x.price;
+ if(!x.sample){const c=classify(x.title);x.sets=c.sets;x.yrs=c.yrs}
+ let f=x.fin||null;
+ if(!f&&x.sets&&x.sets.length===1){const p=prints.find(p=>p.id===x.sets[0]);if(p&&p.finishes&&p.finishes.length===1)f=p.finishes[0]}
+ x.f2=f;x.price=+(x.p0+(shipOn&&x.ship?x.ship:0)).toFixed(2)}}
+const ytxt=()=>{$("yt").textContent=yr.lo===yr.hi?yr.lo:yr.lo+" to "+yr.hi};
+function buildPrints(){
+ const cnt={};for(const x of data)if(x.rel!==false)for(const s of x.sets||[])cnt[s]=(cnt[s]||0)+1;
+ const shown=prints.filter(p=>p.exact||cnt[p.id]).sort((a,b)=>a.year-b.year||String(a.set).localeCompare(String(b.set)));
+ const ys=new Set(shown.map(p=>p.year).filter(Boolean));for(const x of data)if(x.rel!==false)for(const y of x.yrs||[])ys.add(y);
+ const arr=[...ys].sort((a,b)=>a-b);
+ if(arr.length<2&&shown.length<2){$("pw").hidden=true;yr={lo:0,hi:0,min:0,max:0};psel.clear();return}
+ const mn=arr[0]||0,mx=arr[arr.length-1]||0;
+ if(yr.min!==mn||yr.max!==mx)yr={min:mn,max:mx,lo:mn,hi:mx};
+ $("pw").hidden=false;$("py").hidden=mn===mx;
+ Object.assign(ydr,{min:mn,max:mx,step:1,lo:yr.lo,hi:yr.hi});ydr.paint();ytxt();
+ $("pc").innerHTML=shown.map(p=>`<button class="pill" type="button" data-p="${esc(p.id)}" aria-pressed="${psel.has(p.id)}">${esc(p.set)} · ${p.year||"?"}${cnt[p.id]?` (${cnt[p.id]})`:""}</button>`).join("")+`<button class="pill" type="button" data-u="1" aria-pressed="${show.P}">Unknown print</button>`}
+$("pc").onclick=e=>{const b=e.target.closest&&e.target.closest("button");if(!b)return;
+ if(b.dataset.u)show.P=!show.P;else if(b.dataset.p){const id=b.dataset.p;psel.has(id)?psel.delete(id):psel.add(id)}
+ buildPrints();view=null;scrub=null;draw()};
+
+const tcgCache=new Map();
+function getTcg(q){if(!tcgCache.has(q)){const p=fetch("/api/tcg?q="+encodeURIComponent(q)).then(async r=>{const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j});
+ p.catch(()=>tcgCache.delete(q));tcgCache.set(q,p)}return tcgCache.get(q)}
+const toPrints=j=>{const seen=new Set();return(j.cards||[]).filter(c=>c.id&&!seen.has(c.id)&&seen.add(c.id)).map(c=>({id:c.id,set:c.set||"",year:c.year||+String(c.released||"").slice(0,4)||0,number:c.number,printedTotal:c.printedTotal,exact:!!c.exact,finishes:c.finishes||[]}))};
 
 async function load(){
  const q=$("q").value.trim();if(!q)return;
- $("status").textContent="Loading…";view=null;scrub=null;
+ $("status").textContent="Loading…";view=null;scrub=null;psel.clear();yr={lo:0,hi:0,min:0,max:0};prints=[];pre=[];
+ const tp=getTcg(q).catch(()=>null);
  try{
   const r=await fetch("/api/listings?q="+encodeURIComponent(q)+"&grader="+encodeURIComponent(mode));
   const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);
@@ -121,7 +220,8 @@ async function load(){
   data=j.listings.map(x=>({...x,d:x.type==="Sold"?Math.max(0,(now-new Date(x.date))/864e5):0}));
   $("status").textContent=[`${data.length} listings loaded.`,j.soldEnabled?"":"Sold data is off (needs a sold-data service key or eBay Marketplace Insights access).",...(j.warnings||[])].join(" ");
  }catch(e){live=false;data=sample(q);$("status").textContent="Backend unavailable ("+e.message+"). Showing sample data."}
- draw();
+ bad.clear();updBad();tag();initPrice();buildPrints();draw();
+ tp.then(j=>{if(!j||q!==$("q").value.trim())return;prints=toPrints(j);compile();tag();buildPrints();draw()});
 }
 
 function clampV(v){const fw=full.x1-full.x0,fh=full.y1-full.y0;
@@ -130,72 +230,109 @@ function clampV(v){const fw=full.x1-full.x0,fh=full.y1-full.y0;
  return {x0,x1:x0+w,y0,y1:y0+h}}
 function setView(v){view=clampV(v);
  if(view.x1-view.x0>=(full.x1-full.x0)*.999&&view.y1-view.y0>=(full.y1-full.y0)*.999)view=null;draw()}
-function zoomAt(fx,fy,f){const v=view||full,w=v.x1-v.x0,h=v.y1-v.y0,cx=v.x0+fx*w,cy=v.y1-fy*h,nw=w*f,nh=h*f;
- setView({x0:cx-fx*nw,x1:cx-fx*nw+nw,y0:cy-(1-fy)*nh,y1:cy-(1-fy)*nh+nh})}
+
+/* fill gaps so the trend line and bands are continuous: hold the ends, straight-line across holes */
+function fillSeries(raw,S){const k=[];raw.forEach((s,i)=>{if(s)k.push(i)});if(k.length<2)return[];
+ const xAt=i=>-(S-S*i/NS);
+ return raw.map((s,i)=>{if(s)return s;const x=xAt(i);
+  if(i<k[0]){const b=raw[k[0]];return{x,m:b.m,lo:b.lo,hi:b.hi,n:0}}
+  if(i>k[k.length-1]){const b=raw[k[k.length-1]];return{x,m:b.m,lo:b.lo,hi:b.hi,n:0}}
+  let a=i;while(!raw[a])a--;let b=i;while(!raw[b])b++;
+  const f=(i-a)/(b-a),A=raw[a],B=raw[b],L=(p,q)=>p+(q-p)*f;
+  return{x,m:L(A.m,B.m),lo:L(A.lo,B.lo),hi:L(A.hi,B.hi),n:0}})}
 
 function draw(){
  const R=rangeDays(),RL=RNG.find(r=>r[0]===rsel)[2];
- const inR=data.filter(x=>pass(x)&&x.d<=R),pts=inR.filter(x=>x.type==="Sold"?show.S:show.A);
+ let list=data.filter(x=>pass(x)&&x.d<=R),dupN=0,outN=0;
+ if(dedupe){const seen=new Set(),n0=list.length;list=list.filter(x=>{const m=/\/itm\/(?:[^\/]*\/)?(\d{9,})/.exec(x.url||""),k=x.type==="Sold"?(m?m[1]:nrm(x.title)+"|"+x.price+"|"+Math.round(x.d)):(x.seller?x.seller+"|"+nrm(x.title)+"|"+x.price:x.url);if(seen.has(k))return false;seen.add(k);return true});dupN=n0-list.length}
+ if(outl&&list.length>=8){const a=list.map(x=>x.price).sort((u,w)=>u-w),q1=a[Math.floor(a.length*.25)],q3=a[Math.floor(a.length*.75)],iq=q3-q1,k=list.filter(x=>x.price>=q1-1.5*iq&&x.price<=q3+1.5*iq);outN=list.length-k.length;list=k}
+ const inR=list,sPts=inR.filter(x=>x.type==="Sold"?show.S:show.A),pts=sPts.filter(x=>x.type!=="Sold"||vm!=="daily");
  const sp=inR.filter(x=>x.type==="Sold");
  const hidN=data.filter(x=>x.rel===false).length;
  $("hid").textContent=show.R&&hidN?`${hidN} listing${hidN===1?"":"s"} hidden as unrelated to your search. Turn off "Hide unrelated" to see them.`:"";
- const all=data.filter(x=>x.type==="Sold").map(x=>x.d),span=all.length?Math.round(Math.max(...all)):0;
- $("hist").textContent=!live?"":!all.length?"No sold sales yet, so the sale stats show a dash. Sold data needs a sold-data service key or eBay Marketplace Insights access.":R>90&&span<R-7?`Sold history so far reaches back ${span} days. eBay shares 90 days at a time, so older sales build up as the backend keeps collecting.`:"";
- const win=Math.max(7,Math.min(30,Math.round(R/6)));
- const avgAt=t=>{let n=0,s=0,q=0;for(const p of pts)if(p.d>=t&&p.d<=t+win){n++;s+=p.price;q+=p.price*p.price}
+ $("hid").textContent=[$("hid").textContent,dupN?`${dupN} duplicate${dupN===1?"":"s"} hidden.`:"",outN?`${outN} price outlier${outN===1?"":"s"} hidden.`:""].filter(Boolean).join(" ");
+ /* fit the chart to the span of data that is actually available */
+ const dmax=sPts.reduce((a,x)=>Math.max(a,x.d),0);
+ const S=Math.max(7,Math.min(R,Math.ceil(dmax*1.04)+1));SPAN=S;
+ const allSold=data.filter(x=>x.type==="Sold").map(x=>x.d),span=allSold.length?Math.round(Math.max(...allSold)):0;
+ $("hist").textContent=!live?"":!allSold.length?"No sold sales yet, so the sale stats show a dash. Sold data needs a sold-data service key or eBay Marketplace Insights access.":rsel!=="all"&&R>90&&span<R-7?`Sold data for this search only goes back ${span} days, so the chart shows that span.`:"";
+ const win=Math.max(5,Math.min(30,Math.round(S/6)));
+ const avgAt=t=>{let n=0,s=0,q=0;for(const p of sPts)if(p.d>=t&&p.d<=t+win){n++;s+=p.price;q+=p.price*p.price}
   if(n<3)return null;const m=s/n;return{n,m,sd:Math.sqrt(Math.max(0,q/n-m*m))}};
- const ser=[];for(let i=0;i<=150;i++){const t=R-R*i/150,a=avgAt(t);ser.push(a&&{x:-t,m:a.m,lo:Math.max(0,a.m-2*a.sd),hi:a.m+2*a.sd})}
- const vals=ser.filter(Boolean);
- let delta=null,pct=null;if(vals.length>1&&vals[0].m>0){delta=vals[vals.length-1].m-vals[0].m;pct=delta/vals[0].m*100}
+ const raw=[];for(let i=0;i<=NS;i++){const t=S-S*i/NS,a=avgAt(t);raw.push(a&&{x:-t,m:a.m,lo:Math.max(0,a.m-2*a.sd),hi:a.m+2*a.sd,n:a.n})}
+ ser=fillSeries(raw,S);
+ let delta=null,pct=null;if(ser.length>1&&ser[0].m>0){delta=ser[ser.length-1].m-ser[0].m;pct=delta/ser[0].m*100}
  const tc=delta==null||Math.abs(delta)<.005?"var(--mut)":delta<0?"var(--dn)":"var(--up)";
  const sg0=delta!=null&&delta<0?"-":"+";
  const chgTxt=delta==null?null:`${sg0}${money(Math.abs(delta))} (${sg0}${Math.abs(pct).toFixed(1)}%)`;
  $("chg").innerHTML=chgTxt?`<span style="color:${tc}">${chgTxt}</span> <span class="mu">${RL}</span>`:`<span class="mu">${RL}: not enough sales for a trend yet</span>`;
  const row=(l,v,c)=>`<div class="r"><span>${l}</span><b${c?` style="color:${c}"`:""}>${v}</b></div>`;
- const pr=sp.map(x=>x.price),lastS=sp.length?sp.reduce((a,b)=>b.d<a.d?b:a):null,Rd=Math.round(R)+"d";
+ const pr=sp.map(x=>x.price),lastS=sp.length?sp.reduce((a,b)=>b.d<a.d?b:a):null,Rd=Math.round(Math.min(R,S))+"d";
  $("sl").innerHTML=row("Lowest sale",pr.length?money(Math.min(...pr)):"–")+row("Highest sale",pr.length?money(Math.max(...pr)):"–")+row("Average sale price",pr.length?money(pr.reduce((a,b)=>a+b,0)/pr.length):"–")+row("Last sold",lastS?money(lastS.price):"–")+row(`Total sales (${Rd})`,sp.length)+row(`Trend (${Rd})`,chgTxt?`${sg0}${Math.abs(pct).toFixed(1)}%`:"–",chgTxt?tc:"");
- const hiMax=vm==="trend"?Math.max(0,...vals.map(s=>s.hi)):0;
- full={x0:-R,x1:1,y0:0,y1:Math.max(1,hiMax,...inR.map(x=>x.price))*1.08};
+ {const qs=data.filter(x=>x.type==="Sold"&&pass(x)).sort((a,b)=>a.d-b.d).slice(0,5);
+  if(!qs.length)$("qc").hidden=true;else{const p=qs.map(x=>x.price).sort((a,b)=>a-b),h=p.length>>1,md=p.length%2?p[h]:(p[h-1]+p[h])/2;$("qc").hidden=false;
+   $("qc").innerHTML=`<span>Quick comp</span><b>${money(md)}</b><span>median of the last ${qs.length} sale${qs.length===1?"":"s"}, from ${money(p[0])} to ${money(p[p.length-1])}</span>`}}
+ expRows=inR.filter(x=>x.type==="Sold"?show.S:show.A);
+ const bins=[];if(vm==="daily"&&show.S){const bw=Math.max(1,Math.round(S/50)),M=new Map();
+  for(const x of inR)if(x.type==="Sold"){const k=Math.floor(x.d/bw);if(!M.has(k))M.set(k,[]);M.get(k).push(x.price)}
+  for(const [k,a] of M){a.sort((u,w)=>u-w);const h=a.length>>1;bins.push({d:k*bw+bw/2,n:a.length,md:a.length%2?a[h]:(a[h-1]+a[h])/2,lo:a[0],hi:a[a.length-1],from:k*bw,to:(k+1)*bw})}}
+ const hiMax=vm!=="sales"?ser.reduce((a,s)=>Math.max(a,s.hi),0):0;
+ full={x0:-S,x1:Math.max(.4,S*.015),y0:0,y1:Math.max(1,hiMax,...inR.map(x=>x.price))*1.08};
  const v=view?clampV(view):full;
- const W=Math.max(300,$("chart").clientWidth),H=Math.round(Math.min(420,W*.75)),m={l:8,r:54,t:10,b:28},iw=W-m.l-m.r,ih=H-m.t-m.b;
+ const hasAct=show.A&&pts.some(x=>x.type==="For sale"),nAct=pts.filter(x=>x.type==="For sale").length,gut=hasAct?Math.round(Math.min(Math.max(48,$("chart").clientWidth*.26),18+19.2*Math.ceil(Math.sqrt(nAct)*1.2))):0;
+ const W=Math.max(300,$("chart").clientWidth),H=Math.round(Math.min(420,W*.75)),m={l:8,r:54,t:10,b:28},iw=W-m.l-m.r-gut,ih=H-m.t-m.b;
  G={W,H,m,iw,ih};$("zr").hidden=!view;
  const X=x=>m.l+(x-v.x0)/(v.x1-v.x0)*iw,Y=p=>m.t+ih-(p-v.y0)/(v.y1-v.y0)*ih,xs=v.x1-v.x0;
- let g=`<defs><clipPath id="cp"><rect x="${m.l}" y="${m.t}" width="${iw}" height="${ih}"/></clipPath></defs>`;
+ let g=`<defs><clipPath id="cp"><rect x="${m.l}" y="${m.t}" width="${iw+gut}" height="${ih}"/></clipPath></defs>`;
  const ys=nice((v.y1-v.y0)/Math.max(4,Math.floor(ih/34)));
  for(let y=Math.ceil(v.y0/ys-1e-9)*ys;y<=v.y1+1e-9;y+=ys)g+=`<line x1="${m.l}" x2="${W-m.r}" y1="${Y(y)}" y2="${Y(y)}" stroke="var(--line)" stroke-dasharray="4 4"/><text x="${W-4}" y="${Y(y)+4}" text-anchor="end" font-size="11.5" fill="var(--mut)">${fmt(+y.toFixed(2))}</text>`;
  const ppd=iw/xs,LD=[1/24,2/24,3/24,6/24,.5,1,2,3,7,14,30,60,90,180];
- let st=LD.find(s=>s*ppd>=(s<1?60:24))||180;if(!view)st=Math.max(st,R>=60?14:R>=30?7:2);
+ let st=LD.find(s=>s*ppd>=(s<1?60:24))||180;if(!view)st=Math.max(st,S>=60?14:S>=30?7:2);
  const now=Date.now(),off=-new Date().getTimezoneOffset()*6e4,sm=st*864e5,tk=[];
  if(st>=1){for(let k=Math.ceil(v.x0/st-1e-9);k*st<=v.x1+1e-9;k++)tk.push(k*st)}
  else{for(let t=Math.ceil((now+v.x0*864e5+off)/sm)*sm-off;t<=now+v.x1*864e5;t+=sm)tk.push((t-now)/864e5)}
  const gap=st<1?76:st<30?42:66,tx=v.x0<=0&&v.x1>=0?X(0):-1e9;let last=-1e9;
- const lab=x=>{const t=new Date(now+x*864e5);return st<1?t.toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric"}):t.toLocaleDateString(undefined,st>=30?{month:"short",day:"numeric",year:"2-digit"}:{month:"short",day:"numeric"})};
+ const lab=x=>{const t=new Date(now+x*864e5);return st<1?t.toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric"}):t.toLocaleDateString(undefined,st>=90?{month:"short",year:"2-digit"}:st>=30?{month:"short",day:"numeric",year:"2-digit"}:{month:"short",day:"numeric"})};
  tk.forEach(x=>{const px=X(x);
-  if(px-last>=gap&&Math.abs(px-tx)>=gap*.7&&px>m.l+14&&px<W-m.r-14){last=px;g+=`<text x="${px}" y="${H-8}" text-anchor="middle" font-size="11.5" fill="var(--mut)">${lab(x)}</text>`}});
- if(v.x0<=0&&v.x1>=0)g+=`<text x="${Math.min(X(0),W-m.r-14)}" y="${H-8}" text-anchor="middle" font-size="11.5" font-weight="700" fill="var(--fg)">Today</text>`;
+  if(px-last>=gap&&Math.abs(px-tx)>=gap*.7&&px>m.l+14&&px<W-m.r-gut-14){last=px;g+=`<text x="${px}" y="${H-8}" text-anchor="middle" font-size="11.5" fill="var(--mut)">${lab(x)}</text>`}});
+ if(v.x0<=0&&v.x1>=0)g+=`<text x="${Math.min(X(0),W-m.r-gut-14)}" y="${H-8}" text-anchor="middle" font-size="11.5" font-weight="700" fill="var(--fg)">Today</text>`;
  let bd="";
- if(vm==="trend"){const runs=[];let cur=null;ser.forEach(s=>{if(s){if(!cur)runs.push(cur=[]);cur.push(s)}else cur=null});
-  runs.forEach(r=>{const pl=k=>r.map(s=>X(s.x)+","+Y(s[k])).join(" ");
-   if(r.length>1)bd+=`<polygon points="${pl("hi")} ${r.slice().reverse().map(s=>X(s.x)+","+Y(s.lo)).join(" ")}" fill="var(--band)"/><polyline points="${pl("m")}" fill="none" stroke="var(--trend)" stroke-width="2.5" stroke-linejoin="round"/>`;
-   else bd+=`<circle cx="${X(r[0].x)}" cy="${Y(r[0].m)}" r="4" fill="var(--trend)"/>`})}
- const sd0=vm==="trend"&&scrub!=null&&scrub<=R,sc=sd0?avgAt(scrub):null;let sg="";
+ if(vm!=="sales"&&ser.length>1){const pl=k=>ser.map(s=>X(s.x)+","+Y(s[k])).join(" ");
+  bd=`<polygon points="${pl("hi")} ${ser.slice().reverse().map(s=>X(s.x)+","+Y(s.lo)).join(" ")}" fill="var(--band)"/><polyline points="${pl("m")}" fill="none" stroke="var(--trend)" stroke-width="2.5" stroke-linejoin="round"/>`}
+ const sd0=vm!=="sales"&&scrub!=null&&scrub<=S&&ser.length>1,sc=sd0?ser[Math.min(NS,Math.max(0,Math.round((S-scrub)/S*NS)))]:null;let sg="";
  if(sd0){const px=X(-scrub);sg+=`<line x1="${px}" x2="${px}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--fg)" stroke-width="1" stroke-dasharray="3 3"/>`;
-  if(sc){sg+=`<circle cx="${px}" cy="${Y(sc.m)}" r="6" fill="var(--trend)" stroke="var(--bg)" stroke-width="2"/><circle cx="${px}" cy="${Y(sc.m+2*sc.sd)}" r="3.5" fill="var(--mut)"/><circle cx="${px}" cy="${Y(Math.max(0,sc.m-2*sc.sd))}" r="3.5" fill="var(--mut)"/>`}}
+  if(sc)sg+=`<circle cx="${px}" cy="${Y(sc.m)}" r="6" fill="var(--trend)" stroke="var(--bg)" stroke-width="2"/><circle cx="${px}" cy="${Y(sc.hi)}" r="3.5" fill="var(--mut)"/><circle cx="${px}" cy="${Y(sc.lo)}" r="3.5" fill="var(--mut)"/>`}
  g+=`<g clip-path="url(#cp)"><g pointer-events="none">${bd}</g>`;
- pts.forEach((x,i)=>{const cx=X(-x.d),cy=Y(x.price),a=x.type==="For sale",k=!!(x.grader||x.cond);
-  g+=`<g class="pt" data-i="${i}" tabindex="0" role="link" aria-label="${x.type} ${fmt(x.price)}"><title>${esc(x.type+" "+fmt(x.price)+": "+x.title)}</title><circle cx="${cx}" cy="${cy}" r="12" fill="transparent"/><circle class="dot" cx="${cx}" cy="${cy}" r="${a?5:4.5}" fill="${a?"var(--bg)":k?"var(--dot)":"var(--gray)"}" fill-opacity="${a?1:k?.75:.45}" stroke="${a?(k?"var(--act)":"var(--gray)"):"var(--bg)"}" stroke-width="${a?2:1.5}"${a&&!k?' stroke-opacity=".7"':""}/></g>`});
+ /* dots: smaller, and for-sale dots are grouped in a column beside today, lowest price first, so they don't pile up */
+ const DR=3.6,D=2*DR+1.6,cxs=pts.map(x=>X(-x.d));
+ if(hasAct){const ids=[];pts.forEach((x,i)=>{if(x.type==="For sale")ids.push(i)});ids.sort((a,b)=>pts[a].price-pts[b].price);
+  const placed=[],cols=Math.floor(gut/D)+1,base=X(0)+DR+2;
+  ids.forEach(i=>{const cy=Y(pts[i].price);let ox=0;
+   for(let k=0;k<cols;k++){ox=k*D;if(!placed.some(p=>Math.abs(p.y-cy)<D&&Math.abs(p.x-(base+ox))<D))break}
+   cxs[i]=base+ox;placed.push({x:cxs[i],y:cy})})}
+ pts.forEach((x,i)=>{const cx=cxs[i],cy=Y(x.price),a=x.type==="For sale",k=!!(x.grader||x.cond);
+  g+=`<g class="pt" data-i="${i}" tabindex="0" role="link" aria-label="${x.type} ${fmt(x.price)}"><title>${esc(x.type+" "+fmt(x.price)+": "+x.title)}</title><circle cx="${cx}" cy="${cy}" r="10" fill="transparent"/><circle class="dot" cx="${cx}" cy="${cy}" r="${a?DR+.2:DR}" fill="${a?"var(--bg)":k?"var(--dot)":"var(--gray)"}" fill-opacity="${a?1:k?.72:.45}" stroke="${a?(k?"var(--act)":"var(--gray)"):"var(--bg)"}" stroke-width="${a?1.6:.8}"${a&&!k?' stroke-opacity=".7"':""}/></g>`});
+ bins.forEach((b,i)=>{const cx=X(-b.d),cy=Y(b.md);
+  g+=`<g class="bn" data-b="${i}" tabindex="0"><title>${esc(b.n+" sale"+(b.n===1?"":"s")+", median "+fmt(+b.md.toFixed(2)))}</title><circle cx="${cx}" cy="${cy}" r="14" fill="transparent"/><circle class="dot" cx="${cx}" cy="${cy}" r="${3.5+Math.min(5,Math.sqrt(b.n)*1.1)}" fill="var(--dot)" fill-opacity=".8" stroke="var(--bg)" stroke-width="1"/></g>`});
  g+=`<g pointer-events="none">${sg}</g></g>`;
- $("chart").innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="touch-action:pan-y" role="img" aria-label="Scatter plot of card prices over time">${g}</svg>`;
+ const sc2=$("chart").clientWidth/W||1;
+ $("chart").innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="touch-action:pan-y" role="img" aria-label="Scatter plot of card prices over time">${g}</svg><div class="az ay" data-z="y" style="top:0;right:0;width:${m.r*sc2}px;height:${(m.t+ih)*sc2}px"></div><div class="az ax" data-z="x" style="left:0;top:${(m.t+ih)*sc2}px;width:${(W-m.r)*sc2}px;height:${m.b*sc2}px"></div>`;
  const dl=sd0?(scrub<.05?"today":new Date(now-scrub*864e5).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})):"";
- $("scrub").innerHTML=vm!=="trend"?"Tap a dot to open its listing.":!sd0?"Slide a finger across the chart to read the trend price.":sc?`<div><b>${money(sc.m)}</b> trend price, ${dl}<br><span>Usual range ${money(Math.max(0,sc.m-2*sc.sd))} to ${money(sc.m+2*sc.sd)}. Based on ${sc.n} listings from the ${win} days before.</span></div><button class="pill" id="sx" type="button">Clear</button>`:`<div>Not enough listings around ${dl} to work out a trend price.</div><button class="pill" id="sx" type="button">Clear</button>`;
+ $("scrub").innerHTML=vm==="sales"?"Tap a dot to open its listing.":!sd0?"Slide a finger across the chart to read the trend price.":`<div><b>${money(sc.m)}</b> trend price, ${dl}<br><span>Usual range ${money(sc.lo)} to ${money(sc.hi)}. ${sc.n?`Based on ${sc.n} listings from the ${win} days before.`:"Estimated from the sales on either side of this date."}</span></div><button class="pill" id="sx" type="button">Clear</button>`;
  if($("sx"))$("sx").onclick=()=>{scrub=null;draw()};
+ $("chart").querySelectorAll(".bn").forEach(el=>{const pick=()=>{if(moved)return;const b=bins[+el.dataset.b],ds=d=>new Date(now-d*864e5).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
+  $("detail").innerHTML=`<div class="p">${money(b.md)}</div><div class="m">Median of ${b.n} sale${b.n===1?"":"s"}, ${ds(b.to)} to ${ds(b.from)} · lowest ${money(b.lo)}, highest ${money(b.hi)}</div>`};
+  el.addEventListener("click",pick);el.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();moved=false;pick()}})});
  $("chart").querySelectorAll(".pt").forEach(el=>{const pick=()=>{if(moved)return;const x=pts[+el.dataset.i];
-  const cl=x.grader?x.grader+(x.grade?" "+x.grade:""):x.cond||"No condition listed";const t=x.type==="Sold"?"Sold "+new Date(Date.now()-x.d*864e5).toLocaleString(undefined,{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"}):"For sale now";
-  $("detail").innerHTML=`<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a><div class="p">${money(x.price)}</div><div class="m">${t} · ${cl}</div>`;
+  const cl=x.grader?x.grader+(x.grade?" "+x.grade:""):x.cond||"No condition listed",fl={holo:"Holo",reverse:"Reverse holo",nonholo:"Non-holo"}[x.f2];
+  const t=x.type==="Sold"?"Sold "+new Date(Date.now()-x.d*864e5).toLocaleString(undefined,{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"}):"For sale now";
+  const LN={jp:"Japanese",kr:"Korean",cn:"Chinese",other:"Other language"},ED={"1st":"1st Edition",shadowless:"Shadowless",unlimited:"Unlimited"},ex=[x.type==="For sale"&&x.fmt?(x.fmt==="auction"?"Auction":"Buy It Now")+(x.offer?" or Best Offer":""):"",LN[x.lang],ED[x.ed]].filter(Boolean).join(" · "),sh=x.ship==null?"":x.ship===0?" · Free shipping":" · "+money(x.ship)+" shipping";
+  $("detail").innerHTML=`<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a><div class="p">${money(x.price)}</div><div class="m">${t} · ${cl}${fl?" · "+fl:""}${ex?" · "+ex:""}${sh}</div>${x.seller?`<button class="pill" id="hs" type="button" style="margin-top:8px">Hide seller ${esc(x.seller)}</button>`:""}`;
+  if($("hs"))$("hs").onclick=()=>{bad.add(x.seller);updBad();draw()};
   window.open(x.url,"_blank","noopener")};
   el.addEventListener("click",pick);el.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();moved=false;pick()}})})}
 
-/* touch: one finger scrubs the trend, two fingers pinch and slide */
+/* touch: one finger scrubs the trend, two fingers pinch and slide, dragging an axis stretches that axis */
 const ch=$("chart"),P=new Map();let pd=0,pc=null,moved=false,pinched=false,st0=null;
 const box=()=>ch.querySelector("svg").getBoundingClientRect();
 const frac=(cx,cy,cl=true)=>{const b=box(),s=b.width/G.W;let fx=((cx-b.left)/s-G.m.l)/G.iw,fy=((cy-b.top)/s-G.m.t)/G.ih;if(cl){fx=Math.min(1,Math.max(0,fx));fy=Math.min(1,Math.max(0,fy))}return{fx,fy,s}};
@@ -203,17 +340,26 @@ const mid=()=>{const [a,b]=[...P.values()];return{x:(a.x+b.x)/2,y:(a.y+b.y)/2}};
 const dist=()=>{const [a,b]=[...P.values()];return Math.hypot(a.x-b.x,a.y-b.y)};
 function gesture(pf,nf,f){const v=view||full,w=v.x1-v.x0,h=v.y1-v.y0,cx=v.x0+pf.fx*w,cy=v.y1-pf.fy*h,nw=w*f,nh=h*f;
  setView({x0:cx-nf.fx*nw,x1:cx-nf.fx*nw+nw,y0:cy-(1-nf.fy)*nh,y1:cy-(1-nf.fy)*nh+nh})}
-function scrubAt(cx){if(!full||vm!=="trend")return;const v=view||full,R=rangeDays(),f=frac(cx,0,false).fx;
- scrub=Math.min(R,Math.max(0,-(v.x0+f*(v.x1-v.x0))));draw()}
-ch.addEventListener("pointerdown",e=>{P.set(e.pointerId,{x:e.clientX,y:e.clientY});
+function scrubAt(cx){if(!full||vm==="sales")return;const v=view||full,f=frac(cx,0,false).fx;
+ scrub=Math.min(SPAN,Math.max(0,-(v.x0+f*(v.x1-v.x0))));draw()}
+ch.addEventListener("pointerdown",e=>{
+ const z=e.target&&e.target.dataset&&e.target.dataset.z;
+ if(z&&full){axis={id:e.pointerId,z,x:e.clientX,y:e.clientY,v:{...(view||full)}};moved=true;try{ch.setPointerCapture(e.pointerId)}catch{};if(e.preventDefault)e.preventDefault();return}
+ P.set(e.pointerId,{x:e.clientX,y:e.clientY});
  if(P.size===1){moved=false;pinched=false;st0={x:e.clientX,y:e.clientY}}
  if(P.size===2){pinched=true;moved=true;pd=dist();pc=mid();P.forEach((_,id)=>{try{ch.setPointerCapture(id)}catch{}})}});
-addEventListener("pointermove",e=>{if(!P.has(e.pointerId))return;P.set(e.pointerId,{x:e.clientX,y:e.clientY});
+addEventListener("pointermove",e=>{
+ if(axis&&e.pointerId===axis.id){const dx=e.clientX-axis.x,dy=e.clientY-axis.y,v=axis.v;
+  if(axis.z==="y"){const h=(v.y1-v.y0)*Math.exp(dy*.008),c=(v.y0+v.y1)/2;setView({x0:v.x0,x1:v.x1,y0:c-h/2,y1:c+h/2})}
+  else{const w=(v.x1-v.x0)*Math.exp(-dx*.008);setView({x0:v.x1-w,x1:v.x1,y0:v.y0,y1:v.y1})}
+  return}
+ if(!P.has(e.pointerId))return;P.set(e.pointerId,{x:e.clientX,y:e.clientY});
  if(P.size===2){const nd=dist(),m=mid();if(pd&&nd&&pc)gesture(frac(pc.x,pc.y,false),frac(m.x,m.y,false),pd/nd);pd=nd;pc=m}
  else if(P.size===1&&!pinched){if(!moved&&Math.hypot(e.clientX-st0.x,e.clientY-st0.y)>6){moved=true;try{ch.setPointerCapture(e.pointerId)}catch{}}
   if(moved)scrubAt(e.clientX)}});
-const up=e=>{const was=P.size===1&&P.has(e.pointerId);P.delete(e.pointerId);pd=0;pc=null;
- if(was&&!moved&&!pinched&&e.type==="pointerup"&&!(e.target.closest&&e.target.closest(".pt")))scrubAt(e.clientX)};
+const up=e=>{if(axis&&e.pointerId===axis.id){axis=null;return}
+ const was=P.size===1&&P.has(e.pointerId);P.delete(e.pointerId);pd=0;pc=null;
+ if(was&&!moved&&!pinched&&e.type==="pointerup"&&!(e.target.closest&&e.target.closest(".pt,.bn")))scrubAt(e.clientX)};
 addEventListener("pointerup",up);addEventListener("pointercancel",up);
 ch.addEventListener("wheel",e=>{if(!full)return;e.preventDefault();const c=frac(e.clientX,e.clientY);
  const f=Math.exp(Math.max(-60,Math.min(60,e.deltaY))*.003),v=view||full,w=v.x1-v.x0,hh=v.y1-v.y0,cx=v.x0+c.fx*w,cy=v.y1-c.fy*hh;
@@ -233,19 +379,44 @@ const tcgSearch=q=>"https://www.tcgplayer.com/search/pokemon/product?"+new URLSe
 const vname=k=>k.replace(/([A-Z])/g," $1").replace(/^./,c=>c.toUpperCase());
 const pf=v=>v==null?"–":money(v);
 function renderTcg(j,q){
- const cards=(j.cards||[]).map(c=>{const rows=Object.entries(c.prices||{}).map(([k,p])=>`<tr><td>${esc(vname(k))}</td><td>${pf(p.low)}</td><td>${pf(p.mid)}</td><td>${pf(p.high)}</td><td><b>${pf(p.market)}</b></td></tr>`).join("");
+ const cards=(j.cards||[]).slice(0,6).map(c=>{const rows=Object.entries(c.prices||{}).map(([k,p])=>`<tr><td>${esc(vname(k))}</td><td>${pf(p.low)}</td><td>${pf(p.mid)}</td><td>${pf(p.high)}</td><td><b>${pf(p.market)}</b></td></tr>`).join("");
   const img=safeUrl(c.image),link=safeUrl(c.tcgUrl);
-  return `<div class="tc">${img?`<img src="${esc(img)}" alt="${esc(c.name)}">`:""}<div style="flex:1;min-width:0"><b>${esc(c.name)}</b> <span class="mu">${esc(c.set||"")} · ${esc(c.number)}${c.printedTotal?"/"+esc(c.printedTotal):""}</span><div class="mu" style="font-size:12.5px">${c.updated?"TCGplayer prices updated "+esc(c.updated):"No TCGplayer prices listed for this card"}</div>${rows?`<table><tr><th>Printing</th><th>Low</th><th>Mid</th><th>High</th><th>Market</th></tr>${rows}</table>`:""}${link?`<a class="btn" href="${esc(link)}" target="_blank" rel="noopener">Open on TCGplayer</a>`:""}</div></div>`}).join("");
+  return `<div class="tc">${img?`<img src="${esc(img)}" alt="${esc(c.name)}">`:""}<div style="flex:1;min-width:0"><b>${esc(c.name)}</b> <span class="mu">${esc(c.set||"")}${c.year?" · "+esc(c.year):""} · ${esc(c.number)}${c.printedTotal?"/"+esc(c.printedTotal):""}</span><div class="mu" style="font-size:12.5px">${c.updated?"TCGplayer prices updated "+esc(c.updated):"No TCGplayer prices listed for this card"}</div>${rows?`<table><tr><th>Printing</th><th>Low</th><th>Mid</th><th>High</th><th>Market</th></tr>${rows}</table>`:""}${link?`<a class="btn" href="${esc(link)}" target="_blank" rel="noopener">Open on TCGplayer</a>`:""}</div></div>`}).join("");
  $("tcg").innerHTML=(cards||`<p class="sm">No matching card found in the TCGplayer price list. Very new or unusual items can be missing.</p>`)+`<a class="btn o" href="${esc(safeUrl(j.searchUrl)||tcgSearch(q))}" target="_blank" rel="noopener">Search TCGplayer for this card</a><p class="sm">Prices are TCGplayer's market figures for each printing, via pokemontcg.io. They aren't split by condition, and TCGplayer doesn't offer condition prices or sold sales through a free feed, so open the card on TCGplayer to see those.</p>`}
 async function loadTcg(){
- const q=$("q").value.trim(),box=$("tcg");
- if(!q){box.innerHTML='<p class="sm">Search for a card first, then come back to this tab.</p>';return}
+ const q=$("q").value.trim(),bx=$("tcg");
+ if(!q){bx.innerHTML='<p class="sm">Search for a card first, then come back to this tab.</p>';return}
  if(q===tcgQ)return;
- box.innerHTML='<p class="sm">Loading TCGplayer prices…</p>';
- try{const r=await fetch("/api/tcg?q="+encodeURIComponent(q));const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);tcgQ=q;renderTcg(j,q)}
- catch(e){box.innerHTML=`<p class="sm">Couldn't load TCGplayer prices (${esc(e.message)}).</p><a class="btn o" href="${esc(tcgSearch(q))}" target="_blank" rel="noopener">Search TCGplayer for this card</a>`}}
+ bx.innerHTML='<p class="sm">Loading TCGplayer prices…</p>';
+ try{const j=await getTcg(q);tcgQ=q;renderTcg(j,q)}
+ catch(e){bx.innerHTML=`<p class="sm">Couldn't load TCGplayer prices (${esc(e.message)}).</p><a class="btn o" href="${esc(tcgSearch(q))}" target="_blank" rel="noopener">Search TCGplayer for this card</a>`}}
 $("tb").onclick=e=>{const k=e.target.dataset.t;if(!k)return;tab=k;
  [...$("tb").children].forEach(b=>b.setAttribute("aria-pressed",b.dataset.t===k));
  $("ebay").hidden=k!=="ebay";$("tcg").hidden=k!=="tcg";if(k==="tcg")loadTcg();else draw()};
+function pillBar(id,opts,cur,on){$(id).innerHTML=opts.map(([k,l])=>`<button class="pill" type="button" data-k="${k}" aria-pressed="${k===cur}">${l}</button>`).join("");
+ $(id).onclick=e=>{const k=e.target.dataset.k;if(!k)return;$(id).querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.k===k));on(k);view=null;scrub=null;draw()}}
+pillBar("ln",[["any","Any language"],["en","English"],["jp","Japanese"],["kr","Korean"],["cn","Chinese"],["other","Other"]],lmode,k=>lmode=k);
+pillBar("ed",[["any","Any edition"],["1st","1st Edition"],["shadowless","Shadowless"],["unlimited","Unlimited"],["none","Not stated"]],emode,k=>emode=k);
+pillBar("sf",[["any","For sale: any"],["auction","Auction"],["bin","Buy It Now"],["offer","Best Offer"]],smode,k=>smode=k);
+function ptxt(){$("pt").textContent=(pr.a?fmt(Math.round(pv(pr.a))):fmt(pr.min))+" to "+(pr.b<200?fmt(Math.round(pv(pr.b))):"no limit")}
+function initPrice(){const a=data.filter(x=>x.rel!==false).map(x=>x.price);if(!a.length)return;
+ pr={min:Math.floor(Math.min(...a)),max:Math.ceil(Math.max(...a)),a:0,b:200};pdr.lo=0;pdr.hi=200;pdr.paint();$("pw2").hidden=pr.max<=pr.min;ptxt()}
+function updBad(){$("tX").hidden=!bad.size;$("tX").textContent=`Show ${bad.size} hidden seller${bad.size===1?"":"s"}`}
+$("tX").onclick=()=>{bad.clear();updBad();draw()};
+$("tP").onclick=e=>{shipOn=!shipOn;e.target.setAttribute("aria-pressed",shipOn);tag();initPrice();view=null;scrub=null;draw()};
+$("tO").onclick=e=>{outl=!outl;e.target.setAttribute("aria-pressed",outl);view=null;draw()};
+$("tD").onclick=e=>{dedupe=!dedupe;e.target.setAttribute("aria-pressed",dedupe);draw()};
+function csvText(){const c=v=>{v=v==null?"":String(v);if(/^[=+\-@\t\r]/.test(v))v="'"+v;return /[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
+ const rows=[["type","date","price","listed_price","shipping","grader","grade","condition","finish","language","edition","format","best_offer","seller","title","url"]];
+ for(const x of expRows)rows.push([x.type,new Date(Date.now()-x.d*864e5).toISOString().slice(0,10),x.price,x.p0,x.ship,x.grader,x.grade,x.cond,x.f2,x.lang,x.ed,x.fmt,x.offer?"yes":"",x.seller,x.title,x.url]);
+ return rows.map(r=>r.map(c).join(",")).join("\n")}
+$("ex").onclick=()=>{try{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csvText()],{type:"text/csv"}));a.download="price-plot-"+($("q").value.trim().replace(/[^a-z0-9]+/gi,"-").slice(0,40)||"export")+".csv";document.body.appendChild(a);a.click();a.remove()}catch(e){$("status").textContent="Couldn't export: "+e.message}};
+function saved(){try{return JSON.parse(localStorage.getItem("pp_saved")||"[]").filter(s=>typeof s==="string").slice(0,30)}catch{return[]}}
+function renderSaved(){$("sv").innerHTML=`<button class="pill" type="button" data-s="+">★ Save this search</button>`+saved().map((s,i)=>`<button class="pill" type="button" data-s="${i}">${esc(s)}</button><button class="pill" type="button" data-x="${i}" aria-label="Remove ${esc(s)}">×</button>`).join("")}
+$("sv").onclick=e=>{const d=e.target.dataset,a=saved();
+ if(d.s==="+"){const q=$("q").value.trim();if(q&&!a.includes(q)){a.unshift(q);try{localStorage.setItem("pp_saved",JSON.stringify(a.slice(0,30)))}catch{}}renderSaved()}
+ else if(d.s!=null){$("q").value=a[+d.s]||"";tcgQ="";load();if(tab==="tcg")loadTcg()}
+ else if(d.x!=null){a.splice(+d.x,1);try{localStorage.setItem("pp_saved",JSON.stringify(a))}catch{}renderSaved()}};
+renderSaved();
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script></body></html>
