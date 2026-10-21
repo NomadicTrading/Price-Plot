@@ -515,6 +515,88 @@ app.get("/api/tcgmarket", async (req, res) => {
   }
 });
 
+// TCGplayer individual sold sales and live listings for one product, by condition and printing.
+// These come from the same endpoints TCGplayer's own product page uses. They are not an official,
+// documented API, so they can change or start refusing requests without notice; the page then says so.
+// Every sale seen is saved (like eBay sold sales) so history builds past what TCGplayer shows at once.
+const TP_HEAD = {
+  "Content-Type": "application/json",
+  Accept: "application/json, text/plain, */*",
+  Origin: "https://www.tcgplayer.com",
+  Referer: "https://www.tcgplayer.com/",
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36",
+};
+const TP_SALES_PAGES = Math.max(1, Number(process.env.TCG_SALES_PAGES) || 8); // 25 sales per page
+const TP_LIST_PAGES = Math.max(1, Number(process.env.TCG_LISTING_PAGES) || 4); // 50 listings per page
+async function tpPost(url, body) {
+  const r = await fetch(url, { method: "POST", headers: TP_HEAD, body: JSON.stringify(body), signal: AbortSignal.timeout(20000) });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j) throw new Error(r.status === 403 || r.status === 429 ? "TCGplayer is refusing requests from the server right now" : `TCGplayer returned ${r.status}`);
+  return j;
+}
+async function tpSales(id) {
+  const out = [];
+  for (let p = 0; p < TP_SALES_PAGES; p++) {
+    const j = await tpPost(`https://mpapi.tcgplayer.com/v2/product/${id}/latestsales`, { conditions: [], languages: [], variants: [], listingType: "All", offset: p * 25, limit: 25 });
+    const d = j.data || [];
+    for (const s of d) {
+      const price = Number(s.purchasePrice), date = new Date(s.orderDate);
+      if (!(price > 0) || isNaN(date)) continue;
+      out.push({
+        price, ship: s.shippingPrice != null ? Number(s.shippingPrice) : null, date: date.toISOString(),
+        cond: s.condition || "", print: s.variant || "", lang: s.language || "", qty: Number(s.quantity) || 1,
+        title: s.title || "", lt: s.listingType || "",
+      });
+    }
+    if (d.length < 25 || j.nextPage === "" || j.nextPage === false) break;
+  }
+  return out;
+}
+async function tpListings(id) {
+  const out = [];
+  for (let p = 0; p < TP_LIST_PAGES; p++) {
+    const j = await tpPost(`https://mp-search-api.tcgplayer.com/v1/product/${id}/listings`, {
+      filters: { term: { sellerStatus: "Live", channelId: 0 }, range: { quantity: { gte: 1 } }, exclude: { channelExclusion: 0 } },
+      from: p * 50, size: 50, sort: { field: "price+shipping", order: "asc" }, context: { shippingCountry: "US", cart: {} }, aggregations: ["listingType"],
+    });
+    const blk = (j.results || [])[0] || {}, rs = blk.results || [];
+    for (const l of rs) {
+      const price = Number(l.price);
+      if (!(price > 0)) continue;
+      out.push({
+        price, ship: l.shippingPrice != null ? Number(l.shippingPrice) : null,
+        cond: l.condition || "", print: l.printing || "", lang: l.language || "", qty: Number(l.quantity) || 1,
+        seller: l.sellerName || "", direct: !!l.directProduct, title: l.customData?.title || "", lt: l.listingType || "",
+      });
+    }
+    if (rs.length < 50 || (blk.totalResults != null && (p + 1) * 50 >= blk.totalResults)) break;
+  }
+  return out;
+}
+const tpCache = new Map();
+app.get("/api/tcgplayer", async (req, res) => {
+  const id = String(req.query.id || "").replace(/\D/g, "").slice(0, 12);
+  if (!id) return res.status(400).json({ error: "Missing TCGplayer product id" });
+  const hit = tpCache.get(id);
+  if (hit && hit.exp > Date.now()) return res.json(hit.data);
+  const warnings = [];
+  const [s, l] = await Promise.all([
+    tpSales(id).catch((e) => (console.error("tcg sales:", e.message), warnings.push("Sold sales unavailable: " + e.message), null)),
+    tpListings(id).catch((e) => (console.error("tcg listings:", e.message), warnings.push("Live listings unavailable: " + e.message), null)),
+  ]);
+  const key = "tcgsold:" + id;
+  const bucket = await bucketFor(key);
+  for (const x of s || []) bucket[[x.date, x.price, x.cond, x.print, x.lang, x.qty].join("|")] = x;
+  for (const [k, x] of Object.entries(bucket)) if (Date.now() - new Date(x.date) > YEAR) delete bucket[k];
+  if (s && s.length) await saveBucket(key);
+  const sold = Object.values(bucket);
+  if (!sold.length && !l) return res.status(502).json({ error: warnings.join(" ") });
+  const data = { sold, listings: l || [], warnings, url: `https://www.tcgplayer.com/product/${id}` };
+  // a failed lookup is retried after 5 minutes instead of the usual cache time
+  tpCache.set(id, { exp: Date.now() + (s && l ? LISTINGS_CACHE_MIN : 5) * 60000, data });
+  res.json(data);
+});
+
 // eBay "Marketplace Account Deletion" notifications (required to keep your keys enabled).
 // This app stores no eBay user data, so there is nothing to delete: we only answer eBay's
 // challenge and acknowledge notifications.

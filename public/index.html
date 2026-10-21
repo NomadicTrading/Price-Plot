@@ -61,6 +61,8 @@ svg{display:block;width:100%;height:auto;user-select:none;-webkit-user-select:no
 #sl .r span{color:var(--mut)}#sl .r b{font-size:18px}
 #detail{border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-height:48px;background:var(--soft);margin-top:12px}
 #detail a{color:var(--link);font-size:15px}#detail .p{font-size:20px;font-weight:700;margin:2px 0}#detail .m{color:var(--mut);font-size:12.5px}
+#tdt{border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-height:48px;background:var(--soft);margin-top:12px}#tdt .p{font-size:20px;font-weight:700;margin:2px 0}#tdt .m{color:var(--mut);font-size:12.5px}#tdt .btn{margin-top:8px}
+#tsc{position:relative;margin-top:8px}#tsc svg{display:block;width:100%;height:auto}#tst .tc th,#tst .tc td{padding:7px 4px;font-size:13px}
 #scrub{border-radius:8px;padding:8px 12px;margin:8px 0 2px;background:var(--soft);min-height:48px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;font-size:13.5px}#scrub b{font-size:18px}#scrub span{color:var(--mut);font-size:12.5px}
 .mf{margin-top:10px}.mf summary{cursor:pointer;font-weight:700;padding:8px 0}
 #qc{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;background:var(--soft);border-radius:10px;padding:10px 14px;margin-top:16px}#qc b{font-size:22px}#qc span{color:var(--mut);font-size:12.5px}
@@ -434,18 +436,74 @@ function drawTcg(){
  const pick=TM.cards.length>1?`<div class="tk" role="group" aria-label="Matching cards">${TM.cards.map((k,i)=>`<button class="pill" type="button" data-ci="${i}" aria-pressed="${i===tci}">${esc(k.name)} <span class="mu">· ${esc(k.set||"")} · ${esc(k.number||"")}</span></button>`).join("")}</div>`:"";
  const rows=TCOND.filter(([n])=>byC[n]).map(([n,a,col])=>{const v=byC[n];return `<tr><td><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${col};margin-right:6px"></i>${a}</td><td><b>${pf(v.price)}</b></td><td>${pct(v.ch7)}</td><td>${pct(v.ch30)}</td></tr>`}).join("");
  const hasHist=vs2.some(v=>v.hist&&v.hist.length>1);
+ /* TCGplayer sold cards and live listings for this product (loaded once per product, then redrawn) */
+ if(tid&&!TPD.has(tid)){TPD.set(tid,{loading:true});
+  fetch("/api/tcgplayer?id="+encodeURIComponent(tid)).then(async r=>{const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j})
+   .then(j=>TPD.set(tid,j),e=>TPD.set(tid,{error:e.message})).then(()=>{if(tab==="tcg"&&TM&&TM.cards[tci]===c)drawTcg()})}
+ const tpd=tid?TPD.get(tid):null,tpOk=tpd&&!tpd.loading&&!tpd.error;
+ if(tpOk)for(const x of [...tpd.sold,...tpd.listings])if(tpPrintOk(x)&&tpLangOk(x)){const n=tcN(x.cond);if(n&&!byC[n])byC[n]=null}
  $("tcg").innerHTML=pick+`<div class="tc"><div style="flex:1;min-width:0"><b>${esc(c.name)}</b> <span class="mu">${esc(c.set||"")} · ${esc(c.number||"")}${c.rarity?" · "+esc(c.rarity):""}</span>
 ${c.tcgUrl?`<div><a class="btn" href="${esc(safeUrl(c.tcgUrl))}" target="_blank" rel="noopener">Open on TCGplayer</a></div>`:""}</div>${tImgs.length?`<a href="${esc(safeUrl(c.tcgUrl)||tImgs[0])}" target="_blank" rel="noopener" aria-label="${esc(c.name)} on TCGplayer"><img class="tci" id="tci" src="${esc(tImgs[0])}" alt="${esc(c.name)} card" data-alt="${esc(tImgs.slice(1).join(" "))}"></a>`:""}</div>
 <div class="bar fs" id="tpr" role="group" aria-label="Printing">${prints.map(p=>`<button class="pill" type="button" data-tp="${esc(p)}" aria-pressed="${p===tprint}">${esc(p)}</button>`).join("")}</div>
-<div class="bar fs" id="tcd" role="group" aria-label="Condition">${TCOND.filter(([n])=>byC[n]).map(([n,a])=>`<button class="pill" type="button" data-tc="${n}" aria-pressed="${tconds.has(n)}">${a}</button>`).join("")}</div>
+<div class="bar fs" id="tcd" role="group" aria-label="Condition">${TCOND.filter(([n])=>n in byC).map(([n,a])=>`<button class="pill" type="button" data-tc="${n}" aria-pressed="${tconds.has(n)}">${a}</button>`).join("")}</div>
 <div class="ch-h"><div><h2>Market Price</h2><div class="mu" style="font-size:12.5px">TCGplayer market price by condition</div></div></div>
 <div id="trd"></div>
 ${hasHist?`<div id="tch"></div><div class="seg" id="trg" role="group" aria-label="Time range" style="margin-top:8px">${TRNG.map(([k,l])=>`<button type="button" data-tr="${k}" aria-pressed="${k===trng}">${l}</button>`).join("")}</div>`:`<p class="sm">No price history came back for this card, so only today's prices are shown.</p>`}
 ${rows?`<div class="tc" style="border:0"><table><tr><th>Condition</th><th>Market</th><th>7 days</th><th>30 days</th></tr>${rows}</table></div>`:`<p class="sm">No TCGplayer prices for this printing.</p>`}
+<div class="ch-h"><div><h2>Sales &amp; Listings</h2><div class="mu" style="font-size:12.5px">Sold cards and live listings on TCGplayer, by condition</div></div><button class="pill" type="button" style="white-space:nowrap" data-tship="1" aria-pressed="${tship}">Price + shipping</button></div>
+${tid?`<div id="tsc"></div><div class="seg" id="tsr" role="group" aria-label="Sales time range" style="margin-top:8px">${TSR.map(([k,l])=>`<button type="button" data-ts="${k}" aria-pressed="${k===tsrng}">${l}</button>`).join("")}</div>
+<div class="lg"><span><i style="background:var(--mut)"></i>Sold</span><span><i style="border:2px solid var(--mut)"></i>Listed now (grouped beside today)</span><span>Colors match the condition buttons above.</span></div>
+<div id="tst"></div><div id="tdt">Tap a dot to see the sale or listing.</div>`:`<p class="sm">This card has no TCGplayer product number, so its sales and listings can't be loaded.</p>`}
 <a class="btn o" href="${esc(tcgSearch(tQ))}" target="_blank" rel="noopener">Search TCGplayer for this card</a>
-<p class="sm">Prices are TCGplayer market prices, updated about daily, via JustTCG. TCGplayer doesn't offer its individual sales or live listings through any open data feed, so use the eBay tab for those, or open the card on TCGplayer.${TM.left!=null?` ${esc(TM.left)} price lookups left today.`:""}</p>`;
+<p class="sm">Market prices are TCGplayer market prices, updated about daily, via JustTCG. Sold cards and live listings come straight from TCGplayer's product page and refresh every 30 minutes; TCGplayer doesn't link individual sales, so tapping one opens the card on TCGplayer filtered to that condition.${tpd&&tpd.warnings&&tpd.warnings.length?" "+esc(tpd.warnings.join(" ")):""}${TM.left!=null?` ${esc(TM.left)} price lookups left today.`:""}</p>`;
  const ti=$("tci");if(ti)ti.onerror=()=>{const rest=(ti.dataset.alt||"").split(" ").filter(Boolean);if(rest.length){ti.dataset.alt=rest.slice(1).join(" ");ti.src=rest[0]}else ti.remove()};if(ti&&ti.complete&&!ti.naturalWidth)ti.onerror();
- if(hasHist)drawTcgChart(vs2);else readout(vs2,null)}
+ if(hasHist)drawTcgChart(vs2);else readout(vs2,null);
+ if(tid){drawTpScatter(tpd);if(tsel!=null&&tpts[tsel])tpPick(tsel);else tsel=null}}
+/* ---- TCGplayer sold + listed scatter ---- */
+const TPD=new Map(),TSR=[["30","1M"],["90","3M"],["180","6M"],["365","1Y"],["all","All"]];
+let tsrng="90",tship=false,tpts=[],tsel=null;
+const tcN=c=>{c=String(c||"").toLowerCase();return c.startsWith("near mint")?"Near Mint":c.startsWith("lightly")?"Lightly Played":c.startsWith("moderately")?"Moderately Played":c.startsWith("heavily")?"Heavily Played":c.startsWith("damaged")?"Damaged":""};
+const tpPrintOk=x=>!x.print||!tprint||x.print.toLowerCase()===tprint.toLowerCase();
+const tpLangOk=x=>!x.lang||/english/i.test(x.lang);
+function drawTpScatter(d){
+ const box=$("tsc");if(!box)return;
+ if(!d||d.loading){box.innerHTML='<p class="sm">Loading TCGplayer sales and listings…</p>';$("tst").innerHTML="";return}
+ if(d.error){box.innerHTML=`<p class="sm">TCGplayer sales and listings are unavailable right now (${esc(d.error)}).</p>`;$("tst").innerHTML="";return}
+ const now=Date.now(),days=tsrng==="all"?MAXD:+tsrng,CC=Object.fromEntries(TCOND.map(([n,a,c])=>[n,{a,c}]));
+ const val=x=>+(x.price+(tship&&x.ship?x.ship:0)).toFixed(2);
+ const base=x=>tpPrintOk(x)&&tpLangOk(x)&&tconds.has(x.c2);
+ const sold=d.sold.map(x=>({...x,type:"Sold",c2:tcN(x.cond),dd:Math.max(0,(now-new Date(x.date))/864e5)})).filter(x=>base(x)&&x.dd<=days).map(x=>({...x,v:val(x)}));
+ const act=d.listings.map(x=>({...x,type:"For sale",c2:tcN(x.cond),dd:0})).filter(base).map(x=>({...x,v:val(x)}));
+ /* stats per selected condition */
+ const med=a=>{if(!a.length)return null;const s=a.slice().sort((p,q)=>p-q),h=s.length>>1;return s.length%2?s[h]:(s[h-1]+s[h])/2};
+ const srows=TCOND.filter(([n])=>tconds.has(n)).map(([n,a,col])=>{const s=sold.filter(x=>x.c2===n),l=act.filter(x=>x.c2===n),last=s.length?s.reduce((p,q)=>q.dd<p.dd?q:p):null;
+  if(!s.length&&!l.length)return"";
+  return `<tr><td><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${col};margin-right:6px"></i>${a}</td><td>${s.reduce((t,x)=>t+x.qty,0)}</td><td><b>${pf(med(s.map(x=>x.v)))}</b></td><td>${last?pf(last.v):"–"}</td><td><b>${l.length?pf(Math.min(...l.map(x=>x.v))):"–"}</b></td><td>${l.reduce((t,x)=>t+x.qty,0)}</td></tr>`}).join("");
+ $("tst").innerHTML=srows?`<div class="tc" style="border:0"><table><tr><th>Condition</th><th>Sold</th><th>Median sold</th><th>Last sold</th><th>Lowest listed</th><th>Listed</th></tr>${srows}</table></div>`:"";
+ if(!sold.length&&!act.length){box.innerHTML=`<p class="sm">No TCGplayer sales or listings for the selected conditions and printing${tsrng==="all"?"":" in this range"}.</p>`;tpts=[];return}
+ const pts=[...sold,...act];tpts=pts;
+ const dmax=sold.reduce((a,x)=>Math.max(a,x.dd),0),S=Math.max(7,Math.min(days,Math.ceil(dmax*1.04)+1));
+ const W=Math.max(300,box.clientWidth||600),H=Math.round(Math.min(380,W*.7)),m={l:8,r:58,t:12,b:26};
+ const gut=act.length?Math.round(Math.min(Math.max(48,W*.26),18+9.2*Math.ceil(Math.sqrt(act.length)*1.2))):0,iw=W-m.l-m.r-gut,ih=H-m.t-m.b;
+ const vs=pts.map(x=>x.v);let lo=Math.min(...vs),hi=Math.max(...vs);const pad=(hi-lo)*.1||hi*.1||1;lo=Math.max(0,lo-pad);hi+=pad;
+ const X=dd=>m.l+(1-dd/S)*iw,Y=p=>m.t+(1-(p-lo)/(hi-lo))*ih;
+ let g="";const ys=nice((hi-lo)/Math.max(3,Math.floor(ih/40)));
+ for(let y=Math.ceil(lo/ys)*ys;y<=hi+1e-9;y+=ys)g+=`<line x1="${m.l}" x2="${W-m.r}" y1="${Y(y)}" y2="${Y(y)}" stroke="var(--line)" stroke-dasharray="4 4"/><text x="${W-4}" y="${Y(y)+4}" text-anchor="end" font-size="11.5" fill="var(--mut)">${fmt(+y.toFixed(2))}</text>`;
+ const nl=4;for(let i=0;i<nl;i++){const dd=S-S*i/nl;g+=`<text x="${i?X(dd):m.l}" y="${H-6}" text-anchor="${i?"middle":"start"}" font-size="11.5" fill="var(--mut)">${new Date(now-dd*864e5).toLocaleDateString(undefined,S>180?{month:"short",year:"2-digit"}:{month:"short",day:"numeric"})}</text>`}
+ g+=`<line x1="${X(0)}" x2="${X(0)}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--line)"/><text x="${X(0)}" y="${H-6}" text-anchor="middle" font-size="11.5" font-weight="700" fill="var(--fg)">Today</text>`;
+ const DR=3.6,D=2*DR+1.6,cx=pts.map(x=>X(x.dd));
+ if(act.length){const ids=[];pts.forEach((x,i)=>{if(x.type==="For sale")ids.push(i)});ids.sort((a,b)=>pts[a].v-pts[b].v);
+  const placed=[],cols=Math.floor(gut/D)+1,b0=X(0)+DR+3;
+  ids.forEach(i=>{const cy=Y(pts[i].v);let ox=0;for(let k=0;k<cols;k++){ox=k*D;if(!placed.some(p=>Math.abs(p.y-cy)<D&&Math.abs(p.x-(b0+ox))<D))break}cx[i]=b0+ox;placed.push({x:cx[i],y:cy})})}
+ pts.forEach((x,i)=>{const cy=Y(x.v),a=x.type==="For sale",col=(CC[x.c2]||{}).c||"var(--gray)",r=a?DR+.2:DR+(x.qty>1?Math.min(2,(x.qty-1)*.5):0);
+  g+=`<g class="pt" data-tpi="${i}" tabindex="0" role="button" aria-label="${x.type} ${(CC[x.c2]||{}).a||""} ${fmt(x.v)}"><title>${esc(x.type+" · "+((CC[x.c2]||{}).a||"")+" · "+fmt(x.v)+(x.qty>1?" · qty "+x.qty:""))}</title><circle cx="${cx[i]}" cy="${cy}" r="10" fill="transparent"/><circle class="dot" cx="${cx[i]}" cy="${cy}" r="${r}" fill="${a?"var(--bg)":col}" fill-opacity="${a?1:.75}" stroke="${a?col:"var(--bg)"}" stroke-width="${a?1.7:.8}"/></g>`});
+ box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Scatter plot of TCGplayer sold cards and live listings">${g}</svg>`}
+function tpPick(i){const x=tpts[i];if(!x)return;tsel=i;const c=TM&&TM.cards[tci],d=TPD.get(c&&(c.tcgId||(String(c.tcgUrl||"").match(/product\/(\d+)/)||[])[1]));
+ const CC=Object.fromEntries(TCOND.map(([n,a])=>[n,a])),u=new URL((d&&d.url)||"https://www.tcgplayer.com/");
+ if(x.c2)u.searchParams.set("Condition",x.c2);if(x.print)u.searchParams.set("Printing",x.print);u.searchParams.set("Language",x.lang||"English");
+ const when=x.type==="Sold"?"Sold "+new Date(x.date).toLocaleString(undefined,{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"}):"Listed now"+(x.seller?" by "+x.seller:"")+(x.direct?" · Direct":"");
+ const sh=x.ship==null?"":x.ship===0?" · Free shipping":" · "+money(x.ship)+" shipping";
+ $("tdt").innerHTML=`${x.title?`<div>${esc(x.title)}</div>`:""}<div class="p">${money(x.v)}</div><div class="m">${esc(when)} · ${esc(CC[x.c2]||x.cond||"Condition not given")}${x.print?" · "+esc(x.print):""}${x.qty>1?` · ${x.qty} ${x.type==="Sold"?"sold":"available"}`:""}${tship&&x.ship?" · includes shipping":sh}</div><a class="btn" href="${esc(u.href)}" target="_blank" rel="noopener">Open on TCGplayer</a>`}
 function readout(vs,t){
  const on=TCOND.filter(([n])=>tconds.has(n));
  const at=(v)=>{if(t==null||!v.hist||!v.hist.length)return v.price;let b=null;for(const h of v.hist)if(h[0]<=t)b=h;return b?b[1]:null};
@@ -471,13 +529,18 @@ function drawTcgChart(vs){
  sv.onpointerdown=e=>at(e.clientX);sv.onpointermove=e=>{if(e.pointerType==="mouse"||e.buttons)at(e.clientX)};
  sv.onpointerleave=()=>{line.setAttribute("opacity","0");readout(vs,null)};
  readout(vs,null)}
-$("tcg").onclick=e=>{const d=e.target.closest("button")?.dataset;if(!d||!TM)return;
+$("tcg").onclick=e=>{const dot=e.target.closest&&e.target.closest("[data-tpi]");if(dot){tpPick(+dot.dataset.tpi);return}
+ const d=e.target.closest("button")?.dataset;if(!d||!TM)return;
+ tsel=null;
+ if(d.ts){tsrng=d.ts;drawTcg();return}
+ if(d.tship){tship=!tship;drawTcg();return}
  if(d.ci!=null){tci=+d.ci;tprint=""}
  else if(d.tp!=null)tprint=d.tp;
  else if(d.tc){tconds.has(d.tc)?tconds.delete(d.tc):tconds.add(d.tc)}
  else if(d.tr)trng=d.tr;else return;
  drawTcg()};
-addEventListener("resize",()=>{if(tab==="tcg"&&TM&&$("tch"))drawTcg()});
+$("tcg").onkeydown=e=>{const dot=(e.key==="Enter"||e.key===" ")&&e.target.closest&&e.target.closest("[data-tpi]");if(dot){e.preventDefault();tpPick(+dot.dataset.tpi)}};
+let tW=innerWidth;addEventListener("resize",()=>{if(innerWidth===tW)return;tW=innerWidth;if(tab==="tcg"&&TM&&($("tch")||$("tsc")))drawTcg()});
 /* TCGplayer results are saved on this device for 24 hours, so repeat searches cost no lookups,
    even after the server restarts. Keeps the 15 most recent searches. */
 function tmGet(k){try{const x=JSON.parse(localStorage.getItem(k)||"null");return x&&Date.now()-x.t<864e5?x.j:null}catch{return null}}
