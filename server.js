@@ -374,6 +374,97 @@ app.get("/api/tcg", async (req, res) => {
   }
 });
 
+// TCGplayer market prices by condition and printing, with up to 1 year of daily history, via JustTCG
+// (an independent service). Set JUSTTCG_API_KEY to use it. The free plan allows about 100 requests a day,
+// so each search is cached for 12 hours and uses 1 to 3 requests.
+const JT_KEY = process.env.JUSTTCG_API_KEY;
+const jtCache = new Map();
+let jtLeft = null; // requests left today, as last reported by JustTCG
+async function jtCards(params) {
+  const r = await fetch("https://api.justtcg.com/v1/cards?" + new URLSearchParams(params), {
+    headers: { "x-api-key": JT_KEY },
+    signal: AbortSignal.timeout(25000),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(r.status === 429 ? "the daily TCGplayer price limit was reached, try again tomorrow" : r.status === 401 || r.status === 403 ? "the TCGplayer price key was refused, check JUSTTCG_API_KEY in Render" : j.error || `price service returned ${r.status}`);
+  const u = j._metadata || j.usage || {};
+  if (u.apiDailyRequestsRemaining != null) jtLeft = u.apiDailyRequestsRemaining;
+  return j;
+}
+// "004/102", "4/102" or "4" -> { n: "4", d: "102" }
+const splitNum = (x) => {
+  const m = /(\d+)\s*\/\s*(\d+)/.exec(String(x || ""));
+  if (m) return { n: String(+m[1]), d: String(+m[2]) };
+  const k = /(\d+)/.exec(String(x || ""));
+  return k ? { n: String(+k[1]), d: null } : null;
+};
+app.get("/api/tcgmarket", async (req, res) => {
+  if (!JT_KEY) return res.status(503).json({ error: "TCGplayer condition prices need JUSTTCG_API_KEY set in Render" });
+  const base = String(req.query.q || "").trim().slice(0, 100);
+  if (!base) return res.status(400).json({ error: "Missing q" });
+  const pq = parseQuery(base);
+  // the page may pass the exact card it already identified (name, set, number) so the search is precise
+  const hintName = String(req.query.name || "").slice(0, 60).trim();
+  const hintSet = norm(String(req.query.set || "").slice(0, 80));
+  const num = req.query.n ? { n: String(+req.query.n), d: req.query.d ? String(+req.query.d) : null } : pq.num;
+  const key = [base, hintName, hintSet, num?.n, num?.d].join("|").toLowerCase();
+  const hit = jtCache.get(key);
+  if (hit && hit.exp > Date.now()) return res.json({ ...hit.data, left: jtLeft });
+  const tokens = norm(pq.search.replace(/\d{1,3}\s*\/\s*\d{1,3}/, " ")).split(/\s+/).map((w) => w.replace(/[^a-z0-9]/g, "")).filter((w) => w && !STOP.has(w) && !NAME_SKIP.has(w) && !/^\d+$/.test(w));
+  const attempts = [...new Set([hintName, tokens.join(" "), tokens[0]].map((x) => (x || "").trim()).filter(Boolean))].slice(0, 2);
+  const numOk = (c) => {
+    if (!num) return false;
+    const c2 = splitNum(c.number);
+    return !!c2 && c2.n === num.n && (!num.d || !c2.d || c2.d === num.d);
+  };
+  try {
+    let found = [];
+    for (const q of attempts) {
+      found = [];
+      for (let offset = 0; offset < (num ? 60 : 20); offset += 20) {
+        const j = await jtCards({ q, game: "pokemon", include_price_history: "true", priceHistoryDuration: "1y", limit: "20", offset: String(offset) });
+        found.push(...(j.data || []));
+        if (!num || found.some(numOk) || !(j.meta || j.pagination || {}).hasMore) break;
+      }
+      if (found.length && (!num || found.some(numOk))) break;
+    }
+    const words = new Set([...tokens, ...hintSet.split(/\s+/)].filter(Boolean));
+    const setScore = (c) => norm(c.set_name || c.set || "").split(/[^a-z0-9]+/).filter((w) => words.has(w)).length;
+    const seen = new Set();
+    const cards = found
+      .filter((c) => c && c.id && !seen.has(c.id) && seen.add(c.id))
+      .map((c, i) => ({ c, i, exact: numOk(c), s: setScore(c) }))
+      .sort((a, b) => Number(b.exact) - Number(a.exact) || b.s - a.s || a.i - b.i)
+      .slice(0, 12)
+      .map(({ c, exact }, k) => ({
+        id: c.id,
+        name: c.name,
+        set: c.set_name || c.set,
+        number: c.number,
+        rarity: c.rarity,
+        exact,
+        tcgUrl: c.tcgplayerId ? `https://www.tcgplayer.com/product/${encodeURIComponent(c.tcgplayerId)}` : null,
+        variants: (c.variants || []).filter((v) => v.price != null || (v.priceHistory || []).length).map((v) => ({
+          cond: v.condition,
+          print: v.printing || "Normal",
+          lang: v.language || "English",
+          price: v.price,
+          ch7: v.priceChange7d ?? null,
+          ch30: v.priceChange30d ?? null,
+          updated: v.lastUpdated || null,
+          // full history only for the first few cards, to keep the response small
+          hist: k < 4 ? (v.priceHistory || []).filter((h) => h && h.p != null).map((h) => [h.t, h.p]) : [],
+        })),
+      }));
+    const data = { cards };
+    jtCache.set(key, { exp: Date.now() + 12 * 3600e3, data });
+    res.json({ ...data, left: jtLeft });
+  } catch (e) {
+    console.error(e);
+    res.status(502).json({ error: e.message });
+  }
+});
+
 // eBay "Marketplace Account Deletion" notifications (required to keep your keys enabled).
 // This app stores no eBay user data, so there is nothing to delete: we only answer eBay's
 // challenge and acknowledge notifications.
