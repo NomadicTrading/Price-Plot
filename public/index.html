@@ -125,6 +125,13 @@ footer{border-top:1px solid var(--line);margin-top:22px;padding:12px 0;color:var
 <footer><div class="wrap"><div class="thm"><span>Appearance</span><div class="seg" id="thm" role="group" aria-label="Light or dark mode"><button type="button" data-th="light">Light</button><button type="button" data-th="dark">Dark</button></div></div>Not affiliated with or endorsed by eBay Inc. Active listings come from eBay. Sold data, when shown, comes from an independent data service.</div></footer>
 <script>
 const $=id=>document.getElementById(id);
+/* As a home-screen app, opening a link in a new window leaves an empty "Search or enter website name" page
+   behind once eBay's or TCGplayer's own app takes over. So there, links go straight to the page instead: the
+   eBay or TCGplayer app opens if installed, otherwise iPhone shows the page over Price Plot with a Done button. */
+const HOME_APP=(()=>{try{return navigator.standalone===true||matchMedia("(display-mode: standalone)").matches}catch{return false}})();
+function openLink(u){if(!/^https:\/\//.test(u||""))return;if(HOME_APP)location.href=u;else window.open(u,"_blank","noopener")}
+if(HOME_APP)document.addEventListener("click",e=>{const a=e.target.closest&&e.target.closest('a[target="_blank"]');
+ if(!a||e.defaultPrevented||e.metaKey||e.ctrlKey)return;e.preventDefault();openLink(a.href)});
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmt=v=>"$"+v.toLocaleString(undefined,{minimumFractionDigits:Number.isInteger(v)?0:2,maximumFractionDigits:2});
 const money=v=>"$"+v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -358,7 +365,7 @@ function draw(){
   const LN={jp:"Japanese",kr:"Korean",cn:"Chinese",other:"Other language"},ED={"1st":"1st Edition",shadowless:"Shadowless",unlimited:"Unlimited"},ex=[x.type==="For sale"&&x.fmt?(x.fmt==="auction"?"Auction":"Buy It Now")+(x.offer?" or Best Offer":""):"",LN[x.lang],ED[x.ed]].filter(Boolean).join(" · "),sh=x.ship==null?"":x.ship===0?" · Free shipping":" · "+money(x.ship)+" shipping";
   $("detail").innerHTML=`<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a><div class="p">${money(x.price)}</div><div class="m">${t} · ${cl}${fl?" · "+fl:""}${ex?" · "+ex:""}${sh}</div>${x.seller?`<button class="pill" id="hs" type="button" style="margin-top:8px">Hide seller ${esc(x.seller)}</button>`:""}`;
   if($("hs"))$("hs").onclick=()=>{bad.add(x.seller);updBad();draw()};
-  window.open(x.url,"_blank","noopener")};
+  openLink(x.url)};
   el.addEventListener("click",pick);el.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();moved=false;pick()}})})}
 
 /* touch: one finger scrubs the trend, two fingers pinch and slide, dragging an axis stretches that axis */
