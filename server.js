@@ -96,15 +96,56 @@ function parseGrade(t) {
 // Field names follow eBay's docs; untested until you have access.
 const DB = "data/sold.json";
 const YEAR = 1000 * 864e5; // how long saved sales are kept
+// Saved data (sold history, the monthly request counter, recent lookups) lives in an Upstash Redis
+// database when UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are set, so it survives restarts and
+// redeploys. Without them it falls back to files in data/, which free Render wipes on every restart.
+// Temporary entries are given an expiry, so the database never needs eviction.
+const KV_URL = (process.env.UPSTASH_REDIS_REST_URL || "").replace(/\/+$/, "");
+const KV_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const kv = {
+  on: !!(KV_URL && KV_TOKEN),
+  async cmd(args) {
+    const r = await fetch(KV_URL, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${KV_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+      signal: AbortSignal.timeout(8000),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.error) throw new Error(j.error || `database returned ${r.status}`);
+    return j.result;
+  },
+  async get(k) {
+    if (!this.on) return null;
+    try { const v = await this.cmd(["GET", "pp:" + k]); return v == null ? null : JSON.parse(v); }
+    catch (e) { console.error("saved data read failed:", e.message); return null; }
+  },
+  async set(k, v, ttlSec) {
+    if (!this.on) return;
+    try { await this.cmd(["SET", "pp:" + k, JSON.stringify(v), ...(ttlSec ? ["EX", String(Math.max(1, Math.round(ttlSec)))] : [])]); }
+    catch (e) { console.error("saved data write failed:", e.message); }
+  },
+};
+console.log("Saved data:", kv.on ? "Upstash database" : "local files (lost on restart)");
+
 let store = {};
 try { store = JSON.parse(fs.readFileSync(DB, "utf8")); } catch {}
 function save() {
   fs.mkdirSync("data", { recursive: true });
   fs.writeFileSync(DB, JSON.stringify(store));
 }
+// one search's saved sales, loaded from the database the first time it's needed
+async function bucketFor(q) {
+  if (!store[q]) store[q] = (await kv.get("sold:" + q)) || {};
+  return store[q];
+}
+async function saveBucket(q) {
+  if (kv.on) await kv.set("sold:" + q, store[q]);
+  else save();
+}
 
 async function collectSold(q) {
-  const bucket = (store[q] ||= {});
+  const bucket = await bucketFor(q);
   for (let offset = 0; offset < 200; offset += 50) {
     const j = await ebay(
       "/buy/marketplace_insights/v1_beta/item_sales/search",
@@ -124,7 +165,7 @@ async function collectSold(q) {
     if (!j.next) break;
   }
   for (const [u, x] of Object.entries(bucket)) if (Date.now() - new Date(x.date) > YEAR) delete bucket[u];
-  save();
+  await saveBucket(q);
   return Object.values(bucket);
 }
 
@@ -139,27 +180,29 @@ const COMPS_MAX_PAGES = Math.max(1, Number(process.env.COMPS_MAX_PAGES) || 2);
 const COMPS_LIMIT = Number(process.env.COMPS_MONTHLY_LIMIT) || 90;
 const COMPS_REFRESH_MS = (Number(process.env.COMPS_REFRESH_HOURS) || 24) * 3600e3;
 const USAGE = "data/usage.json";
-let usage = {};
+let usage = {}, usageLoaded = false;
 try { usage = JSON.parse(fs.readFileSync(USAGE, "utf8")); } catch {}
-function useRequest() {
+async function useRequest() {
+  if (kv.on && !usageLoaded) { usage = (await kv.get("usage")) || usage; usageLoaded = true; }
   const month = new Date().toISOString().slice(0, 7);
   if (usage.month !== month) usage = { month, n: 0 };
   if (usage.n >= COMPS_LIMIT) return false;
   usage.n++;
-  fs.mkdirSync("data", { recursive: true });
-  fs.writeFileSync(USAGE, JSON.stringify(usage));
+  if (kv.on) await kv.set("usage", usage, 62 * 864e2);
+  else { fs.mkdirSync("data", { recursive: true }); fs.writeFileSync(USAGE, JSON.stringify(usage)); }
   return true;
 }
 const COMPS_DAYS = Math.min(1000, Number(process.env.COMPS_DAYS) || 1000);
 let compsNote = "";
 const pulled = {};
 async function collectComps(q) {
-  const bucket = (store[q] ||= {});
+  const bucket = await bucketFor(q);
+  if (pulled[q] == null) pulled[q] = (await kv.get("pulled:" + q)) || 0;
   if (pulled[q] && Date.now() - pulled[q] < COMPS_REFRESH_MS) return Object.values(bucket);
   const pages = Object.keys(bucket).length ? 1 : COMPS_MAX_PAGES;
   let days = COMPS_DAYS;
   for (let page = 1; page <= pages; page++) {
-    if (!useRequest()) {
+    if (!(await useRequest())) {
       if (page === 1) throw new Error("monthly sold-data request limit reached, showing saved sales");
       break;
     }
@@ -186,8 +229,9 @@ async function collectComps(q) {
     if (!j.next_page) break;
   }
   pulled[q] = Date.now();
+  await kv.set("pulled:" + q, pulled[q], COMPS_REFRESH_MS / 1000);
   for (const [u, x] of Object.entries(bucket)) if (Date.now() - new Date(x.date) > YEAR) delete bucket[u];
-  save();
+  await saveBucket(q);
   return Object.values(bucket);
 }
 
@@ -410,6 +454,8 @@ app.get("/api/tcgmarket", async (req, res) => {
   const key = [base, hintName, hintSet, num?.n, num?.d].join("|").toLowerCase();
   const hit = jtCache.get(key);
   if (hit && hit.exp > Date.now()) return res.json({ ...hit.data, left: jtLeft });
+  const saved = await kv.get("jt:" + key);
+  if (saved && saved.exp > Date.now()) { jtCache.set(key, saved); return res.json({ ...saved.data, left: jtLeft }); }
   const tokens = norm(pq.search.replace(/\d{1,3}\s*\/\s*\d{1,3}/, " ")).split(/\s+/).map((w) => w.replace(/[^a-z0-9]/g, "")).filter((w) => w && !STOP.has(w) && !NAME_SKIP.has(w) && !/^\d+$/.test(w));
   const attempts = [...new Set([hintName, tokens.join(" "), tokens[0]].map((x) => (x || "").trim()).filter(Boolean))].slice(0, 2);
   const numOk = (c) => {
@@ -458,7 +504,9 @@ app.get("/api/tcgmarket", async (req, res) => {
         })),
       }));
     const data = { cards };
-    jtCache.set(key, { exp: Date.now() + 24 * 3600e3, data });
+    const entry = { exp: Date.now() + 24 * 3600e3, data };
+    jtCache.set(key, entry);
+    await kv.set("jt:" + key, entry, 24 * 3600);
     res.json({ ...data, left: jtLeft });
   } catch (e) {
     console.error(e);
