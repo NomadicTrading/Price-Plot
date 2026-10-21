@@ -446,8 +446,8 @@ function drawTcg(){
 ${c.tcgUrl?`<div><a class="btn" href="${esc(safeUrl(c.tcgUrl))}" target="_blank" rel="noopener">Open on TCGplayer</a></div>`:""}</div>${tImgs.length?`<a href="${esc(safeUrl(c.tcgUrl)||tImgs[0])}" target="_blank" rel="noopener" aria-label="${esc(c.name)} on TCGplayer"><img class="tci" id="tci" src="${esc(tImgs[0])}" alt="${esc(c.name)} card" data-alt="${esc(tImgs.slice(1).join(" "))}"></a>`:""}</div>
 <div class="bar fs" id="tpr" role="group" aria-label="Printing">${prints.map(p=>`<button class="pill" type="button" data-tp="${esc(p)}" aria-pressed="${p===tprint}">${esc(p)}</button>`).join("")}</div>
 <div class="bar fs" id="tcd" role="group" aria-label="Condition">${TCOND.filter(([n])=>n in byC).map(([n,a])=>`<button class="pill" type="button" data-tc="${n}" aria-pressed="${tconds.has(n)}">${a}</button>`).join("")}</div>
-<div class="ch-h"><div><h2>Market Price</h2><div class="mu" style="font-size:12.5px">TCGplayer market price by condition${tover&&tid?", with sold cards and live listings":""}</div></div>${tid?`<button class="pill" type="button" style="white-space:nowrap" data-tover="1" aria-pressed="${tover}">Sales &amp; listings</button>`:""}</div>
-<div class="bar">${tover&&tid?`<button class="pill" type="button" style="white-space:nowrap" data-tsold="1" aria-pressed="${tsold}">Sold dots</button>`:""}<button class="pill" type="button" style="white-space:nowrap" data-tboll="1" aria-pressed="${tboll}" title="20-day average of the market price, with a band 2 standard deviations either side">Bollinger bands</button>${tover&&tid?`<span class="mu" style="font-size:12.5px" id="tsm"></span>`:""}</div>
+<div class="ch-h"><div><h2>Market Price</h2><div class="mu" style="font-size:12.5px">TCGplayer market price by condition${tover&&tid?", with sold cards and live listings":""}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex:none">${tid?`<button class="pill" type="button" style="white-space:nowrap" data-tover="1" aria-pressed="${tover}">Sales &amp; listings</button>`:""}<button class="pill" type="button" style="white-space:nowrap" data-tboll="1" aria-pressed="${tboll}" title="20-day average of the market price, with a band 2 standard deviations either side">Bollinger bands</button></div></div>
+${tover&&tid?`<div class="mu" style="font-size:12.5px;margin-top:6px" id="tsm"></div>`:""}
 <div id="trd"></div>
 ${hasHist||(tover&&tid)?`<div id="tch"></div><div class="seg" id="trg" role="group" aria-label="Time range" style="margin-top:8px">${TRNG.map(([k,l])=>`<button type="button" data-tr="${k}" aria-pressed="${k===trng}">${l}</button>`).join("")}</div>`:`<p class="sm">No price history came back for this card, so only today's prices are shown.</p>`}
 ${rows?`<div class="tc" style="border:0"><table><tr><th>Condition</th><th>Market</th><th>7 days</th><th>30 days</th></tr>${rows}</table></div>`:`<p class="sm">No TCGplayer prices for this printing.</p>`}
@@ -594,7 +594,6 @@ $("tcg").onclick=e=>{const dot=e.target.closest&&e.target.closest("[data-tpi]");
  if(d.tzr){tview=null;if(TG)drawTcgChart(TG.vs,TG.tpd);return}
  tsel=null;tview=null;
  if(d.tover){tover=!tover;drawTcg();return}
- if(d.tsold){tsold=!tsold;drawTcg();return}
  if(d.tboll){tboll=!tboll;drawTcg();return}
  if(d.ci!=null){tci=+d.ci;tprint=""}
  else if(d.tp!=null)tprint=d.tp;
