@@ -573,6 +573,22 @@ async function tpListings(id) {
   }
   return out;
 }
+// Sales grouped by week (lowest and highest sale, number sold) for about a year, per condition and printing:
+// the feed behind the price-history chart on TCGplayer's product page, which works without signing in.
+async function tpHistory(id) {
+  const r = await fetch(`https://infinite-api.tcgplayer.com/price/history/${id}/detailed?range=annual`, { headers: TP_HEAD, signal: AbortSignal.timeout(20000) });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j) throw new Error(r.status === 403 || r.status === 429 ? "TCGplayer is refusing requests from the server right now" : `TCGplayer returned ${r.status}`);
+  const rows = Array.isArray(j) ? j : j.result || j.results || j.data || [];
+  const num = (v) => (v == null || v === "" ? null : Number(v));
+  return rows.map((s) => ({
+    cond: s.condition || "", print: s.variant || s.printing || "", lang: s.language || "",
+    b: (s.buckets || []).map((k) => {
+      const t = Date.parse(k.bucketStartDate);
+      return [t, num(k.lowSalePrice), num(k.highSalePrice), num(k.quantitySold) || 0, num(k.transactionCount) || 0, num(k.marketPrice), num(k.lowSalePriceWithShipping), num(k.highSalePriceWithShipping)];
+    }).filter((k) => !isNaN(k[0]) && k[4] > 0 && k[1] > 0),
+  })).filter((s) => s.b.length);
+}
 const tpCache = new Map();
 app.get("/api/tcgplayer", async (req, res) => {
   const id = String(req.query.id || "").replace(/\D/g, "").slice(0, 12);
@@ -580,9 +596,10 @@ app.get("/api/tcgplayer", async (req, res) => {
   const hit = tpCache.get(id);
   if (hit && hit.exp > Date.now()) return res.json(hit.data);
   const warnings = [];
-  const [s, l] = await Promise.all([
+  const [s, l, hi] = await Promise.all([
     tpSales(id).catch((e) => (console.error("tcg sales:", e.message), warnings.push("Sold sales unavailable: " + e.message), null)),
     tpListings(id).catch((e) => (console.error("tcg listings:", e.message), warnings.push("Live listings unavailable: " + e.message), null)),
+    tpHistory(id).catch((e) => (console.error("tcg history:", e.message), warnings.push("Weekly sales history unavailable: " + e.message), null)),
   ]);
   const key = "tcgsold:" + id;
   const bucket = await bucketFor(key);
@@ -590,8 +607,8 @@ app.get("/api/tcgplayer", async (req, res) => {
   for (const [k, x] of Object.entries(bucket)) if (Date.now() - new Date(x.date) > YEAR) delete bucket[k];
   if (s && s.length) await saveBucket(key);
   const sold = Object.values(bucket);
-  if (!sold.length && !l) return res.status(502).json({ error: warnings.join(" ") });
-  const data = { sold, listings: l || [], warnings, url: `https://www.tcgplayer.com/product/${id}` };
+  if (!sold.length && !l && !hi) return res.status(502).json({ error: warnings.join(" ") });
+  const data = { sold, listings: l || [], hist: hi || [], recent: s ? s.length : 0, warnings, url: `https://www.tcgplayer.com/product/${id}` };
   // a failed lookup is retried after 5 minutes instead of the usual cache time
   tpCache.set(id, { exp: Date.now() + (s && l ? LISTINGS_CACHE_MIN : 5) * 60000, data });
   res.json(data);
