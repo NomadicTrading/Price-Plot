@@ -145,13 +145,13 @@ $("gr").onclick=e=>{const k=e.target.dataset.m;if(!k)return;mode=k;
  $("gr").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.m===k));
  grades();load()};
 /* grade toggles appear under the graders once one is picked */
-/* each grader's published scale. PSA: 10, 9, then half grades 8.5 down to 1 (no 9.5).
+/* each grader's scale. PSA: whole numbers 10 down to 1 (by choice; PSA also gives half grades 1.5-8.5).
    Beckett: half grades 1 to 9.5, plus Pristine 10 and Black Label 10. CGC: half grades 1 to 9.5,
    plus Gem Mint 10 and Pristine 10. TAG: half grades 1 to 8.5, then 9, Gem Mint 10 and Pristine 10 (no 9.5).
    Keys: number, plus b = Black Label, n = 10 without Black Label, p = Pristine, g = 10 without Pristine */
 const halves=(hi,lo)=>{const o=[];for(let v=hi;v>=lo;v-=.5)o.push(String(v));return o};
 const GRADES={
- PSA:["10","9",...halves(8.5,1)],
+ PSA:["10","9","8","7","6","5","4","3","2","1"],
  BGS:[["10b","Black Label 10"],["10n","Pristine 10"],...halves(9.5,1)],
  CGC:[["10p","Pristine 10"],["10g","Gem Mint 10"],...halves(9.5,1)],
  TAG:[["10p","Pristine 10"],["10g","Gem Mint 10"],"9",...halves(8.5,1)]};
