@@ -528,8 +528,14 @@ const TP_HEAD = {
 };
 const TP_SALES_PAGES = Math.max(1, Number(process.env.TCG_SALES_PAGES) || 8); // 25 sales per page
 const TP_LIST_PAGES = Math.max(1, Number(process.env.TCG_LISTING_PAGES) || 4); // 50 listings per page
-async function tpPost(url, body) {
-  const r = await fetch(url, { method: "POST", headers: TP_HEAD, body: JSON.stringify(body), signal: AbortSignal.timeout(20000) });
+// Optional: the sign-in cookie of a TCGplayer account made just for this app, so the sales feed returns more
+// than the few sales it gives to visitors who aren't signed in. Paste either the whole Cookie header or just the
+// value of TCGAuthTicket_Production into TCGPLAYER_COOKIE in Render. It is only sent to TCGplayer, never logged.
+const TP_COOKIE_RAW = (process.env.TCGPLAYER_COOKIE || "").trim();
+const TP_COOKIE = TP_COOKIE_RAW && !TP_COOKIE_RAW.includes("=") ? `TCGAuthTicket_Production=${TP_COOKIE_RAW}` : TP_COOKIE_RAW;
+if (TP_COOKIE) console.log("TCGplayer sign-in cookie: set");
+async function tpPost(url, body, signedIn) {
+  const r = await fetch(url, { method: "POST", headers: signedIn && TP_COOKIE ? { ...TP_HEAD, Cookie: TP_COOKIE } : TP_HEAD, body: JSON.stringify(body), signal: AbortSignal.timeout(20000) });
   const j = await r.json().catch(() => null);
   if (!r.ok || !j) throw new Error(r.status === 403 || r.status === 429 ? "TCGplayer is refusing requests from the server right now" : `TCGplayer returned ${r.status}`);
   return j;
@@ -537,7 +543,7 @@ async function tpPost(url, body) {
 async function tpSales(id) {
   const out = [];
   for (let p = 0; p < TP_SALES_PAGES; p++) {
-    const j = await tpPost(`https://mpapi.tcgplayer.com/v2/product/${id}/latestsales`, { conditions: [], languages: [], variants: [], listingType: "All", offset: p * 25, limit: 25 });
+    const j = await tpPost(`https://mpapi.tcgplayer.com/v2/product/${id}/latestsales`, { conditions: [], languages: [], variants: [], listingType: "All", offset: p * 25, limit: 25 }, true);
     const d = j.data || [];
     for (const s of d) {
       const price = Number(s.purchasePrice), date = new Date(s.orderDate);
@@ -606,6 +612,7 @@ app.get("/api/tcgplayer", async (req, res) => {
   for (const x of s || []) bucket[[x.date, x.price, x.cond, x.print, x.lang, x.qty].join("|")] = x;
   for (const [k, x] of Object.entries(bucket)) if (Date.now() - new Date(x.date) > YEAR) delete bucket[k];
   if (s && s.length) await saveBucket(key);
+  if (TP_COOKIE && s && s.length > 0 && s.length <= 5) warnings.push("Only a few recent sales came back even with the TCGplayer sign-in cookie, so it may have expired; copy a fresh one into TCGPLAYER_COOKIE in Render.");
   const sold = Object.values(bucket);
   if (!sold.length && !l && !hi) return res.status(502).json({ error: warnings.join(" ") });
   const data = { sold, listings: l || [], hist: hi || [], recent: s ? s.length : 0, warnings, url: `https://www.tcgplayer.com/product/${id}` };
