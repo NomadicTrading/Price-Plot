@@ -106,7 +106,7 @@ footer{border-top:1px solid var(--line);margin-top:22px;padding:12px 0;color:var
 </div>
 <div id="qc" hidden></div>
 <div class="ch-h"><div><h2>Sales History</h2><div id="chg"></div></div>
-<div class="seg tg" id="vm" role="group" aria-label="Chart view"><button type="button" data-v="trend" aria-pressed="true">Trend</button><button type="button" data-v="daily" aria-pressed="false">Daily</button><button type="button" data-v="sales" aria-pressed="false">Sales</button></div></div>
+<button class="pill" id="vm" type="button" aria-pressed="true" title="Show or hide the trend line and usual price range">Trend line</button></div>
 <div id="scrub"></div>
 <div id="cw"><div id="chart"></div><div class="zc"><button id="zr" class="rs" type="button" hidden>Reset zoom</button></div></div>
 <div class="seg" id="rg" role="group" aria-label="Time range"></div>
@@ -169,8 +169,8 @@ grades();
 $("rg").innerHTML=RNG.map(([k,l])=>`<button type="button" data-r="${k}" aria-pressed="${k===rsel}">${l}</button>`).join("");
 $("rg").onclick=e=>{const k=e.target.dataset.r;if(!k)return;rsel=k;
  [...$("rg").children].forEach(b=>b.setAttribute("aria-pressed",b.dataset.r===k));view=null;scrub=null;draw()};
-$("vm").onclick=e=>{const k=e.target.dataset.v;if(!k)return;vm=k;
- [...$("vm").children].forEach(b=>b.setAttribute("aria-pressed",b.dataset.v===k));scrub=null;draw()};
+/* one chart: the Trend line toggle hides the trend line and band to leave just the sale dots */
+$("vm").onclick=()=>{vm=vm==="trend"?"sales":"trend";$("vm").setAttribute("aria-pressed",vm==="trend");scrub=null;draw()};
 const CND=[["any","Any"],["NM","NM"],["LP","LP"],["MP","MP"],["HP","HP"],["DMG","DMG"],["none","Unspecified"]];
 $("cd").innerHTML=CND.map(([k,l])=>`<button class="pill" type="button" data-c="${k}" aria-pressed="${k==="any"}">${l}</button>`).join("");
 $("cd").onclick=e=>{const k=e.target.dataset.c;if(!k)return;
@@ -279,7 +279,7 @@ function draw(){
  let list=data.filter(x=>pass(x)&&x.d<=R),dupN=0,outN=0;
  if(dedupe){const seen=new Set(),n0=list.length;list=list.filter(x=>{const m=/\/itm\/(?:[^\/]*\/)?(\d{9,})/.exec(x.url||""),k=x.type==="Sold"?(m?m[1]:nrm(x.title)+"|"+x.price+"|"+Math.round(x.d)):(x.seller?x.seller+"|"+nrm(x.title)+"|"+x.price:x.url);if(seen.has(k))return false;seen.add(k);return true});dupN=n0-list.length}
  if(outl&&list.length>=8){const a=list.map(x=>x.price).sort((u,w)=>u-w),q1=a[Math.floor(a.length*.25)],q3=a[Math.floor(a.length*.75)],iq=q3-q1,k=list.filter(x=>x.price>=q1-1.5*iq&&x.price<=q3+1.5*iq);outN=list.length-k.length;list=k}
- const inR=list,sPts=inR.filter(x=>x.type==="Sold"?show.S:show.A),pts=sPts.filter(x=>x.type!=="Sold"||vm!=="daily");
+ const inR=list,sPts=inR.filter(x=>x.type==="Sold"?show.S:show.A),pts=sPts;
  const sp=inR.filter(x=>x.type==="Sold");
  const hidN=data.filter(x=>x.rel===false).length;
  $("hid").textContent=show.R&&hidN?`${hidN} listing${hidN===1?"":"s"} hidden as unrelated to your search. Turn off "Hide unrelated" to see them.`:"";
@@ -306,9 +306,6 @@ function draw(){
   if(!qs.length)$("qc").hidden=true;else{const p=qs.map(x=>x.price).sort((a,b)=>a-b),h=p.length>>1,md=p.length%2?p[h]:(p[h-1]+p[h])/2;$("qc").hidden=false;
    $("qc").innerHTML=`<span>Quick comp</span><b>${money(md)}</b><span>median of the last ${qs.length} sale${qs.length===1?"":"s"}, from ${money(p[0])} to ${money(p[p.length-1])}</span>`}}
  expRows=inR.filter(x=>x.type==="Sold"?show.S:show.A);
- const bins=[];if(vm==="daily"&&show.S){const bw=Math.max(1,Math.round(S/50)),M=new Map();
-  for(const x of inR)if(x.type==="Sold"){const k=Math.floor(x.d/bw);if(!M.has(k))M.set(k,[]);M.get(k).push(x.price)}
-  for(const [k,a] of M){a.sort((u,w)=>u-w);const h=a.length>>1;bins.push({d:k*bw+bw/2,n:a.length,md:a.length%2?a[h]:(a[h-1]+a[h])/2,lo:a[0],hi:a[a.length-1],from:k*bw,to:(k+1)*bw})}}
  const hiMax=vm!=="sales"?ser.reduce((a,s)=>Math.max(a,s.hi),0):0;
  full={x0:-S,x1:Math.max(.4,S*.015),y0:0,y1:Math.max(1,hiMax,...inR.map(x=>x.price))*1.08};
  const v=view?clampV(view):full;
@@ -345,17 +342,12 @@ function draw(){
    cxs[i]=base+ox;placed.push({x:cxs[i],y:cy})})}
  pts.forEach((x,i)=>{const cx=cxs[i],cy=Y(x.price),a=x.type==="For sale",k=!!(x.grader||x.cond);
   g+=`<g class="pt" data-i="${i}" tabindex="0" role="link" aria-label="${x.type} ${fmt(x.price)}"><title>${esc(x.type+" "+fmt(x.price)+": "+x.title)}</title><circle cx="${cx}" cy="${cy}" r="10" fill="transparent"/><circle class="dot" cx="${cx}" cy="${cy}" r="${a?DR+.2:DR}" fill="${a?"var(--bg)":k?"var(--dot)":"var(--gray)"}" fill-opacity="${a?1:k?.72:.45}" stroke="${a?(k?"var(--act)":"var(--gray)"):"var(--bg)"}" stroke-width="${a?1.6:.8}"${a&&!k?' stroke-opacity=".7"':""}/></g>`});
- bins.forEach((b,i)=>{const cx=X(-b.d),cy=Y(b.md);
-  g+=`<g class="bn" data-b="${i}" tabindex="0"><title>${esc(b.n+" sale"+(b.n===1?"":"s")+", median "+fmt(+b.md.toFixed(2)))}</title><circle cx="${cx}" cy="${cy}" r="14" fill="transparent"/><circle class="dot" cx="${cx}" cy="${cy}" r="${3.5+Math.min(5,Math.sqrt(b.n)*1.1)}" fill="var(--dot)" fill-opacity=".8" stroke="var(--bg)" stroke-width="1"/></g>`});
  g+=`<g pointer-events="none">${sg}</g></g>`;
  const sc2=$("chart").clientWidth/W||1;
  $("chart").innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="touch-action:none" role="img" aria-label="Scatter plot of card prices over time">${g}</svg><div class="az ay" data-z="y" style="top:0;right:0;width:${m.r*sc2}px;height:${(m.t+ih)*sc2}px"></div><div class="az ax" data-z="x" style="left:0;top:${(m.t+ih)*sc2}px;width:${(W-m.r)*sc2}px;height:${m.b*sc2}px"></div>`;
  const dl=sd0?(scrub<.05?"today":new Date(now-scrub*864e5).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})):"";
  $("scrub").innerHTML=vm==="sales"?"Tap a dot to open its listing.":!sd0?"Slide a finger across the chart to read the trend price.":`<div><b>${money(sc.m)}</b> trend price, ${dl}<br><span>Usual range ${money(sc.lo)} to ${money(sc.hi)}. ${sc.n?`Based on ${sc.n} listings from the ${win} days before.`:"Estimated from the sales on either side of this date."}</span></div><button class="pill" id="sx" type="button">Clear</button>`;
  if($("sx"))$("sx").onclick=()=>{scrub=null;draw()};
- $("chart").querySelectorAll(".bn").forEach(el=>{const pick=()=>{if(moved)return;const b=bins[+el.dataset.b],ds=d=>new Date(now-d*864e5).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
-  $("detail").innerHTML=`<div class="p">${money(b.md)}</div><div class="m">Median of ${b.n} sale${b.n===1?"":"s"}, ${ds(b.to)} to ${ds(b.from)} · lowest ${money(b.lo)}, highest ${money(b.hi)}</div>`};
-  el.addEventListener("click",pick);el.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();moved=false;pick()}})});
  $("chart").querySelectorAll(".pt").forEach(el=>{const pick=()=>{if(moved)return;const x=pts[+el.dataset.i];
   const cl=x.grader?x.grader+(x.grade?" "+x.grade:""):x.cond||"No condition listed",fl={holo:"Holo",reverse:"Reverse holo",nonholo:"Non-holo"}[x.f2];
   const t=x.type==="Sold"?"Sold "+new Date(Date.now()-x.d*864e5).toLocaleString(undefined,{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"}):"For sale now";
@@ -392,7 +384,7 @@ addEventListener("pointermove",e=>{
   if(moved)scrubAt(e.clientX)}});
 const up=e=>{if(axis&&e.pointerId===axis.id){axis=null;return}
  const was=P.size===1&&P.has(e.pointerId);P.delete(e.pointerId);pd=0;pc=null;
- if(was&&!moved&&!pinched&&e.type==="pointerup"&&!(e.target.closest&&e.target.closest(".pt,.bn")))scrubAt(e.clientX)};
+ if(was&&!moved&&!pinched&&e.type==="pointerup"&&!(e.target.closest&&e.target.closest(".pt")))scrubAt(e.clientX)};
 addEventListener("pointerup",up);addEventListener("pointercancel",up);
 /* keep pinches and drags on the chart from zooming or scrolling the whole page (iOS Safari) */
 ["gesturestart","gesturechange","gestureend"].forEach(t=>ch.addEventListener(t,e=>e.preventDefault(),{passive:false}));
