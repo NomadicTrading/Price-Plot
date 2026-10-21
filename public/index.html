@@ -77,15 +77,15 @@ footer{border-top:1px solid var(--line);margin-top:22px;padding:12px 0;color:var
 <select id="gn" aria-label="Grade" hidden><option value="">Any grade</option><option>10</option><option>9.5</option><option>9</option><option>8.5</option><option>8</option><option>7</option></select>
 <button class="pill" id="tS" type="button" aria-pressed="true">Sold</button><button class="pill" id="tA" type="button" aria-pressed="true">For sale</button><span class="sep"></span><button class="pill" id="tU" type="button" aria-pressed="true">No condition listed</button><button class="pill" id="tR" type="button" aria-pressed="true">Hide unrelated</button>
 </div>
+<div class="py" id="pw2"><span class="pl">Price</span><div class="dr" id="pd" role="group" aria-label="Price range"></div><b id="pt"></b></div>
 <details class="mf" id="mf"><summary>More filters</summary>
+<div class="py" id="py"><span class="pl">Print year</span><div class="dr" id="yd" role="group" aria-label="Print year range"></div><b id="yt"></b></div>
 <div class="bar" id="ln" role="group" aria-label="Language"></div>
 <div class="bar" id="ed" role="group" aria-label="Edition"></div>
 <div class="bar" id="sf" role="group" aria-label="For sale format"></div>
-<div class="py" id="pw2"><span class="pl">Price</span><div class="dr" id="pd" role="group" aria-label="Price range"></div><b id="pt"></b></div>
 <div class="bar"><button class="pill" id="tP" type="button" aria-pressed="false">Price + shipping</button><button class="pill" id="tO" type="button" aria-pressed="false">Hide price outliers</button><button class="pill" id="tD" type="button" aria-pressed="true">Hide duplicates</button><button class="pill" id="tX" type="button" hidden></button><button class="pill" id="ex" type="button">Export CSV</button></div>
 </details>
 <div id="pw" hidden>
-<div class="py" id="py"><span class="pl">Print year</span><div class="dr" id="yd" role="group" aria-label="Print year range"></div><b id="yt"></b></div>
 <div class="bar" id="pc" role="group" aria-label="Print sets"></div>
 </div>
 <div id="qc" hidden></div>
@@ -94,7 +94,7 @@ footer{border-top:1px solid var(--line);margin-top:22px;padding:12px 0;color:var
 <div id="scrub"></div>
 <div id="cw"><div id="chart"></div><div class="zc"><button id="zr" class="rs" type="button" hidden>Reset zoom</button></div></div>
 <div class="seg" id="rg" role="group" aria-label="Time range"></div>
-<div class="lg"><span><i style="background:var(--dot)"></i>Sold</span><span><i style="border:2px solid var(--act)"></i>For sale (grouped beside today)</span><span><i style="background:var(--gray);opacity:.5"></i>No condition or grade listed</span><span>The blue line is the trend and the shaded area is the usual price range. Where sales are sparse the line is estimated between them.</span><span>Daily groups sales into one median dot per day or so. Slide one finger to read the trend, pinch with two to zoom and move, drag the prices up or down or the dates left or right to stretch the chart, tap a dot to open it.</span></div>
+<div class="lg"><span><i style="background:var(--dot)"></i>Sold</span><span><i style="border:2px solid var(--act)"></i>For sale (grouped beside today)</span><span><i style="background:var(--gray);opacity:.5"></i>No condition or grade listed</span><span>The blue line is the trend and the shaded area is the usual price range. Where sales are sparse the line is estimated between them.</span></div>
 <div id="sl"></div>
 <div id="detail">Tap a dot to see its listing.</div>
 <div class="sm" id="hid"></div><div class="sm" id="hist"></div><div class="sm" id="status">Search for a card to see its listings.</div>
@@ -194,7 +194,7 @@ function buildPrints(){
  const shown=prints.filter(p=>p.exact||cnt[p.id]).sort((a,b)=>a.year-b.year||String(a.set).localeCompare(String(b.set)));
  const ys=new Set(shown.map(p=>p.year).filter(Boolean));for(const x of data)if(x.rel!==false)for(const y of x.yrs||[])ys.add(y);
  const arr=[...ys].sort((a,b)=>a-b);
- if(arr.length<2&&shown.length<2){$("pw").hidden=true;yr={lo:0,hi:0,min:0,max:0};psel.clear();return}
+ if(arr.length<2&&shown.length<2){$("pw").hidden=true;$("py").hidden=true;yr={lo:0,hi:0,min:0,max:0};psel.clear();return}
  const mn=arr[0]||0,mx=arr[arr.length-1]||0;
  if(yr.min!==mn||yr.max!==mx)yr={min:mn,max:mx,lo:mn,hi:mx};
  $("pw").hidden=false;$("py").hidden=mn===mx;
