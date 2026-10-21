@@ -83,7 +83,7 @@ footer{border-top:1px solid var(--line);margin-top:22px;padding:12px 0;color:var
 <div class="bar" id="sv"></div>
 <div id="ebay">
 <div class="bar fs" id="gr" role="group" aria-label="Grading company"></div>
-<div class="bar fs" id="gd" role="group" aria-label="Grade" hidden></div>
+<div class="bar fs" id="gd" hidden><select id="gs" aria-label="Grade"></select></div>
 <div class="bar fs" id="cd" role="group" aria-label="Condition"></div>
 <div class="bar fs" id="fn" role="group" aria-label="Finish"></div>
 <div class="bar fs">
@@ -157,11 +157,10 @@ const GRADES={
  TAG:[["10p","Pristine 10"],["10g","Gem Mint 10"],"9",...halves(8.5,1)]};
 let gsel="";
 function grades(){const g=GRADES[mode],name=(MODES.find(m=>m[0]===mode)||[])[1];gsel="";$("gd").hidden=!g;
- $("gd").innerHTML=g?[["","Any "+name+" grade"],...g.map(x=>Array.isArray(x)?x:[x,x])].map(([k,l])=>`<button class="pill" type="button" data-g="${k}" aria-pressed="${k===gsel}">${l}</button>`).join(""):""}
+ $("gs").innerHTML=g?[["","Any "+name+" grade"],...g.map(x=>Array.isArray(x)?x:[x,x]).map(([k,l])=>[k,name+" "+l])].map(([k,l])=>`<option value="${k}">${l}</option>`).join(""):""}
 const gradeMatch=(k,x)=>{if(!k)return true;if(x.grade!==parseFloat(k))return false;const s=k.slice(-1);
  return s==="b"?x.sub==="black":s==="n"?x.sub!=="black":s==="p"?x.sub==="pristine":s==="g"?x.sub!=="pristine":true};
-$("gd").onclick=e=>{const k=e.target.dataset.g;if(k===undefined)return;gsel=k;
- $("gd").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.g===k));view=null;scrub=null;draw()};
+$("gs").onchange=()=>{gsel=$("gs").value;view=null;scrub=null;draw()};
 grades();
 $("rg").innerHTML=RNG.map(([k,l])=>`<button type="button" data-r="${k}" aria-pressed="${k===rsel}">${l}</button>`).join("");
 $("rg").onclick=e=>{const k=e.target.dataset.r;if(!k)return;rsel=k;
