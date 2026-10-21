@@ -508,7 +508,7 @@ function tpPoints(d,t0){
  return{sold,act,weeks,wpts}}
 function tpStats(P,d){
  const sm=$("tsm"),st=$("tst");if(!st)return;
- if(sm)sm.textContent=!d||d.loading?"Loading TCGplayer sales and listings…":d.error?"Sales and listings unavailable right now ("+d.error+").":P&&!P.sold.length&&!P.act.length&&!P.weeks.length?"No sales or listings for these conditions in this range.":P&&d.recent!=null&&d.recent<=5&&P.weeks.length?"Older sold dots are each week's lowest and highest sale, which TCGplayer publishes by week rather than by day.":"";
+ if(sm)sm.textContent=!d||d.loading?"Loading TCGplayer sales and listings…":d.error?"Sales and listings unavailable right now ("+d.error+").":P&&!P.sold.length&&!P.act.length&&!P.weeks.length?"No sales or listings for these conditions in this range.":"";
  if(!P){st.innerHTML="";return}
  const med=a=>{if(!a.length)return null;const s=a.slice().sort((p,q)=>p-q),h=s.length>>1;return s.length%2?s[h]:(s[h-1]+s[h])/2};
  const rows=TCOND.filter(([n])=>tconds.has(n)).map(([n,a,col])=>{const s=P.sold.filter(x=>x.c2===n),l=P.act.filter(x=>x.c2===n),wk=P.weeks.filter(x=>x.c2===n),last=s.length?s.reduce((p,q)=>q.t>p.t?q:p):null;
