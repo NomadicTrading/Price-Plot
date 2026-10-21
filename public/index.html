@@ -447,11 +447,11 @@ ${c.tcgUrl?`<div><a class="btn" href="${esc(safeUrl(c.tcgUrl))}" target="_blank"
 <div class="bar fs" id="tpr" role="group" aria-label="Printing">${prints.map(p=>`<button class="pill" type="button" data-tp="${esc(p)}" aria-pressed="${p===tprint}">${esc(p)}</button>`).join("")}</div>
 <div class="bar fs" id="tcd" role="group" aria-label="Condition">${TCOND.filter(([n])=>n in byC).map(([n,a])=>`<button class="pill" type="button" data-tc="${n}" aria-pressed="${tconds.has(n)}">${a}</button>`).join("")}</div>
 <div class="ch-h"><div><h2>Market Price</h2><div class="mu" style="font-size:12.5px">TCGplayer market price by condition${tover&&tid?", with sold cards and live listings":""}</div></div>${tid?`<button class="pill" type="button" style="white-space:nowrap" data-tover="1" aria-pressed="${tover}">Sales &amp; listings</button>`:""}</div>
-${tover&&tid?`<div class="bar"><button class="pill" type="button" style="white-space:nowrap" data-tship="1" aria-pressed="${tship}">Price + shipping</button><span class="mu" style="font-size:12.5px" id="tsm"></span></div>`:""}
+<div class="bar">${tover&&tid?`<button class="pill" type="button" style="white-space:nowrap" data-tsold="1" aria-pressed="${tsold}">Sold dots</button>`:""}<button class="pill" type="button" style="white-space:nowrap" data-tboll="1" aria-pressed="${tboll}" title="20-day average of the market price, with a band 2 standard deviations either side">Bollinger bands</button>${tover&&tid?`<span class="mu" style="font-size:12.5px" id="tsm"></span>`:""}</div>
 <div id="trd"></div>
 ${hasHist||(tover&&tid)?`<div id="tch"></div><div class="seg" id="trg" role="group" aria-label="Time range" style="margin-top:8px">${TRNG.map(([k,l])=>`<button type="button" data-tr="${k}" aria-pressed="${k===trng}">${l}</button>`).join("")}</div>`:`<p class="sm">No price history came back for this card, so only today's prices are shown.</p>`}
 ${rows?`<div class="tc" style="border:0"><table><tr><th>Condition</th><th>Market</th><th>7 days</th><th>30 days</th></tr>${rows}</table></div>`:`<p class="sm">No TCGplayer prices for this printing.</p>`}
-${tover&&tid?`<div class="lg"><span><i style="background:var(--mut)"></i>Sold</span><span><i style="border:2px solid var(--mut)"></i>Listed now (grouped beside today)</span><span>Lines are the market price. Dot colors match the condition buttons.</span></div>
+${tover&&tid?`<div class="lg"><span><i style="background:var(--mut)"></i>Sold</span><span><i style="border:2px solid var(--mut)"></i>Listed now (grouped beside today)</span><span>Solid lines are the market price; dashed lines and shading are the Bollinger bands (20-day average, 2 standard deviations). Prices include shipping. Colors match the condition buttons.</span></div>
 <div id="tst"></div><div id="tdt">Tap a dot to see the sale or listing.</div>`:""}
 <a class="btn o" href="${esc(tcgSearch(tQ))}" target="_blank" rel="noopener">Search TCGplayer for this card</a>
 <p class="sm">Market prices are TCGplayer market prices, updated about daily, via JustTCG. Sold cards and live listings come straight from TCGplayer's product page and refresh every 30 minutes; TCGplayer doesn't link individual sales, so tapping one opens the card on TCGplayer filtered to that condition.${tpd&&tpd.warnings&&tpd.warnings.length?" "+esc(tpd.warnings.join(" ")):""}${TM.left!=null?` ${esc(TM.left)} price lookups left today.`:""}</p>`;
@@ -461,11 +461,16 @@ ${tover&&tid?`<div class="lg"><span><i style="background:var(--mut)"></i>Sold</s
  if(tsel!=null&&tpts[tsel])tpPick(tsel);else tsel=null}
 /* ---- TCGplayer sold + listed scatter ---- */
 const TPD=new Map();
-let tover=true,tship=false,tpts=[],tsel=null;
+let tover=true,tship=true,tsold=true,tboll=true,tpts=[],tsel=null;
+const BBN=20,BBK=2; /* Bollinger bands: 20 daily market prices, 2 standard deviations */
 const tcN=c=>{c=String(c||"").toLowerCase();return c.startsWith("near mint")?"Near Mint":c.startsWith("lightly")?"Lightly Played":c.startsWith("moderately")?"Moderately Played":c.startsWith("heavily")?"Heavily Played":c.startsWith("damaged")?"Damaged":""};
 const tpPrintOk=x=>!x.print||!tprint||x.print.toLowerCase()===tprint.toLowerCase();
 const tpLangOk=x=>!x.lang||/english/i.test(x.lang);
 /* sold cards (inside the chart's time range) and live listings, filtered to the chosen printing and conditions */
+/* [time, average, lower band, upper band] for each day that has BBN days of prices before it */
+function boll(hist){const s=hist.filter(x=>x&&x[1]!=null).slice().sort((a,b)=>a[0]-b[0]),o=[];
+ for(let i=BBN-1;i<s.length;i++){let m=0;for(let k=i-BBN+1;k<=i;k++)m+=s[k][1];m/=BBN;let q=0;for(let k=i-BBN+1;k<=i;k++)q+=(s[k][1]-m)**2;const sd=Math.sqrt(q/BBN);o.push([s[i][0],m,Math.max(0,m-BBK*sd),m+BBK*sd])}
+ return o}
 function tpPoints(d,t0){
  if(!d||d.loading||d.error)return null;
  const now=Date.now(),val=x=>+(x.price+(tship&&x.ship?x.ship:0)).toFixed(2),base=x=>tpPrintOk(x)&&tpLangOk(x)&&tconds.has(x.c2);
@@ -509,11 +514,11 @@ function readout(vs,t){
 function drawTcgChart(vs,tpd){
  const box=$("tch");if(!box)return;
  const now=Date.now()/1000,t0=now-(+trng)*86400,P=tpPoints(tpd,t0);tpStats(P,tpd);
- const sold=P?P.sold:[],act=P?P.act:[],weeks=P?P.weeks:[];
+ const sold=P&&tsold?P.sold:[],act=P?P.act:[],weeks=P&&tsold?P.weeks:[],wpts=P&&tsold?P.wpts||[]:[];
  const W=Math.max(300,box.clientWidth||600),H=Math.round(Math.min(P?380:320,W*(P?.7:.6))),m={l:8,r:58,t:12,b:26};
  const gut=act.length?Math.round(Math.min(Math.max(48,W*.24),18+9.2*Math.ceil(Math.sqrt(act.length)*1.2))):0,iw=W-m.l-m.r-gut,ih=H-m.t-m.b;
- const lines=TCOND.filter(([n])=>tconds.has(n)).map(([n,a,col])=>{const v=vs.find(x=>x.cond===n);return v?{a,col,pts:v.hist.filter(h=>h[0]>=t0).sort((x,y)=>x[0]-y[0])}:null}).filter(l=>l&&l.pts.length);
- const all=[...lines.flatMap(l=>l.pts.map(h=>h[1])),...sold.map(x=>x.v),...act.map(x=>x.v),...weeks.flatMap(x=>[x.lo,x.v])];
+ const lines=TCOND.filter(([n])=>tconds.has(n)).map(([n,a,col])=>{const v=vs.find(x=>x.cond===n);return v?{a,col,pts:v.hist.filter(h=>h[0]>=t0).sort((x,y)=>x[0]-y[0]),bb:tboll?boll(v.hist).filter(b=>b[0]>=t0):[]}:null}).filter(l=>l&&l.pts.length);
+ const all=[...lines.flatMap(l=>l.pts.map(h=>h[1])),...lines.flatMap(l=>l.bb.flatMap(b=>[b[2],b[3]])),...sold.map(x=>x.v),...act.map(x=>x.v),...weeks.flatMap(x=>[x.lo,x.v])];
  if(!all.length){TG=null;box.innerHTML=`<p class="sm">No price history in this range for the selected conditions.</p>`;readout(vs,null);return}
  let lo=Math.min(...all),hi=Math.max(...all);const pad=(hi-lo)*.12||hi*.1||1;lo=Math.max(0,lo-pad);hi+=pad;
  const full={x0:t0,x1:now,y0:lo,y1:hi};TG={W,H,m,iw,ih,gut,full,vs,tpd};
@@ -525,10 +530,12 @@ function drawTcgChart(vs,tpd){
  const span=(v.x1-v.x0)/86400,nl=4,lf=span>180?{month:"short",year:"2-digit"}:span>3?{month:"short",day:"numeric"}:{month:"short",day:"numeric",hour:"numeric"};
  for(let i=0;i<=nl;i++){const t=v.x0+(v.x1-v.x0)*i/nl;g+=`<text x="${i===0?m.l:i===nl?m.l+iw:X(t)}" y="${H-6}" text-anchor="${i===0?"start":i===nl?"end":"middle"}" font-size="11.5" fill="var(--mut)">${new Date(t*1000).toLocaleDateString(undefined,lf)}</text>`}
  g+=`<g clip-path="url(#tcp)">`;
+ lines.forEach(l=>{if(l.bb.length<2)return;const up=l.bb.map(b=>X(b[0]).toFixed(1)+","+Y(b[3]).toFixed(1)).join(" "),dn=l.bb.slice().reverse().map(b=>X(b[0]).toFixed(1)+","+Y(b[2]).toFixed(1)).join(" "),ln=k=>l.bb.map((b,i)=>(i?"L":"M")+X(b[0]).toFixed(1)+" "+Y(b[k]).toFixed(1)).join("");
+  g+=`<polygon points="${up} ${dn}" fill="${l.col}" fill-opacity=".1"/><path d="${ln(2)}${ln(3)}" fill="none" stroke="${l.col}" stroke-opacity=".45" stroke-width="1"/><path d="${ln(1)}" fill="none" stroke="${l.col}" stroke-opacity=".7" stroke-width="1.2" stroke-dasharray="4 3"/>`});
  lines.forEach(l=>{g+=`<path d="${l.pts.map((h,i)=>(i?"L":"M")+X(h[0]).toFixed(1)+" "+Y(h[1]).toFixed(1)).join("")}" fill="none" stroke="${l.col}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;const e=l.pts[l.pts.length-1];g+=`<circle cx="${X(e[0])}" cy="${Y(e[1])}" r="3.5" fill="${l.col}"/>`});
  let gg="";
- if(P&&(sold.length||act.length||(P.wpts||[]).length)){
-  const pts=[...(P.wpts||[]),...sold,...act];tpts=pts;
+ if(P&&(sold.length||act.length||wpts.length)){
+  const pts=[...wpts,...sold,...act];tpts=pts;
   const CW=Object.fromEntries(TCOND.map(([n,a,c])=>[n,c])),nc=TCOND.filter(([n])=>tconds.has(n)).length||1,ci=Object.fromEntries(TCOND.filter(([n])=>tconds.has(n)).map(([n],i)=>[n,i]));
   const CC=Object.fromEntries(TCOND.map(([n,a,c])=>[n,{a,c}])),DR=3.6,D=2*DR+1.6,cx=pts.map(x=>x.type==="For sale"?0:X(x.t));
   if(act.length){gg+=`<line x1="${m.l+iw}" x2="${m.l+iw}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--line)"/>`;
@@ -587,7 +594,8 @@ $("tcg").onclick=e=>{const dot=e.target.closest&&e.target.closest("[data-tpi]");
  if(d.tzr){tview=null;if(TG)drawTcgChart(TG.vs,TG.tpd);return}
  tsel=null;tview=null;
  if(d.tover){tover=!tover;drawTcg();return}
- if(d.tship){tship=!tship;drawTcg();return}
+ if(d.tsold){tsold=!tsold;drawTcg();return}
+ if(d.tboll){tboll=!tboll;drawTcg();return}
  if(d.ci!=null){tci=+d.ci;tprint=""}
  else if(d.tp!=null)tprint=d.tp;
  else if(d.tc){tconds.has(d.tc)?tconds.delete(d.tc):tconds.add(d.tc)}
