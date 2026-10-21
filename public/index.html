@@ -28,6 +28,7 @@ header{border-bottom:1px solid var(--line)}
 .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding-top:12px}
 .pill,select{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:999px;padding:6px 14px;cursor:pointer}
 .pill[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg);font-weight:700}
+.fs{border-bottom:1px solid rgb(154 160 166/.5)}.bar.fs,.py.fs{padding:10px 0}.bar[hidden]{display:none}
 .sep{width:1px;height:22px;background:var(--line);margin:0 2px}
 .py{display:flex;align-items:center;gap:10px;padding-top:14px}
 .py .pl{font-weight:700;white-space:nowrap}
@@ -81,20 +82,20 @@ footer{border-top:1px solid var(--line);margin-top:22px;padding:12px 0;color:var
 <div class="seg tabs" id="tb" role="group" aria-label="Data source"><button type="button" data-t="ebay" aria-pressed="true">eBay sales</button><button type="button" data-t="tcg" aria-pressed="false">TCGplayer</button></div>
 <div class="bar" id="sv"></div>
 <div id="ebay">
-<div class="bar" id="gr" role="group" aria-label="Grading company"></div>
-<div class="bar" id="cd" role="group" aria-label="Condition"></div>
-<div class="bar" id="fn" role="group" aria-label="Finish"></div>
-<div class="bar">
-<select id="gn" aria-label="Grade" hidden><option value="">Any grade</option><option>10</option><option>9.5</option><option>9</option><option>8.5</option><option>8</option><option>7</option></select>
+<div class="bar fs" id="gr" role="group" aria-label="Grading company"></div>
+<div class="bar fs" id="gd" role="group" aria-label="Grade" hidden></div>
+<div class="bar fs" id="cd" role="group" aria-label="Condition"></div>
+<div class="bar fs" id="fn" role="group" aria-label="Finish"></div>
+<div class="bar fs">
 <button class="pill" id="tS" type="button" aria-pressed="true">Sold</button><button class="pill" id="tA" type="button" aria-pressed="true">For sale</button><span class="sep"></span><button class="pill" id="tU" type="button" aria-pressed="true">No condition listed</button><button class="pill" id="tR" type="button" aria-pressed="true">Hide unrelated</button>
 </div>
-<div class="py" id="pw2"><span class="pl">Price</span><div class="dr" id="pd" role="group" aria-label="Price range"></div><b id="pt"></b></div>
+<div class="py fs" id="pw2"><span class="pl">Price</span><div class="dr" id="pd" role="group" aria-label="Price range"></div><b id="pt"></b></div>
 <details class="mf" id="mf"><summary>More filters</summary>
-<div class="py" id="py"><span class="pl">Print year</span><div class="dr" id="yd" role="group" aria-label="Print year range"></div><b id="yt"></b></div>
-<div class="bar" id="ln" role="group" aria-label="Language"></div>
-<div class="bar" id="ed" role="group" aria-label="Edition"></div>
-<div class="bar" id="sf" role="group" aria-label="For sale format"></div>
-<div class="bar"><button class="pill" id="tP" type="button" aria-pressed="false">Price + shipping</button><button class="pill" id="tO" type="button" aria-pressed="false">Hide price outliers</button><button class="pill" id="tD" type="button" aria-pressed="true">Hide duplicates</button><button class="pill" id="tX" type="button" hidden></button><button class="pill" id="ex" type="button">Export CSV</button></div>
+<div class="py fs" id="py"><span class="pl">Print year</span><div class="dr" id="yd" role="group" aria-label="Print year range"></div><b id="yt"></b></div>
+<div class="bar fs" id="ln" role="group" aria-label="Language"></div>
+<div class="bar fs" id="ed" role="group" aria-label="Edition"></div>
+<div class="bar fs" id="sf" role="group" aria-label="For sale format"></div>
+<div class="bar fs"><button class="pill" id="tP" type="button" aria-pressed="false">Price + shipping</button><button class="pill" id="tO" type="button" aria-pressed="false">Hide price outliers</button><button class="pill" id="tD" type="button" aria-pressed="true">Hide duplicates</button><button class="pill" id="tX" type="button" hidden></button><button class="pill" id="ex" type="button">Export CSV</button></div>
 </details>
 <div id="pw" hidden>
 <div class="bar" id="pc" role="group" aria-label="Print sets"></div>
@@ -142,9 +143,15 @@ const rangeDays=()=>rsel==="all"?MAXD:+rsel;
 $("gr").innerHTML=MODES.map(([k,l])=>`<button class="pill" type="button" data-m="${k}" aria-pressed="${k===mode}">${l}</button>`).join("");
 $("gr").onclick=e=>{const k=e.target.dataset.m;if(!k)return;mode=k;
  $("gr").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.m===k));
- $("gn").hidden=!/^(PSA|BGS|CGC|TAG)$/.test(k);if($("gn").hidden)$("gn").value="";
- load()};
-$("gn").onchange=()=>{view=null;draw()};
+ grades();load()};
+/* grade toggles appear under the graders once one is picked */
+const GRADES={PSA:["10","9","8.5","8","7.5","7","6"],BGS:["10","9.5","9","8.5","8","7"],CGC:["10","9.5","9","8.5","8","7"],TAG:["10","9.5","9","8.5","8","7"]};
+let gsel="";
+function grades(){const g=GRADES[mode],name=(MODES.find(m=>m[0]===mode)||[])[1];gsel="";$("gd").hidden=!g;
+ $("gd").innerHTML=g?[["","Any grade"],...g.map(x=>[x,name+" "+x])].map(([k,l])=>`<button class="pill" type="button" data-g="${k}" aria-pressed="${k===gsel}">${l}</button>`).join(""):""}
+$("gd").onclick=e=>{const k=e.target.dataset.g;if(k===undefined)return;gsel=k;
+ $("gd").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.g===k));view=null;scrub=null;draw()};
+grades();
 $("rg").innerHTML=RNG.map(([k,l])=>`<button type="button" data-r="${k}" aria-pressed="${k===rsel}">${l}</button>`).join("");
 $("rg").onclick=e=>{const k=e.target.dataset.r;if(!k)return;rsel=k;
  [...$("rg").children].forEach(b=>b.setAttribute("aria-pressed",b.dataset.r===k));view=null;scrub=null;draw()};
@@ -159,7 +166,7 @@ const FIN=[["any","Any finish"],["holo","Holo"],["reverse","Reverse holo"],["non
 $("fn").innerHTML=FIN.map(([k,l])=>`<button class="pill" type="button" data-f="${k}" aria-pressed="${k===fmode}">${l}</button>`).join("");
 $("fn").onclick=e=>{const k=e.target.dataset.f;if(!k)return;fmode=k;
  $("fn").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.f===k));view=null;scrub=null;draw()};
-const gradeOk=x=>{const n=+$("gn").value;return mode==="all"||(mode==="raw"?!x.grader:x.grader===mode&&(!n||x.grade===n))};
+const gradeOk=x=>{const n=+gsel;return mode==="all"||(mode==="raw"?!x.grader:x.grader===mode&&(!n||x.grade===n))};
 const condOk=x=>!cset.size||(!x.cond&&!x.grader?cset.has("none"):!!x.cond&&cset.has(x.cond));
 const finOk=x=>fmode==="any"||(fmode==="none"?!x.f2:x.f2===fmode);
 const yrOn=()=>yr.max>yr.min&&(yr.lo>yr.min||yr.hi<yr.max);
