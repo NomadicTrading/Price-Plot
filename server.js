@@ -12,7 +12,8 @@ if (!ID || !SECRET) console.warn("EBAY_CLIENT_ID / EBAY_CLIENT_SECRET not set: l
 const API = "https://api.ebay.com";
 const MARKET = "EBAY_US";
 const CATEGORY = process.env.CATEGORY || ""; // optional eBay category ID; blank searches everything, like eBay's search box
-const MAX_RESULTS = Number(process.env.MAX_RESULTS) || 600; // cap on active listings per search (Browse API allows up to 10,000)
+const MAX_RESULTS = Number(process.env.MAX_RESULTS) || 400; // cap on active listings per search; each 200 uses one of eBay's 5,000 daily calls
+const LISTINGS_CACHE_MIN = Number(process.env.LISTINGS_CACHE_MINUTES) || 30; // how long a search's results are shared before asking eBay again
 const catParam = CATEGORY ? { category_ids: CATEGORY } : {};
 const SCOPE_BROWSE = "https://api.ebay.com/oauth/api_scope";
 const SCOPE_INSIGHTS = "https://api.ebay.com/oauth/api_scope/buy.marketplace.insights";
@@ -321,7 +322,7 @@ function parseEdition(title) {
 }
 
 const GRADERS = { PSA: "PSA", BGS: "(BGS,Beckett)", CGC: "CGC", TAG: "TAG" };
-const cache = new Map(); // 5 minute cache keeps you well inside eBay rate limits
+const cache = new Map(); // results shared for LISTINGS_CACHE_MIN minutes, to stay well inside eBay's daily limit
 const app = express();
 app.use(express.static("public"));
 
@@ -349,7 +350,7 @@ app.get("/api/listings", async (req, res) => {
       return { ...x, ...gi, cond: gi.grader ? null : parseCond(x.title, bc), fin: parseFinish(x.title), lang: parseLang(x.title), ed: parseEdition(x.title), rel: relevant(x.title, pq, base) };
     });
     const data = { listings, soldEnabled: SOLD_ON, warnings };
-    cache.set(key, { exp: Date.now() + 5 * 60000, data });
+    cache.set(key, { exp: Date.now() + LISTINGS_CACHE_MIN * 60000, data });
     res.json(data);
   } catch (e) {
     console.error(e);
