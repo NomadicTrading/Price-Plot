@@ -387,11 +387,19 @@ app.get("/api/tcg", async (req, res) => {
     for (let k = Math.min(tokens.length, 4); k >= 1 && !cards.length; k--) {
       const use = tokens.slice(0, k);
       const q = [`name:"${use.join(" ")}"`, ...(pq.num ? [`number:${pq.num.n}`] : [])].join(" ");
-      const r = await fetch("https://api.pokemontcg.io/v2/cards?" + new URLSearchParams({ q, pageSize: pq.num ? "80" : "250", orderBy: "set.releaseDate", select: "id,name,number,set,images,tcgplayer" }), {
-        headers: PTCG_KEY ? { "X-Api-Key": PTCG_KEY } : {},
-        signal: AbortSignal.timeout(20000),
-      });
-      if (!r.ok) throw new Error(`price service returned ${r.status}`);
+      // pokemontcg.io often answers 502/503/504 when it's busy, so try up to 3 times, asking for fewer cards each time
+      let r;
+      for (let tries = 0; tries < 3; tries++) {
+        const size = String(Math.round((pq.num ? 80 : 250) / (tries + 1)));
+        r = await fetch("https://api.pokemontcg.io/v2/cards?" + new URLSearchParams({ q, pageSize: size, orderBy: "set.releaseDate", select: "id,name,number,set,images,tcgplayer" }), {
+          headers: PTCG_KEY ? { "X-Api-Key": PTCG_KEY } : {},
+          signal: AbortSignal.timeout(20000),
+        }).catch(() => null);
+        if (r && (r.ok || r.status < 500)) break;
+        await new Promise((ok) => setTimeout(ok, 800 * (tries + 1)));
+      }
+      if (!r) throw new Error("the card price service didn't answer, try again in a minute");
+      if (!r.ok) throw new Error(r.status >= 500 ? `the card price service is having trouble (${r.status}), try again in a minute` : `price service returned ${r.status}`);
       const got = (await r.json()).data || [];
       // keep cards whose name contains every searched word (the service also returns partial matches)
       cards = got.filter((c) => {
