@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 240 240" role="img" aria-label="Price Plot">
+<rect width="240" height="240" rx="54" fill="#14213D"/>
+<line x1="52" y1="122" x2="168" y2="122" stroke="#F59E0B" stroke-width="6" stroke-dasharray="10 8"/>
+<polyline points="52,48 52,188 196,188" fill="none" stroke="#F7F7F5" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="90" cy="160" r="10" fill="#F7F7F5"/><circle cx="124" cy="150" r="10" fill="#F7F7F5"/>
+<path d="M168 122 C 148 96, 142 88, 142 76 A 26 26 0 1 1 194 76 C 194 88, 188 96, 168 122 Z" fill="#F59E0B"/>
+<circle cx="168" cy="76" r="10" fill="#14213D"/>
+</svg>

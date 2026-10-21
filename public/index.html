@@ -1,7 +1,16 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Pokémon Price Plot</title>
+<title>Price·Plot</title>
+<link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/brand/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<link rel="manifest" href="/brand/site.webmanifest">
+<meta name="theme-color" content="#14213D">
+<meta name="apple-mobile-web-app-title" content="Price Plot">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&display=swap">
 <style>
 :root{--bg:#fff;--fg:#191919;--mut:#707070;--soft:#f2f3f5;--line:#e5e5e5;--bd:#767676;--blue:#3665f3;--link:#0654ba;--dot:#d9625e;--act:#2e9e4f;--trend:#5aa9e6;--gray:#9aa0a6;--band:rgba(120,125,135,.15);--up:#1a7f37;--dn:#d92d20;color-scheme:light dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121212;--fg:#f1f1f1;--mut:#a0a0a0;--soft:#232323;--line:#333;--bd:#8a8a8a;--blue:#6f8fff;--link:#8fb0ff;--dot:#e5807c;--act:#4cc46f;--trend:#6cb8f2;--gray:#7d838b;--band:rgba(180,185,195,.16);--up:#4ccf74;--dn:#ff6b5e}}
@@ -11,7 +20,8 @@ body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 "Helvetica Neu
 .wrap{max-width:1000px;margin:0 auto;padding:0 14px}
 header{border-bottom:1px solid var(--line)}
 .hd{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding-top:12px;padding-bottom:12px}
-.brand{font-size:22px;font-weight:700;letter-spacing:-.3px}
+.brand{display:inline-flex;align-items:center;gap:10px;color:var(--fg);text-decoration:none;font:700 24px/1 "Space Grotesk","Helvetica Neue",Helvetica,Arial,sans-serif;letter-spacing:-.6px}
+.brand img{width:36px;height:36px;flex:none}.brand .pp-dot{color:#F59E0B}
 #f{flex:1;min-width:240px;display:flex;border:1px solid var(--fg);border-radius:999px;overflow:hidden;background:var(--bg)}
 #q{flex:1;min-width:0;border:0;background:transparent;color:var(--fg);font:inherit;font-size:15px;padding:11px 16px;outline:none}
 .go{background:var(--blue);color:#fff;border:0;border-radius:999px;margin:3px;padding:0 24px;font:inherit;font-weight:700;cursor:pointer}
@@ -64,7 +74,7 @@ svg{display:block;width:100%;height:auto;user-select:none;-webkit-user-select:no
 .btn.o{background:var(--bg);color:var(--fg);border:1px solid var(--bd)}
 footer{border-top:1px solid var(--line);margin-top:22px;padding:12px 0;color:var(--mut);font-size:12px}
 </style></head><body>
-<header><div class="wrap hd"><div class="brand">Pokémon Price Plot</div>
+<header><div class="wrap hd"><a class="brand" href="/" aria-label="Price Plot home"><img src="/brand/icon-small.svg" width="36" height="36" alt=""><span>Price<span class="pp-dot">·</span>Plot</span></a>
 <form id="f"><input id="q" type="search" placeholder="Search a card, e.g. charizard 4/102 base set" aria-label="Search listings" autocomplete="off" enterkeyhint="search" autofocus><button class="go" type="submit">Search</button></form></div></header>
 <main class="wrap">
 <div class="seg tabs" id="tb" role="group" aria-label="Data source"><button type="button" data-t="ebay" aria-pressed="true">eBay sales</button><button type="button" data-t="tcg" aria-pressed="false">TCGplayer</button></div>
