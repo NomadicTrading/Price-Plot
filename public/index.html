@@ -7,6 +7,7 @@
 <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
 <link rel="manifest" href="/brand/site.webmanifest">
 <meta name="theme-color" content="#14213D">
+<script>try{const t=localStorage.getItem("pp_theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch{}</script>
 <meta name="apple-mobile-web-app-title" content="Price Plot">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -81,6 +82,7 @@ svg{display:block;width:100%;height:auto;user-select:none;-webkit-user-select:no
 .tci{width:150px;height:auto;border-radius:8px;flex:none;align-self:flex-start;box-shadow:0 1px 4px rgba(0,0,0,.25)}@media (max-width:420px){.tci{width:120px}}
 .btn.o{background:var(--bg);color:var(--fg);border:1px solid var(--bd)}
 footer{border-top:1px solid var(--line);margin-top:22px;padding:12px 0;color:var(--mut);font-size:12px}
+.thm{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--fg);font-size:14px}.thm .seg{flex:none}.thm .seg button{padding:7px 16px}
 </style></head><body>
 <header><div class="wrap hd"><a class="brand" href="/" aria-label="Price Plot home"><img src="/brand/icon-small.svg" width="36" height="36" alt=""><span>Price<span class="pp-dot">·</span>Plot</span></a>
 <form id="f"><input id="q" type="search" placeholder="Search a card, e.g. charizard 4/102 base set" aria-label="Search listings" autocomplete="off" enterkeyhint="search" autofocus><button class="go" type="submit">Search</button></form></div></header>
@@ -120,7 +122,7 @@ footer{border-top:1px solid var(--line);margin-top:22px;padding:12px 0;color:var
 <div id="tcg" hidden></div>
 <p class="sm">Tip: add the card number, like 4/102, to cut out other cards, and put a minus sign in front of a word to leave it out, like -jumbo.</p>
 </main>
-<footer><div class="wrap">Not affiliated with or endorsed by eBay Inc. Active listings come from eBay. Sold data, when shown, comes from an independent data service.</div></footer>
+<footer><div class="wrap"><div class="thm"><span>Appearance</span><div class="seg" id="thm" role="group" aria-label="Light or dark mode"><button type="button" data-th="auto">Auto</button><button type="button" data-th="light">Light</button><button type="button" data-th="dark">Dark</button></div></div>Not affiliated with or endorsed by eBay Inc. Active listings come from eBay. Sold data, when shown, comes from an independent data service.</div></footer>
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -652,5 +654,11 @@ $("sv").onclick=e=>{const d=e.target.dataset,a=saved();
  else if(d.s!=null){$("q").value=a[+d.s]||"";tcgQ="";load();if(tab==="tcg")loadTcg()}
  else if(d.x!=null){a.splice(+d.x,1);try{localStorage.setItem("pp_saved",JSON.stringify(a))}catch{}renderSaved()}};
 renderSaved();
+/* light / dark mode: Auto follows the phone or computer setting; the choice is remembered on this device */
+function setTheme(t){const r=document.documentElement;if(t==="light"||t==="dark")r.dataset.theme=t;else delete r.dataset.theme;
+ [...$("thm").children].forEach(b=>b.setAttribute("aria-pressed",b.dataset.th===(t||"auto")));
+ try{t==="light"||t==="dark"?localStorage.setItem("pp_theme",t):localStorage.removeItem("pp_theme")}catch{}}
+$("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t)};
+setTheme(document.documentElement.dataset.theme||"auto");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script></body></html>
