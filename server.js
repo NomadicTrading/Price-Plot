@@ -62,6 +62,10 @@ async function active(q) {
         title: i.title,
         url: i.itemWebUrl,
         bc: i.condition || "",
+        fmt: (i.buyingOptions || []).includes("AUCTION") ? "auction" : "bin",
+        offer: (i.buyingOptions || []).includes("BEST_OFFER"),
+        ship: i.shippingOptions?.[0]?.shippingCost?.value != null ? Number(i.shippingOptions[0].shippingCost.value) : null,
+        seller: i.seller?.username || "",
       });
     }
     if (!j.next) break;
@@ -83,10 +87,10 @@ function parseGrade(t) {
 
 // Sold listings: Marketplace Insights API (restricted; needs eBay approval).
 // It only reaches back 90 days, so every sale seen is saved to data/sold.json
-// and kept for a year. History past 90 days builds up as the app keeps running.
+// and kept for 1000 days. History past 90 days builds up as the app keeps running.
 // Field names follow eBay's docs; untested until you have access.
 const DB = "data/sold.json";
-const YEAR = 365 * 864e5;
+const YEAR = 1000 * 864e5; // how long saved sales are kept
 let store = {};
 try { store = JSON.parse(fs.readFileSync(DB, "utf8")); } catch {}
 function save() {
@@ -141,22 +145,32 @@ function useRequest() {
   fs.writeFileSync(USAGE, JSON.stringify(usage));
   return true;
 }
-const COMPS_DAYS = Math.min(1095, Number(process.env.COMPS_DAYS) || 365);
+const COMPS_DAYS = Math.min(1000, Number(process.env.COMPS_DAYS) || 1000);
+let compsNote = "";
 const pulled = {};
 async function collectComps(q) {
   const bucket = (store[q] ||= {});
   if (pulled[q] && Date.now() - pulled[q] < COMPS_REFRESH_MS) return Object.values(bucket);
   const pages = Object.keys(bucket).length ? 1 : COMPS_MAX_PAGES;
+  let days = COMPS_DAYS;
   for (let page = 1; page <= pages; page++) {
     if (!useRequest()) {
       if (page === 1) throw new Error("monthly sold-data request limit reached, showing saved sales");
       break;
     }
-    const r = await fetch(
-      "https://api.compsapi.com/v1/sold?" +
-        new URLSearchParams({ q, days: COMPS_DAYS, size: 240, page, ...(CATEGORY ? { category: CATEGORY } : {}) }),
-      { headers: { "X-API-Key": COMPS_KEY, "User-Agent": "price-plot/0.1" } }
-    );
+    const get = (d) =>
+      fetch(
+        "https://api.compsapi.com/v1/sold?" +
+          new URLSearchParams({ q, days: d, size: 240, page, ...(CATEGORY ? { category: CATEGORY } : {}) }),
+        { headers: { "X-API-Key": COMPS_KEY, "User-Agent": "price-plot/0.1" } }
+      );
+    let r = await get(days);
+    // the free plan is documented as 1 year of history; if it refuses a longer window, retry with 365 days
+    if (!r.ok && days > 365 && [400, 402, 403, 422].includes(r.status)) {
+      days = 365;
+      compsNote = "Your sold-data plan seems to allow only 1 year of history, so sold sales are limited to that.";
+      r = await get(days);
+    }
     if (!r.ok) throw new Error(r.status === 429 ? "sold-data service is rate limiting, try again soon" : `sold-data service returned ${r.status}`);
     const j = await r.json();
     for (const i of j.items || []) {
@@ -231,6 +245,32 @@ function parseCond(title, browseCond) {
   return null;
 }
 
+// Holo / reverse holo / non-holo from the title (null when the title does not say)
+function parseFinish(title) {
+  const t = norm(title);
+  if (/\bnon ?holo(foil)?\b|\bno holo\b/.test(t)) return "nonholo";
+  if (/\breverse\b|\brev ?holo\b/.test(t)) return "reverse";
+  if (/\b(holo|holofoil|holographic)\b/.test(t)) return "holo";
+  return null;
+}
+
+// Language, edition and shadowless, read from the title
+function parseLang(title) {
+  const t = norm(title);
+  if (/\b(japanese|japan|jpn|jp)\b/.test(t)) return "jp";
+  if (/\b(korean|korea|kor)\b/.test(t)) return "kr";
+  if (/\b(chinese|china|chn|simplified|traditional chinese)\b/.test(t)) return "cn";
+  if (/\b(german|french|spanish|italian|portuguese|dutch|thai|indonesian)\b/.test(t)) return "other";
+  return null; // not stated, usually English
+}
+function parseEdition(title) {
+  const t = norm(title);
+  if (/\b(1st|first) ?(ed|edition)\b|\b1st\b/.test(t)) return "1st";
+  if (/\bshadowless\b/.test(t) && !/\bnon ?shadowless\b/.test(t)) return "shadowless";
+  if (/\bunlimited\b/.test(t)) return "unlimited";
+  return null;
+}
+
 const GRADERS = { PSA: "PSA", BGS: "(BGS,Beckett)", CGC: "CGC", TAG: "TAG" };
 const cache = new Map(); // 5 minute cache keeps you well inside eBay rate limits
 const app = express();
@@ -254,9 +294,10 @@ app.get("/api/listings", async (req, res) => {
         ? collectSoldAny(q).catch((e) => (warnings.push("Sold data unavailable: " + e.message), Object.values(store[q] || {})))
         : [],
     ]);
+    if (COMPS_KEY && compsNote) warnings.push(compsNote);
     const listings = [...s, ...a].map(({ bc, ...x }) => {
       const gi = parseGrade(x.title);
-      return { ...x, ...gi, cond: gi.grader ? null : parseCond(x.title, bc), rel: relevant(x.title, pq, base) };
+      return { ...x, ...gi, cond: gi.grader ? null : parseCond(x.title, bc), fin: parseFinish(x.title), lang: parseLang(x.title), ed: parseEdition(x.title), rel: relevant(x.title, pq, base) };
     });
     const data = { listings, soldEnabled: SOLD_ON, warnings };
     cache.set(key, { exp: Date.now() + 5 * 60000, data });
@@ -294,21 +335,32 @@ app.get("/api/tcg", async (req, res) => {
     let cards = [];
     // try the whole name first, then drop words from the end until something matches
     for (let k = Math.min(tokens.length, 4); k >= 1 && !cards.length; k--) {
-      const q = [`name:"${tokens.slice(0, k).join(" ")}"`, ...(pq.num ? [`number:${pq.num.n}`, `set.printedTotal:${pq.num.d}`] : [])].join(" ");
-      const r = await fetch("https://api.pokemontcg.io/v2/cards?" + new URLSearchParams({ q, pageSize: "8", orderBy: "-set.releaseDate", select: "id,name,number,set,images,tcgplayer" }), {
+      const use = tokens.slice(0, k);
+      const q = [`name:"${use.join(" ")}"`, ...(pq.num ? [`number:${pq.num.n}`] : [])].join(" ");
+      const r = await fetch("https://api.pokemontcg.io/v2/cards?" + new URLSearchParams({ q, pageSize: pq.num ? "80" : "250", orderBy: "set.releaseDate", select: "id,name,number,set,images,tcgplayer" }), {
         headers: PTCG_KEY ? { "X-Api-Key": PTCG_KEY } : {},
         signal: AbortSignal.timeout(20000),
       });
       if (!r.ok) throw new Error(`price service returned ${r.status}`);
-      cards = (await r.json()).data || [];
+      const got = (await r.json()).data || [];
+      // keep cards whose name contains every searched word (the service also returns partial matches)
+      cards = got.filter((c) => {
+        const w = norm(c.name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/);
+        return use.every((t) => w.includes(t));
+      });
     }
-    const data = {
-      searchUrl,
-      cards: cards.map((c) => ({
-        id: c.id, name: c.name, number: c.number, set: c.set?.name, printedTotal: c.set?.printedTotal, released: c.set?.releaseDate,
+    const finishesOf = (p) => [...new Set(Object.keys(p || {}).map((k) => (/reverse/i.test(k) ? "reverse" : /normal/i.test(k) ? "nonholo" : "holo")))];
+    const list = cards
+      .map((c) => ({
+        id: c.id, name: c.name, number: c.number, set: c.set?.name, setId: c.set?.id, printedTotal: c.set?.printedTotal,
+        released: c.set?.releaseDate, year: Number(String(c.set?.releaseDate || "").slice(0, 4)) || 0,
+        exact: !!(pq.num && String(c.set?.printedTotal) === pq.num.d && String(+c.number) === pq.num.n),
+        finishes: finishesOf(c.tcgplayer?.prices),
         image: c.images?.small, tcgUrl: c.tcgplayer?.url, updated: c.tcgplayer?.updatedAt, prices: c.tcgplayer?.prices || {},
-      })),
-    };
+      }))
+      .sort((x, y) => Number(y.exact) - Number(x.exact) || x.year - y.year);
+    // full price details only for the first few cards, to keep the response small
+    const data = { searchUrl, cards: list.map((c, i) => (i < 8 ? c : { ...c, image: undefined, tcgUrl: undefined, updated: undefined, prices: {} })) };
     tcgCache.set(base, { exp: Date.now() + 3600e3, data });
     res.json(data);
   } catch (e) {
