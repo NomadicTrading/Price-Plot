@@ -76,7 +76,7 @@ svg{display:block;width:100%;height:auto;user-select:none;-webkit-user-select:no
 .tc th:first-child,.tc td:first-child{text-align:left}
 .btn{display:inline-block;margin:10px 8px 0 0;padding:9px 16px;border-radius:999px;background:var(--blue);color:#fff;text-decoration:none;font-weight:700;font-size:14px}
 .tk{display:flex;gap:8px;overflow-x:auto;padding:12px 0 4px;-webkit-overflow-scrolling:touch}.tk .pill{white-space:nowrap;text-align:left}
-#tch{position:relative;touch-action:pan-y;margin-top:8px}#tch svg{display:block;width:100%;height:auto}
+#tch{position:relative;touch-action:none;-webkit-touch-callout:none;overscroll-behavior:contain;margin-top:8px}#tch svg{display:block;width:100%;height:auto}
 #trd{background:var(--soft);border-radius:8px;padding:8px 12px;margin-top:10px;min-height:44px;display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:13.5px}#trd span{color:var(--mut);font-size:12.5px}
 .tci{width:150px;height:auto;border-radius:8px;flex:none;align-self:flex-start;box-shadow:0 1px 4px rgba(0,0,0,.25)}@media (max-width:420px){.tci{width:120px}}
 .btn.o{background:var(--bg);color:var(--fg);border:1px solid var(--bd)}
@@ -508,35 +508,81 @@ function drawTcgChart(vs,tpd){
  const gut=act.length?Math.round(Math.min(Math.max(48,W*.24),18+9.2*Math.ceil(Math.sqrt(act.length)*1.2))):0,iw=W-m.l-m.r-gut,ih=H-m.t-m.b;
  const lines=TCOND.filter(([n])=>tconds.has(n)).map(([n,a,col])=>{const v=vs.find(x=>x.cond===n);return v?{a,col,pts:v.hist.filter(h=>h[0]>=t0).sort((x,y)=>x[0]-y[0])}:null}).filter(l=>l&&l.pts.length);
  const all=[...lines.flatMap(l=>l.pts.map(h=>h[1])),...sold.map(x=>x.v),...act.map(x=>x.v),...weeks.flatMap(x=>[x.lo,x.v])];
- if(!all.length){box.innerHTML=`<p class="sm">No price history in this range for the selected conditions.</p>`;readout(vs,null);return}
+ if(!all.length){TG=null;box.innerHTML=`<p class="sm">No price history in this range for the selected conditions.</p>`;readout(vs,null);return}
  let lo=Math.min(...all),hi=Math.max(...all);const pad=(hi-lo)*.12||hi*.1||1;lo=Math.max(0,lo-pad);hi+=pad;
- const X=t=>m.l+(t-t0)/(now-t0)*iw,Y=p=>m.t+(1-(p-lo)/(hi-lo))*ih;
- const step=(hi-lo)/4;let g="";
- for(let i=0;i<=4;i++){const p=lo+step*i;g+=`<line x1="${m.l}" x2="${W-m.r}" y1="${Y(p)}" y2="${Y(p)}" stroke="var(--line)" stroke-dasharray="4 4"/><text x="${W-4}" y="${Y(p)+4}" text-anchor="end" font-size="11.5" fill="var(--mut)">${money(+p.toFixed(2))}</text>`}
- const days=+trng,nl=4;for(let i=0;i<=nl;i++){const t=t0+(now-t0)*i/nl;g+=`<text x="${Math.min(W-m.r-gut-14,Math.max(m.l+14,X(t)))}" y="${H-6}" text-anchor="middle" font-size="11.5" fill="var(--mut)">${new Date(t*1000).toLocaleDateString(undefined,days>180?{month:"short",year:"2-digit"}:{month:"short",day:"numeric"})}</text>`}
+ const full={x0:t0,x1:now,y0:lo,y1:hi};TG={W,H,m,iw,ih,gut,full,vs,tpd};
+ const v=tview?tClamp(tview):full;
+ const X=t=>m.l+(t-v.x0)/(v.x1-v.x0)*iw,Y=p=>m.t+(1-(p-v.y0)/(v.y1-v.y0))*ih;
+ let g=`<defs><clipPath id="tcp"><rect x="${m.l}" y="${m.t}" width="${iw}" height="${ih}"/></clipPath><clipPath id="tcg2"><rect x="${m.l+iw}" y="${m.t-6}" width="${gut+m.r}" height="${ih+12}"/></clipPath></defs>`;
+ const ys=nice((v.y1-v.y0)/Math.max(3,Math.floor(ih/40)));
+ for(let y=Math.ceil(v.y0/ys-1e-9)*ys;y<=v.y1+1e-9;y+=ys)g+=`<line x1="${m.l}" x2="${W-m.r}" y1="${Y(y)}" y2="${Y(y)}" stroke="var(--line)" stroke-dasharray="4 4"/><text x="${W-4}" y="${Y(y)+4}" text-anchor="end" font-size="11.5" fill="var(--mut)">${fmt(+y.toFixed(2))}</text>`;
+ const span=(v.x1-v.x0)/86400,nl=4,lf=span>180?{month:"short",year:"2-digit"}:span>3?{month:"short",day:"numeric"}:{month:"short",day:"numeric",hour:"numeric"};
+ for(let i=0;i<=nl;i++){const t=v.x0+(v.x1-v.x0)*i/nl;g+=`<text x="${i===0?m.l:i===nl?m.l+iw:X(t)}" y="${H-6}" text-anchor="${i===0?"start":i===nl?"end":"middle"}" font-size="11.5" fill="var(--mut)">${new Date(t*1000).toLocaleDateString(undefined,lf)}</text>`}
+ g+=`<g clip-path="url(#tcp)">`;
  lines.forEach(l=>{g+=`<path d="${l.pts.map((h,i)=>(i?"L":"M")+X(h[0]).toFixed(1)+" "+Y(h[1]).toFixed(1)).join("")}" fill="none" stroke="${l.col}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;const e=l.pts[l.pts.length-1];g+=`<circle cx="${X(e[0])}" cy="${Y(e[1])}" r="3.5" fill="${l.col}"/>`});
+ let gg="";
  if(P&&(sold.length||act.length||weeks.length)){
   const pts=[...sold,...act];tpts=[...pts,...weeks];
   const CW=Object.fromEntries(TCOND.map(([n,a,c])=>[n,c])),nc=TCOND.filter(([n])=>tconds.has(n)).length||1,ci=Object.fromEntries(TCOND.filter(([n])=>tconds.has(n)).map(([n],i)=>[n,i]));
-  weeks.forEach((x,j)=>{const x0=X(Math.max(t0,x.t)),x1=X(Math.min(now,x.t+x.w)),slot=Math.max(1.5,(x1-x0)/nc),bw=Math.max(1.5,Math.min(7,slot*.7)),bx=x0+slot*(ci[x.c2]||0)+(slot-bw)/2,y1=Y(x.v),y2=Y(x.lo),col=CW[x.c2]||"var(--gray)";
+  weeks.forEach((x,j)=>{const x0=X(Math.max(t0,x.t)),x1=X(Math.min(now,x.t+x.w)),slot=Math.max(1.5,(x1-x0)/nc),bw=Math.max(1.5,Math.min(16,slot*.7)),bx=x0+slot*(ci[x.c2]||0)+(slot-bw)/2,y1=Y(x.v),y2=Y(x.lo),col=CW[x.c2]||"var(--gray)";
+   if(bx+bw<m.l-20||bx>m.l+iw+20)return;
    g+=`<g class="pt" data-tpi="${pts.length+j}" tabindex="0" role="button" aria-label="Week ${fmt(x.lo)} to ${fmt(x.v)}"><title>${esc("Week of "+new Date(x.t*1000).toLocaleDateString(undefined,{month:"short",day:"numeric"})+": "+x.qty+" sold, "+fmt(x.lo)+" to "+fmt(x.v))}</title><rect x="${bx-2}" y="${Math.min(y1,y2-2)-3}" width="${bw+4}" height="${Math.max(4,y2-y1)+6}" fill="transparent"/><rect class="dot" x="${bx}" y="${Math.min(y1,y2-2)}" width="${bw}" height="${Math.max(2,y2-y1)}" rx="${Math.min(2,bw/2)}" fill="${col}" fill-opacity=".3" stroke="${col}" stroke-opacity=".55" stroke-width=".8"/></g>`});
   const CC=Object.fromEntries(TCOND.map(([n,a,c])=>[n,{a,c}])),DR=3.6,D=2*DR+1.6,cx=pts.map(x=>x.type==="Sold"?X(x.t):0);
-  if(act.length){g+=`<line x1="${X(now)}" x2="${X(now)}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--line)"/>`;
+  if(act.length){gg+=`<line x1="${m.l+iw}" x2="${m.l+iw}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--line)"/>`;
    const ids=[];pts.forEach((x,i)=>{if(x.type==="For sale")ids.push(i)});ids.sort((a,b)=>pts[a].v-pts[b].v);
-   const placed=[],cols=Math.floor(gut/D)+1,b0=X(now)+DR+3;
+   const placed=[],cols=Math.floor(gut/D)+1,b0=m.l+iw+DR+3;
    ids.forEach(i=>{const cy=Y(pts[i].v);let ox=0;for(let k=0;k<cols;k++){ox=k*D;if(!placed.some(p=>Math.abs(p.y-cy)<D&&Math.abs(p.x-(b0+ox))<D))break}cx[i]=b0+ox;placed.push({x:cx[i],y:cy})})}
   pts.forEach((x,i)=>{const cy=Y(x.v),a=x.type==="For sale",col=(CC[x.c2]||{}).c||"var(--gray)",r=a?DR+.2:DR+(x.qty>1?Math.min(2,(x.qty-1)*.5):0);
-   g+=`<g class="pt" data-tpi="${i}" tabindex="0" role="button" aria-label="${x.type} ${(CC[x.c2]||{}).a||""} ${fmt(x.v)}"><title>${esc(x.type+" · "+((CC[x.c2]||{}).a||"")+" · "+fmt(x.v)+(x.qty>1?" · qty "+x.qty:""))}</title><circle cx="${cx[i]}" cy="${cy}" r="10" fill="transparent"/><circle class="dot" cx="${cx[i]}" cy="${cy}" r="${r}" fill="${a?"var(--bg)":col}" fill-opacity="${a?1:.7}" stroke="${a?col:"var(--bg)"}" stroke-width="${a?1.7:.8}"/></g>`})}
+   if(!a&&(cx[i]<m.l-12||cx[i]>m.l+iw+12))return;
+   const s=`<g class="pt" data-tpi="${i}" tabindex="0" role="button" aria-label="${x.type} ${(CC[x.c2]||{}).a||""} ${fmt(x.v)}"><title>${esc(x.type+" · "+((CC[x.c2]||{}).a||"")+" · "+fmt(x.v)+(x.qty>1?" · qty "+x.qty:""))}</title><circle cx="${cx[i]}" cy="${cy}" r="10" fill="transparent"/><circle class="dot" cx="${cx[i]}" cy="${cy}" r="${r}" fill="${a?"var(--bg)":col}" fill-opacity="${a?1:.7}" stroke="${a?col:"var(--bg)"}" stroke-width="${a?1.7:.8}"/></g>`;
+   if(a)gg+=s;else g+=s})}
+ g+=`</g><g clip-path="url(#tcg2)">${gg}</g>`;
  g+=`<line id="tsx" x1="0" x2="0" y1="${m.t}" y2="${m.t+ih}" stroke="var(--fg)" stroke-width="1" opacity="0" pointer-events="none"/>`;
- box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="TCGplayer market price over time by condition">${g}</svg>`;
+ const sc=(box.clientWidth||W)/W;
+ box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="touch-action:none" role="img" aria-label="TCGplayer market price over time by condition">${g}</svg><div class="az ay" data-tz="y" style="top:0;right:0;width:${m.r*sc}px;height:${(m.t+ih)*sc}px"></div><div class="az ax" data-tz="x" style="left:0;top:${(m.t+ih)*sc}px;width:${(m.l+iw)*sc}px;height:${m.b*sc}px"></div>${tview?`<div class="zc"><button class="rs" type="button" data-tzr="1">Reset zoom</button></div>`:""}`;
  const sv=box.querySelector("svg"),line=box.querySelector("#tsx");
- const at=cx=>{const b=sv.getBoundingClientRect(),x=(cx-b.left)/b.width*W;const t=Math.min(now,Math.max(t0,t0+(x-m.l)/iw*(now-t0)));line.setAttribute("x1",X(t));line.setAttribute("x2",X(t));line.setAttribute("opacity",".35");readout(vs,t)};
- sv.onpointerdown=e=>at(e.clientX);sv.onpointermove=e=>{if(e.pointerType==="mouse"||e.buttons)at(e.clientX)};
- sv.onpointerleave=()=>{line.setAttribute("opacity","0");readout(vs,null)};
+ TG.at=cx=>{const b=sv.getBoundingClientRect(),x=(cx-b.left)/b.width*W;const t=Math.min(Math.min(now,v.x1),Math.max(v.x0,v.x0+(x-m.l)/iw*(v.x1-v.x0)));line.setAttribute("x1",X(t));line.setAttribute("x2",X(t));line.setAttribute("opacity",".35");readout(vs,t)};
+ TG.off=()=>{line.setAttribute("opacity","0");readout(vs,null)};
  readout(vs,null)}
+/* zoom on the TCGplayer chart, same as the eBay chart: two fingers pinch and slide, the mouse wheel zooms,
+   dragging the price axis or the date axis stretches that axis, one finger reads the market price */
+let tview=null,TG=null,tpd0=0,tpc=null,tax=null,tpinch=false;const TPT=new Map();
+function tClamp(v){const f=TG.full,fw=f.x1-f.x0,fh=f.y1-f.y0;
+ const w=Math.min(fw,Math.max(6*3600,v.x1-v.x0)),h=Math.min(fh,Math.max(fh/200,v.y1-v.y0));
+ const x0=Math.min(Math.max(v.x0,f.x0),f.x1-w),y0=Math.min(Math.max(v.y0,f.y0),f.y1-h);return{x0,x1:x0+w,y0,y1:y0+h}}
+function tSet(v){if(!TG)return;tview=tClamp(v);const f=TG.full;
+ if(tview.x1-tview.x0>=(f.x1-f.x0)*.999&&tview.y1-tview.y0>=(f.y1-f.y0)*.999)tview=null;drawTcgChart(TG.vs,TG.tpd)}
+const tFrac=(cx,cy)=>{const b=$("tch").querySelector("svg").getBoundingClientRect(),s=b.width/TG.W;return{fx:((cx-b.left)/s-TG.m.l)/TG.iw,fy:((cy-b.top)/s-TG.m.t)/TG.ih}};
+const tMid=()=>{const [a,b]=[...TPT.values()];return{x:(a.x+b.x)/2,y:(a.y+b.y)/2}},tDist=()=>{const [a,b]=[...TPT.values()];return Math.hypot(a.x-b.x,a.y-b.y)};
+function tGesture(pf,nf,f){const v=tview||TG.full,w=v.x1-v.x0,h=v.y1-v.y0,cx=v.x0+pf.fx*w,cy=v.y1-pf.fy*h,nw=w*f,nh=h*f;
+ tSet({x0:cx-nf.fx*nw,x1:cx-nf.fx*nw+nw,y0:cy-(1-nf.fy)*nh,y1:cy-(1-nf.fy)*nh+nh})}
+{const T=$("tcg"),inCh=e=>e.target&&e.target.closest&&e.target.closest("#tch");
+ T.addEventListener("pointerdown",e=>{const box=inCh(e);if(!box||!TG||(e.target.closest&&e.target.closest("button")))return;
+  const z=e.target.dataset&&e.target.dataset.tz;
+  if(z){tax={id:e.pointerId,z,x:e.clientX,y:e.clientY,v:{...(tview||TG.full)}};try{box.setPointerCapture(e.pointerId)}catch{};e.preventDefault();return}
+  TPT.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(TPT.size===1){tpinch=false;TG.at&&TG.at(e.clientX)}
+  if(TPT.size===2){tpinch=true;tpd0=tDist();tpc=tMid();TPT.forEach((_,id)=>{try{box.setPointerCapture(id)}catch{}})}});
+ T.addEventListener("pointermove",e=>{if(!TG)return;
+  if(tax&&e.pointerId===tax.id){const dx=e.clientX-tax.x,dy=e.clientY-tax.y,v=tax.v;
+   if(tax.z==="y"){const h=(v.y1-v.y0)*Math.exp(dy*.008),c=(v.y0+v.y1)/2;tSet({x0:v.x0,x1:v.x1,y0:c-h/2,y1:c+h/2})}
+   else{const w=(v.x1-v.x0)*Math.exp(-dx*.008);tSet({x0:v.x1-w,x1:v.x1,y0:v.y0,y1:v.y1})}return}
+  if(!TPT.has(e.pointerId)){if(e.pointerType==="mouse"&&inCh(e)&&TG.at)TG.at(e.clientX);return}
+  TPT.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(TPT.size===2){const nd=tDist(),mm=tMid();if(tpd0&&nd&&tpc)tGesture(tFrac(tpc.x,tpc.y),tFrac(mm.x,mm.y),tpd0/nd);tpd0=nd;tpc=mm}
+  else if(!tpinch&&TG.at)TG.at(e.clientX)});
+ const up=e=>{if(tax&&e.pointerId===tax.id){tax=null;return}TPT.delete(e.pointerId);tpd0=0;tpc=null};
+ T.addEventListener("pointerup",up);T.addEventListener("pointercancel",up);
+ T.addEventListener("pointerout",e=>{if(e.pointerType==="mouse"&&inCh(e)&&!(e.relatedTarget&&e.relatedTarget.closest&&e.relatedTarget.closest("#tch"))&&TG&&TG.off)TG.off()});
+ T.addEventListener("wheel",e=>{if(!inCh(e)||!TG)return;e.preventDefault();const c=tFrac(e.clientX,e.clientY);c.fx=Math.min(1,Math.max(0,c.fx));c.fy=Math.min(1,Math.max(0,c.fy));
+  const f=Math.exp(Math.max(-60,Math.min(60,e.deltaY))*.003),v=tview||TG.full,w=v.x1-v.x0,hh=v.y1-v.y0,cx=v.x0+c.fx*w,cy=v.y1-c.fy*hh;
+  tSet({x0:cx-c.fx*w*f,x1:cx-c.fx*w*f+w*f,y0:cy-(1-c.fy)*hh*f,y1:cy-(1-c.fy)*hh*f+hh*f})},{passive:false});
+ ["gesturestart","gesturechange","gestureend"].forEach(t=>T.addEventListener(t,e=>{if(inCh(e))e.preventDefault()},{passive:false}));
+ T.addEventListener("touchmove",e=>{if(inCh(e)&&e.cancelable)e.preventDefault()},{passive:false});}
 $("tcg").onclick=e=>{const dot=e.target.closest&&e.target.closest("[data-tpi]");if(dot){tpPick(+dot.dataset.tpi);return}
  const d=e.target.closest("button")?.dataset;if(!d||!TM)return;
- tsel=null;
+ if(d.tzr){tview=null;if(TG)drawTcgChart(TG.vs,TG.tpd);return}
+ tsel=null;tview=null;
  if(d.tover){tover=!tover;drawTcg();return}
  if(d.tship){tship=!tship;drawTcg();return}
  if(d.ci!=null){tci=+d.ci;tprint=""}
