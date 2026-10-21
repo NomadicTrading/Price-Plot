@@ -45,7 +45,8 @@ header{border-bottom:1px solid var(--line)}
 .seg.tg{flex:none}.seg.tg button{padding:8px 16px}
 #rg{margin:10px 0 4px}
 #cw{position:relative;margin-top:6px}
-#chart{position:relative}
+#chart{position:relative;touch-action:none;-webkit-touch-callout:none;overscroll-behavior:contain}
+html,body{overscroll-behavior-y:none}
 svg{display:block;width:100%;height:auto;user-select:none;-webkit-user-select:none}
 .az{position:absolute;touch-action:none;z-index:2}
 .ay{cursor:ns-resize}.ax{cursor:ew-resize}
@@ -327,7 +328,7 @@ function draw(){
   g+=`<g class="bn" data-b="${i}" tabindex="0"><title>${esc(b.n+" sale"+(b.n===1?"":"s")+", median "+fmt(+b.md.toFixed(2)))}</title><circle cx="${cx}" cy="${cy}" r="14" fill="transparent"/><circle class="dot" cx="${cx}" cy="${cy}" r="${3.5+Math.min(5,Math.sqrt(b.n)*1.1)}" fill="var(--dot)" fill-opacity=".8" stroke="var(--bg)" stroke-width="1"/></g>`});
  g+=`<g pointer-events="none">${sg}</g></g>`;
  const sc2=$("chart").clientWidth/W||1;
- $("chart").innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="touch-action:pan-y" role="img" aria-label="Scatter plot of card prices over time">${g}</svg><div class="az ay" data-z="y" style="top:0;right:0;width:${m.r*sc2}px;height:${(m.t+ih)*sc2}px"></div><div class="az ax" data-z="x" style="left:0;top:${(m.t+ih)*sc2}px;width:${(W-m.r)*sc2}px;height:${m.b*sc2}px"></div>`;
+ $("chart").innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="touch-action:none" role="img" aria-label="Scatter plot of card prices over time">${g}</svg><div class="az ay" data-z="y" style="top:0;right:0;width:${m.r*sc2}px;height:${(m.t+ih)*sc2}px"></div><div class="az ax" data-z="x" style="left:0;top:${(m.t+ih)*sc2}px;width:${(W-m.r)*sc2}px;height:${m.b*sc2}px"></div>`;
  const dl=sd0?(scrub<.05?"today":new Date(now-scrub*864e5).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})):"";
  $("scrub").innerHTML=vm==="sales"?"Tap a dot to open its listing.":!sd0?"Slide a finger across the chart to read the trend price.":`<div><b>${money(sc.m)}</b> trend price, ${dl}<br><span>Usual range ${money(sc.lo)} to ${money(sc.hi)}. ${sc.n?`Based on ${sc.n} listings from the ${win} days before.`:"Estimated from the sales on either side of this date."}</span></div><button class="pill" id="sx" type="button">Clear</button>`;
  if($("sx"))$("sx").onclick=()=>{scrub=null;draw()};
@@ -372,6 +373,10 @@ const up=e=>{if(axis&&e.pointerId===axis.id){axis=null;return}
  const was=P.size===1&&P.has(e.pointerId);P.delete(e.pointerId);pd=0;pc=null;
  if(was&&!moved&&!pinched&&e.type==="pointerup"&&!(e.target.closest&&e.target.closest(".pt,.bn")))scrubAt(e.clientX)};
 addEventListener("pointerup",up);addEventListener("pointercancel",up);
+/* keep pinches and drags on the chart from zooming or scrolling the whole page (iOS Safari) */
+["gesturestart","gesturechange","gestureend"].forEach(t=>ch.addEventListener(t,e=>e.preventDefault(),{passive:false}));
+ch.addEventListener("touchmove",e=>{if(e.cancelable)e.preventDefault()},{passive:false});
+ch.addEventListener("dblclick",e=>e.preventDefault());
 ch.addEventListener("wheel",e=>{if(!full)return;e.preventDefault();const c=frac(e.clientX,e.clientY);
  const f=Math.exp(Math.max(-60,Math.min(60,e.deltaY))*.003),v=view||full,w=v.x1-v.x0,hh=v.y1-v.y0,cx=v.x0+c.fx*w,cy=v.y1-c.fy*hh;
  setView({x0:cx-c.fx*w*f,x1:cx-c.fx*w*f+w*f,y0:cy-(1-c.fy)*hh*f,y1:cy-(1-c.fy)*hh*f+hh*f})},{passive:false});
