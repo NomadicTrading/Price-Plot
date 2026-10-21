@@ -451,7 +451,7 @@ ${tover&&tid?`<div class="bar"><button class="pill" type="button" style="white-s
 <div id="trd"></div>
 ${hasHist||(tover&&tid)?`<div id="tch"></div><div class="seg" id="trg" role="group" aria-label="Time range" style="margin-top:8px">${TRNG.map(([k,l])=>`<button type="button" data-tr="${k}" aria-pressed="${k===trng}">${l}</button>`).join("")}</div>`:`<p class="sm">No price history came back for this card, so only today's prices are shown.</p>`}
 ${rows?`<div class="tc" style="border:0"><table><tr><th>Condition</th><th>Market</th><th>7 days</th><th>30 days</th></tr>${rows}</table></div>`:`<p class="sm">No TCGplayer prices for this printing.</p>`}
-${tover&&tid?`<div class="lg"><span><i style="background:var(--mut)"></i>Sold</span><span><i style="border:2px solid var(--mut)"></i>Listed now (grouped beside today)</span><span>Lines are the market price. Dot colors match the condition buttons.</span></div>
+${tover&&tid?`<div class="lg"><span><i style="background:var(--mut)"></i>Sold</span><span><i style="border:2px solid var(--mut)"></i>Listed now (grouped beside today)</span><span><i style="background:var(--mut);opacity:.4;border-radius:2px;width:6px;height:12px"></i>Weekly sold range, lowest to highest</span><span>Lines are the market price. Dot colors match the condition buttons.</span></div>
 <div id="tst"></div><div id="tdt">Tap a dot to see the sale or listing.</div>`:""}
 <a class="btn o" href="${esc(tcgSearch(tQ))}" target="_blank" rel="noopener">Search TCGplayer for this card</a>
 <p class="sm">Market prices are TCGplayer market prices, updated about daily, via JustTCG. Sold cards and live listings come straight from TCGplayer's product page and refresh every 30 minutes; TCGplayer doesn't link individual sales, so tapping one opens the card on TCGplayer filtered to that condition.${tpd&&tpd.warnings&&tpd.warnings.length?" "+esc(tpd.warnings.join(" ")):""}${TM.left!=null?` ${esc(TM.left)} price lookups left today.`:""}</p>`;
@@ -471,17 +471,25 @@ function tpPoints(d,t0){
  const now=Date.now(),val=x=>+(x.price+(tship&&x.ship?x.ship:0)).toFixed(2),base=x=>tpPrintOk(x)&&tpLangOk(x)&&tconds.has(x.c2);
  const sold=d.sold.map(x=>({...x,type:"Sold",c2:tcN(x.cond),t:Math.min(now,+new Date(x.date))/1000})).filter(x=>base(x)&&x.t>=t0).map(x=>({...x,v:val(x)}));
  const act=d.listings.map(x=>({...x,type:"For sale",c2:tcN(x.cond)})).filter(base).map(x=>({...x,v:val(x)}));
- return{sold,act}}
+ /* weekly sale ranges: [start ms, low, high, qty sold, sales, market, low+ship, high+ship] */
+ const weeks=[];for(const s of d.hist||[]){const c2=tcN(s.cond),x={print:s.print,lang:s.lang,c2};if(!base(x))continue;
+  const bs=s.b.slice().sort((a,b)=>a[0]-b[0]);
+  bs.forEach((k,i)=>{const t=k[0]/1000,w=i+1<bs.length?Math.min(7*86400,bs[i+1][0]/1000-t):Math.min(7*86400,Math.max(86400,now/1000-t));if(t+w<t0)return;
+   const lo=tship&&k[6]?k[6]:k[1],hi=Math.max(lo,tship&&k[7]?k[7]:k[2]||lo);weeks.push({type:"Week",c2,print:s.print,lang:s.lang,t,w,lo,v:hi,qty:k[3],n:k[4],mk:k[5]})})}
+ return{sold,act,weeks}}
 function tpStats(P,d){
  const sm=$("tsm"),st=$("tst");if(!st)return;
- if(sm)sm.textContent=!d||d.loading?"Loading TCGplayer sales and listings…":d.error?"Sales and listings unavailable right now ("+d.error+").":P&&!P.sold.length&&!P.act.length?"No sales or listings for these conditions in this range.":"";
+ if(sm)sm.textContent=!d||d.loading?"Loading TCGplayer sales and listings…":d.error?"Sales and listings unavailable right now ("+d.error+").":P&&!P.sold.length&&!P.act.length&&!P.weeks.length?"No sales or listings for these conditions in this range.":P&&d.recent!=null&&d.recent<=5&&P.weeks.length?"Dots are the latest individual sales TCGplayer shows publicly; bars are every week's lowest to highest sale.":"";
  if(!P){st.innerHTML="";return}
  const med=a=>{if(!a.length)return null;const s=a.slice().sort((p,q)=>p-q),h=s.length>>1;return s.length%2?s[h]:(s[h-1]+s[h])/2};
- const rows=TCOND.filter(([n])=>tconds.has(n)).map(([n,a,col])=>{const s=P.sold.filter(x=>x.c2===n),l=P.act.filter(x=>x.c2===n),last=s.length?s.reduce((p,q)=>q.t>p.t?q:p):null;
-  if(!s.length&&!l.length)return"";
-  return `<tr><td><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${col};margin-right:6px"></i>${a}</td><td>${s.reduce((t,x)=>t+x.qty,0)}</td><td><b>${pf(med(s.map(x=>x.v)))}</b></td><td>${last?pf(last.v):"–"}</td><td><b>${l.length?pf(Math.min(...l.map(x=>x.v))):"–"}</b></td><td>${l.reduce((t,x)=>t+x.qty,0)}</td></tr>`}).join("");
- st.innerHTML=rows?`<div class="tc" style="border:0"><table><tr><th>Condition</th><th>Sold</th><th>Median sold</th><th>Last sold</th><th>Lowest listed</th><th>Listed</th></tr>${rows}</table></div>`:""}
-function tpPick(i){const x=tpts[i];if(!x)return;tsel=i;const c=TM&&TM.cards[tci],d=TPD.get(c&&(c.tcgId||(String(c.tcgUrl||"").match(/product\/(\d+)/)||[])[1]));
+ const rows=TCOND.filter(([n])=>tconds.has(n)).map(([n,a,col])=>{const s=P.sold.filter(x=>x.c2===n),l=P.act.filter(x=>x.c2===n),wk=P.weeks.filter(x=>x.c2===n),last=s.length?s.reduce((p,q)=>q.t>p.t?q:p):null;
+  if(!s.length&&!l.length&&!wk.length)return"";
+  const qn=wk.length?wk.reduce((t,x)=>t+x.qty,0):s.reduce((t,x)=>t+x.qty,0),rl=wk.length?Math.min(...wk.map(x=>x.lo)):s.length?Math.min(...s.map(x=>x.v)):null,rh=wk.length?Math.max(...wk.map(x=>x.v)):s.length?Math.max(...s.map(x=>x.v)):null;
+  return `<tr><td><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${col};margin-right:6px"></i>${a}</td><td>${qn}</td><td>${rl==null?"–":fmt(Math.round(rl))+"–"+fmt(Math.round(rh))}</td><td>${last?pf(last.v):"–"}</td><td><b>${l.length?pf(Math.min(...l.map(x=>x.v))):"–"}</b></td><td>${l.reduce((t,x)=>t+x.qty,0)}</td></tr>`}).join("");
+ st.innerHTML=rows?`<div class="tc" style="border:0"><table><tr><th>Condition</th><th>Sold</th><th>Sold range</th><th>Last sold</th><th>Lowest listed</th><th>Listed</th></tr>${rows}</table></div>`:""}
+function tpPick(i){const x=tpts[i];if(!x)return;tsel=i;
+ if(x.type==="Week"){const CC=Object.fromEntries(TCOND.map(([n,a])=>[n,a])),f=t=>new Date(t*1000).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
+  $("tdt").innerHTML=`<div class="p">${money(x.lo)}${x.v>x.lo?" to "+money(x.v):""}</div><div class="m">${f(x.t)} to ${f(Math.min(Date.now()/1000,x.t+x.w-86400))} · ${esc(CC[x.c2]||"")}${x.print?" · "+esc(x.print):""} · ${x.qty} sold in ${x.n} sale${x.n===1?"":"s"}${x.mk?" · market "+money(x.mk):""}${tship?" · includes shipping":""}</div>`;return}const c=TM&&TM.cards[tci],d=TPD.get(c&&(c.tcgId||(String(c.tcgUrl||"").match(/product\/(\d+)/)||[])[1]));
  const CC=Object.fromEntries(TCOND.map(([n,a])=>[n,a])),u=new URL((d&&d.url)||"https://www.tcgplayer.com/");
  if(x.c2)u.searchParams.set("Condition",x.c2);if(x.print)u.searchParams.set("Printing",x.print);u.searchParams.set("Language",x.lang||"English");
  const when=x.type==="Sold"?"Sold "+new Date(x.date).toLocaleString(undefined,{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"}):"Listed now"+(x.seller?" by "+x.seller:"")+(x.direct?" · Direct":"");
@@ -495,11 +503,11 @@ function readout(vs,t){
 function drawTcgChart(vs,tpd){
  const box=$("tch");if(!box)return;
  const now=Date.now()/1000,t0=now-(+trng)*86400,P=tpPoints(tpd,t0);tpStats(P,tpd);
- const sold=P?P.sold:[],act=P?P.act:[];
+ const sold=P?P.sold:[],act=P?P.act:[],weeks=P?P.weeks:[];
  const W=Math.max(300,box.clientWidth||600),H=Math.round(Math.min(P?380:320,W*(P?.7:.6))),m={l:8,r:58,t:12,b:26};
  const gut=act.length?Math.round(Math.min(Math.max(48,W*.24),18+9.2*Math.ceil(Math.sqrt(act.length)*1.2))):0,iw=W-m.l-m.r-gut,ih=H-m.t-m.b;
  const lines=TCOND.filter(([n])=>tconds.has(n)).map(([n,a,col])=>{const v=vs.find(x=>x.cond===n);return v?{a,col,pts:v.hist.filter(h=>h[0]>=t0).sort((x,y)=>x[0]-y[0])}:null}).filter(l=>l&&l.pts.length);
- const all=[...lines.flatMap(l=>l.pts.map(h=>h[1])),...sold.map(x=>x.v),...act.map(x=>x.v)];
+ const all=[...lines.flatMap(l=>l.pts.map(h=>h[1])),...sold.map(x=>x.v),...act.map(x=>x.v),...weeks.flatMap(x=>[x.lo,x.v])];
  if(!all.length){box.innerHTML=`<p class="sm">No price history in this range for the selected conditions.</p>`;readout(vs,null);return}
  let lo=Math.min(...all),hi=Math.max(...all);const pad=(hi-lo)*.12||hi*.1||1;lo=Math.max(0,lo-pad);hi+=pad;
  const X=t=>m.l+(t-t0)/(now-t0)*iw,Y=p=>m.t+(1-(p-lo)/(hi-lo))*ih;
@@ -507,8 +515,11 @@ function drawTcgChart(vs,tpd){
  for(let i=0;i<=4;i++){const p=lo+step*i;g+=`<line x1="${m.l}" x2="${W-m.r}" y1="${Y(p)}" y2="${Y(p)}" stroke="var(--line)" stroke-dasharray="4 4"/><text x="${W-4}" y="${Y(p)+4}" text-anchor="end" font-size="11.5" fill="var(--mut)">${money(+p.toFixed(2))}</text>`}
  const days=+trng,nl=4;for(let i=0;i<=nl;i++){const t=t0+(now-t0)*i/nl;g+=`<text x="${Math.min(W-m.r-gut-14,Math.max(m.l+14,X(t)))}" y="${H-6}" text-anchor="middle" font-size="11.5" fill="var(--mut)">${new Date(t*1000).toLocaleDateString(undefined,days>180?{month:"short",year:"2-digit"}:{month:"short",day:"numeric"})}</text>`}
  lines.forEach(l=>{g+=`<path d="${l.pts.map((h,i)=>(i?"L":"M")+X(h[0]).toFixed(1)+" "+Y(h[1]).toFixed(1)).join("")}" fill="none" stroke="${l.col}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;const e=l.pts[l.pts.length-1];g+=`<circle cx="${X(e[0])}" cy="${Y(e[1])}" r="3.5" fill="${l.col}"/>`});
- if(P&&(sold.length||act.length)){
-  const pts=[...sold,...act];tpts=pts;
+ if(P&&(sold.length||act.length||weeks.length)){
+  const pts=[...sold,...act];tpts=[...pts,...weeks];
+  const CW=Object.fromEntries(TCOND.map(([n,a,c])=>[n,c])),nc=TCOND.filter(([n])=>tconds.has(n)).length||1,ci=Object.fromEntries(TCOND.filter(([n])=>tconds.has(n)).map(([n],i)=>[n,i]));
+  weeks.forEach((x,j)=>{const x0=X(Math.max(t0,x.t)),x1=X(Math.min(now,x.t+x.w)),slot=Math.max(1.5,(x1-x0)/nc),bw=Math.max(1.5,Math.min(7,slot*.7)),bx=x0+slot*(ci[x.c2]||0)+(slot-bw)/2,y1=Y(x.v),y2=Y(x.lo),col=CW[x.c2]||"var(--gray)";
+   g+=`<g class="pt" data-tpi="${pts.length+j}" tabindex="0" role="button" aria-label="Week ${fmt(x.lo)} to ${fmt(x.v)}"><title>${esc("Week of "+new Date(x.t*1000).toLocaleDateString(undefined,{month:"short",day:"numeric"})+": "+x.qty+" sold, "+fmt(x.lo)+" to "+fmt(x.v))}</title><rect x="${bx-2}" y="${Math.min(y1,y2-2)-3}" width="${bw+4}" height="${Math.max(4,y2-y1)+6}" fill="transparent"/><rect class="dot" x="${bx}" y="${Math.min(y1,y2-2)}" width="${bw}" height="${Math.max(2,y2-y1)}" rx="${Math.min(2,bw/2)}" fill="${col}" fill-opacity=".3" stroke="${col}" stroke-opacity=".55" stroke-width=".8"/></g>`});
   const CC=Object.fromEntries(TCOND.map(([n,a,c])=>[n,{a,c}])),DR=3.6,D=2*DR+1.6,cx=pts.map(x=>x.type==="Sold"?X(x.t):0);
   if(act.length){g+=`<line x1="${X(now)}" x2="${X(now)}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--line)"/>`;
    const ids=[];pts.forEach((x,i)=>{if(x.type==="For sale")ids.push(i)});ids.sort((a,b)=>pts[a].v-pts[b].v);
