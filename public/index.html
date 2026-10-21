@@ -76,6 +76,7 @@ svg{display:block;width:100%;height:auto;user-select:none;-webkit-user-select:no
 .tk{display:flex;gap:8px;overflow-x:auto;padding:12px 0 4px;-webkit-overflow-scrolling:touch}.tk .pill{white-space:nowrap;text-align:left}
 #tch{position:relative;touch-action:pan-y;margin-top:8px}#tch svg{display:block;width:100%;height:auto}
 #trd{background:var(--soft);border-radius:8px;padding:8px 12px;margin-top:10px;min-height:44px;display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:13.5px}#trd span{color:var(--mut);font-size:12.5px}
+.tci{width:150px;height:auto;border-radius:8px;flex:none;align-self:flex-start;box-shadow:0 1px 4px rgba(0,0,0,.25)}@media (max-width:420px){.tci{width:120px}}
 .btn.o{background:var(--bg);color:var(--fg);border:1px solid var(--bd)}
 footer{border-top:1px solid var(--line);margin-top:22px;padding:12px 0;color:var(--mut);font-size:12px}
 </style></head><body>
@@ -435,11 +436,14 @@ function drawTcg(){
  const byC=Object.fromEntries(vs2.map(v=>[v.cond,v]));
  const pc=(tBasic&&tBasic.cards||[]).find(p=>p.image&&p.name&&p.name.toLowerCase()===String(c.name).toLowerCase().replace(/\s*-\s*.*$/,"")&&String(+String(p.number).replace(/\D/g,""))===String(+String(c.number).split("/")[0].replace(/\D/g,"")));
  const img=pc?safeUrl(pc.image):"";
+ /* card picture from TCGplayer's image server, falling back to the pokemontcg.io scan */
+ const tid=c.tcgId||(String(c.tcgUrl||"").match(/product\/(\d+)/)||[])[1]||"";
+ const tImgs=[tid&&`https://tcgplayer-cdn.tcgplayer.com/product/${tid}_in_1000x1000.jpg`,tid&&`https://product-images.tcgplayer.com/fit-in/437x437/${tid}.jpg`,img].filter(Boolean);
  const pick=TM.cards.length>1?`<div class="tk" role="group" aria-label="Matching cards">${TM.cards.map((k,i)=>`<button class="pill" type="button" data-ci="${i}" aria-pressed="${i===tci}">${esc(k.name)} <span class="mu">· ${esc(k.set||"")} · ${esc(k.number||"")}</span></button>`).join("")}</div>`:"";
  const rows=TCOND.filter(([n])=>byC[n]).map(([n,a,col])=>{const v=byC[n];return `<tr><td><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${col};margin-right:6px"></i>${a}</td><td><b>${pf(v.price)}</b></td><td>${pct(v.ch7)}</td><td>${pct(v.ch30)}</td></tr>`}).join("");
  const hasHist=vs2.some(v=>v.hist&&v.hist.length>1);
- $("tcg").innerHTML=pick+`<div class="tc">${img?`<img src="${esc(img)}" alt="${esc(c.name)}">`:""}<div style="flex:1;min-width:0"><b>${esc(c.name)}</b> <span class="mu">${esc(c.set||"")} · ${esc(c.number||"")}${c.rarity?" · "+esc(c.rarity):""}</span>
-${c.tcgUrl?`<div><a class="btn" href="${esc(safeUrl(c.tcgUrl))}" target="_blank" rel="noopener">Open on TCGplayer</a></div>`:""}</div></div>
+ $("tcg").innerHTML=pick+`<div class="tc"><div style="flex:1;min-width:0"><b>${esc(c.name)}</b> <span class="mu">${esc(c.set||"")} · ${esc(c.number||"")}${c.rarity?" · "+esc(c.rarity):""}</span>
+${c.tcgUrl?`<div><a class="btn" href="${esc(safeUrl(c.tcgUrl))}" target="_blank" rel="noopener">Open on TCGplayer</a></div>`:""}</div>${tImgs.length?`<a href="${esc(safeUrl(c.tcgUrl)||tImgs[0])}" target="_blank" rel="noopener" aria-label="${esc(c.name)} on TCGplayer"><img class="tci" id="tci" src="${esc(tImgs[0])}" alt="${esc(c.name)} card" data-alt="${esc(tImgs.slice(1).join(" "))}"></a>`:""}</div>
 <div class="bar fs" id="tpr" role="group" aria-label="Printing">${prints.map(p=>`<button class="pill" type="button" data-tp="${esc(p)}" aria-pressed="${p===tprint}">${esc(p)}</button>`).join("")}</div>
 <div class="bar fs" id="tcd" role="group" aria-label="Condition">${TCOND.filter(([n])=>byC[n]).map(([n,a])=>`<button class="pill" type="button" data-tc="${n}" aria-pressed="${tconds.has(n)}">${a}</button>`).join("")}</div>
 <div class="ch-h"><div><h2>Market Price</h2><div class="mu" style="font-size:12.5px">TCGplayer market price by condition</div></div></div>
@@ -448,6 +452,7 @@ ${hasHist?`<div id="tch"></div><div class="seg" id="trg" role="group" aria-label
 ${rows?`<div class="tc" style="border:0"><table><tr><th>Condition</th><th>Market</th><th>7 days</th><th>30 days</th></tr>${rows}</table></div>`:`<p class="sm">No TCGplayer prices for this printing.</p>`}
 <a class="btn o" href="${esc(tcgSearch(tQ))}" target="_blank" rel="noopener">Search TCGplayer for this card</a>
 <p class="sm">Prices are TCGplayer market prices, updated about daily, via JustTCG. TCGplayer doesn't offer its individual sales or live listings through any open data feed, so use the eBay tab for those, or open the card on TCGplayer.${TM.left!=null?` ${esc(TM.left)} price lookups left today.`:""}</p>`;
+ const ti=$("tci");if(ti)ti.onerror=()=>{const rest=(ti.dataset.alt||"").split(" ").filter(Boolean);if(rest.length){ti.dataset.alt=rest.slice(1).join(" ");ti.src=rest[0]}else ti.remove()};if(ti&&ti.complete&&!ti.naturalWidth)ti.onerror();
  if(hasHist)drawTcgChart(vs2);else readout(vs2,null)}
 function readout(vs,t){
  const on=TCOND.filter(([n])=>tconds.has(n));

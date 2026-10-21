@@ -443,6 +443,7 @@ app.get("/api/tcgmarket", async (req, res) => {
         number: c.number,
         rarity: c.rarity,
         exact,
+        tcgId: c.tcgplayerId ? String(c.tcgplayerId).replace(/\D/g, "") : null,
         tcgUrl: c.tcgplayerId ? `https://www.tcgplayer.com/product/${encodeURIComponent(c.tcgplayerId)}` : null,
         variants: (c.variants || []).filter((v) => v.price != null || (v.priceHistory || []).length).map((v) => ({
           cond: v.condition,
