@@ -7,7 +7,7 @@
 <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
 <link rel="manifest" href="/brand/site.webmanifest">
 <meta name="theme-color" content="#14213D">
-<script>try{const t=localStorage.getItem("pp_theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch{}</script>
+<script>document.documentElement.dataset.theme="light";try{if(localStorage.getItem("pp_theme")==="dark")document.documentElement.dataset.theme="dark"}catch{}</script>
 <meta name="apple-mobile-web-app-title" content="Price Plot">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -654,11 +654,11 @@ $("sv").onclick=e=>{const d=e.target.dataset,a=saved();
  else if(d.s!=null){$("q").value=a[+d.s]||"";tcgQ="";load();if(tab==="tcg")loadTcg()}
  else if(d.x!=null){a.splice(+d.x,1);try{localStorage.setItem("pp_saved",JSON.stringify(a))}catch{}renderSaved()}};
 renderSaved();
-/* light / dark mode, remembered on this device; before a choice is made it starts from the device's own setting */
+/* light / dark mode: light unless dark was picked on this device */
 function setTheme(t,keep){document.documentElement.dataset.theme=t;
  [...$("thm").children].forEach(b=>b.setAttribute("aria-pressed",b.dataset.th===t));
  if(keep)try{localStorage.setItem("pp_theme",t)}catch{}}
 $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
-setTheme(document.documentElement.dataset.theme||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"));
+setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script></body></html>
