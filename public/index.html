@@ -145,10 +145,21 @@ $("gr").onclick=e=>{const k=e.target.dataset.m;if(!k)return;mode=k;
  $("gr").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.m===k));
  grades();load()};
 /* grade toggles appear under the graders once one is picked */
-const GRADES={PSA:["10","9","8.5","8","7.5","7","6"],BGS:["10","9.5","9","8.5","8","7"],CGC:["10","9.5","9","8.5","8","7"],TAG:["10","9.5","9","8.5","8","7"]};
+/* each grader's published scale. PSA: 10, 9, then half grades 8.5 down to 1 (no 9.5).
+   Beckett: half grades 1 to 9.5, plus Pristine 10 and Black Label 10. CGC: half grades 1 to 9.5,
+   plus Gem Mint 10 and Pristine 10. TAG: half grades 1 to 8.5, then 9, Gem Mint 10 and Pristine 10 (no 9.5).
+   Keys: number, plus b = Black Label, n = 10 without Black Label, p = Pristine, g = 10 without Pristine */
+const halves=(hi,lo)=>{const o=[];for(let v=hi;v>=lo;v-=.5)o.push(String(v));return o};
+const GRADES={
+ PSA:["10","9",...halves(8.5,1)],
+ BGS:[["10b","Black Label 10"],["10n","Pristine 10"],...halves(9.5,1)],
+ CGC:[["10p","Pristine 10"],["10g","Gem Mint 10"],...halves(9.5,1)],
+ TAG:[["10p","Pristine 10"],["10g","Gem Mint 10"],"9",...halves(8.5,1)]};
 let gsel="";
 function grades(){const g=GRADES[mode],name=(MODES.find(m=>m[0]===mode)||[])[1];gsel="";$("gd").hidden=!g;
- $("gd").innerHTML=g?[["","Any grade"],...g.map(x=>[x,name+" "+x])].map(([k,l])=>`<button class="pill" type="button" data-g="${k}" aria-pressed="${k===gsel}">${l}</button>`).join(""):""}
+ $("gd").innerHTML=g?[["","Any "+name+" grade"],...g.map(x=>Array.isArray(x)?x:[x,x])].map(([k,l])=>`<button class="pill" type="button" data-g="${k}" aria-pressed="${k===gsel}">${l}</button>`).join(""):""}
+const gradeMatch=(k,x)=>{if(!k)return true;if(x.grade!==parseFloat(k))return false;const s=k.slice(-1);
+ return s==="b"?x.sub==="black":s==="n"?x.sub!=="black":s==="p"?x.sub==="pristine":s==="g"?x.sub!=="pristine":true};
 $("gd").onclick=e=>{const k=e.target.dataset.g;if(k===undefined)return;gsel=k;
  $("gd").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.g===k));view=null;scrub=null;draw()};
 grades();
@@ -166,7 +177,7 @@ const FIN=[["any","Any finish"],["holo","Holo"],["reverse","Reverse holo"],["non
 $("fn").innerHTML=FIN.map(([k,l])=>`<button class="pill" type="button" data-f="${k}" aria-pressed="${k===fmode}">${l}</button>`).join("");
 $("fn").onclick=e=>{const k=e.target.dataset.f;if(!k)return;fmode=k;
  $("fn").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.f===k));view=null;scrub=null;draw()};
-const gradeOk=x=>{const n=+gsel;return mode==="all"||(mode==="raw"?!x.grader:x.grader===mode&&(!n||x.grade===n))};
+const gradeOk=x=>mode==="all"||(mode==="raw"?!x.grader:x.grader===mode&&gradeMatch(gsel,x));
 const condOk=x=>!cset.size||(!x.cond&&!x.grader?cset.has("none"):!!x.cond&&cset.has(x.cond));
 const finOk=x=>fmode==="any"||(fmode==="none"?!x.f2:x.f2===fmode);
 const yrOn=()=>yr.max>yr.min&&(yr.lo>yr.min||yr.hi<yr.max);

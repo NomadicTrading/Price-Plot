@@ -78,7 +78,12 @@ const GR = { PSA: "PSA", BGS: "(?:BGS|BECKETT)", CGC: "CGC", TAG: "TAG" };
 function parseGrade(t) {
   for (const [g, p] of Object.entries(GR)) {
     const m = new RegExp(`\\b${p}\\s*#?\\s*(?:GEM\\s*MINT\\s*|MINT\\s*|NM-?MT\\s*|PRISTINE\\s*)?(\\d{1,2}(?:\\.\\d)?)\\b`, "i").exec(t);
-    if (m) return { grader: g, grade: Number(m[1]) };
+    if (m) {
+      const grade = Number(m[1]);
+      // which kind of 10: BGS Black Label, or a Pristine 10 (CGC, TAG, BGS); null otherwise
+      const sub = grade === 10 ? (/\bblack\s*label\b/i.test(t) ? "black" : /\bpristine\b/i.test(t) ? "pristine" : null) : null;
+      return { grader: g, grade, sub };
+    }
     // TAG needs a number, since "TAG TEAM" is a PokÃ©mon card type
     if (g !== "TAG" && new RegExp(`\\b${p}\\b`, "i").test(t)) return { grader: g, grade: null };
   }
