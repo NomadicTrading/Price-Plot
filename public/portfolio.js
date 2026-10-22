@@ -538,25 +538,33 @@ async function cimpAction(a) {
     toast(`Imported ${items.length.toLocaleString()} entries from Collectr`);
   }
 }
+// The iCloud link of the shared "Send to Price Plot" Shortcut. Empty until it has been built and shared once.
+const SHORTCUT_URL = "";
 async function cimpSetup() {
   let code = "";
-  try { code = (await (await fetch("/collectr-bookmark.js", { cache: "no-store" })).text()).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\n\s*/g, " ").trim(); } catch {}
-  const bm = code ? "javascript:" + encodeURIComponent(code) : "";
+  try { code = await (await fetch("/collectr-bookmark.js", { cache: "no-store" })).text(); } catch {}
+  const use = `<p><b>Each time:</b> open your Collectr showcase link in Safari and wait for your cards to show. Tap <b>Share</b> (inside <b>•••</b> on newer iPhones), then <b>Send to Price Plot</b>. Price Plot opens with your cards to review.</p>`;
+  const build = `<ol>
+    <li>Open the <b>Shortcuts</b> app, tap <b>+</b>, and name the shortcut <b>Send to Price Plot</b>.</li>
+    <li>Tap <b>Add Action</b>, search for <b>Run JavaScript on Web Page</b>, and add it.</li>
+    <li>Tap the code inside that action, select all of it and delete it. Then come back here, tap <button type="button" class="pill" data-s="copy" style="padding:3px 10px">Copy code</button>, and paste it there.</li>
+    <li>Tap the <b>ⓘ</b> (or the shortcut's name at the top) → turn on <b>Show in Share Sheet</b>. Tap <b>Done</b>.</li>
+    <li>In <b>Settings → Apps → Shortcuts → Advanced</b>, turn on <b>Allow Running Scripts</b>.</li></ol>
+    <p class="mu">To share it: in Shortcuts, hold the shortcut → <b>Share</b> → <b>Copy iCloud Link</b>, and send that link to Claude to put an Install button here.</p>`;
   const ov = document.createElement("div"); ov.className = "ppm-ov";
   ov.innerHTML = `<div class="ppm cimp-s" role="dialog" aria-modal="true" aria-labelledby="cs-t"><h3 id="cs-t">Import from a Collectr link</h3>
-  <p class="mu">Works without Collectr PRO. One-time setup in Safari, then two taps each time.</p>
-  <ol><li><button type="button" class="ppm-x primary" data-s="copy">Copy bookmark code</button></li>
-  <li><b>Make a bookmark of this page:</b> tap Safari's <b>Share</b> button (the square with an arrow pointing up; on newer iPhones it's inside the <b>•••</b> menu), then <b>Add Bookmark</b>, then <b>Save</b>.</li>
-  <li><b>Put the code in the bookmark:</b> open <b>Bookmarks</b> (the open-book icon, or <b>•••</b> → <b>Bookmarks</b>), tap <b>Edit</b>, then tap the bookmark you just made. Change the name to <b>Send to Price Plot</b>. In the box below the name (the web address), delete everything and paste the code. Tap <b>Done</b>.</li>
-  <li><b>Use it:</b> open your Collectr showcase link in Safari and wait for your cards to show. Then open <b>Bookmarks</b> (<b>•••</b> → <b>Bookmarks</b>) and tap <b>Send to Price Plot</b>. Don't pick it from the address-bar suggestions; Safari won't run it from there. A blue bar shows the cards being read, then Price Plot opens in the same tab.</li></ol>
-  <p class="mu">Don't paste the code into the address bar. Safari blocks that and says JavaScript isn't allowed. It only works saved inside a bookmark.</p>
-  <p class="mu">Using the home-screen app? Tap “Send to my Price Plot app” there to get a code, then enter it here:</p>
+  <p class="mu">Works without Collectr PRO. Uses an iPhone Shortcut that reads your showcase in Safari.</p>
+  ${SHORTCUT_URL ? `<p><b>Once:</b></p><a class="ppm-x primary" style="display:flex;align-items:center;justify-content:center;text-decoration:none" href="${esc(SHORTCUT_URL)}" target="_blank" rel="noopener">Install the Shortcut</a>
+    <p class="mu" style="margin-top:8px">Tap <b>Add Shortcut</b>. Then in <b>Settings → Apps → Shortcuts → Advanced</b>, turn on <b>Allow Running Scripts</b>.</p>${use}
+    <details style="margin-top:8px"><summary class="mu">Build the Shortcut yourself instead</summary>${build}</details>`
+  : `<p><b>Once — build the Shortcut</b> (about 2 minutes):</p>${build}${use}`}
+  <p class="mu" style="margin-top:12px">Using the Price Plot home-screen app? After Safari shows your cards, tap “Send to my Price Plot app” there for a code, then enter it here:</p>
   <div class="cimp-c"><input id="cs-code" maxlength="6" placeholder="Code" autocapitalize="characters" autocomplete="off" aria-label="Import code"><button type="button" class="ppm-x" data-s="code">Get cards</button></div>
   <div class="ppm-b"><button type="button" class="ppm-x plain" data-s="close">Close</button></div></div>`;
   const close = () => ov.remove();
   ov.addEventListener("click", async (e) => { const s = e.target.closest("[data-s]")?.dataset.s; if (!s) { if (e.target === ov) close(); return; }
     if (s === "close") close();
-    else if (s === "copy") { if (!bm) return toast("Couldn't load the bookmark code. Check your connection."); try { await navigator.clipboard.writeText(bm); e.target.textContent = "Copied ✓"; } catch { const t = document.createElement("textarea"); t.value = bm; t.style.cssText = "width:100%;height:90px;font:11px monospace"; e.target.replaceWith(t); t.select(); toast("Copy the code from the box."); } }
+    else if (s === "copy") { if (!code) return toast("Couldn't load the code. Check your connection."); try { await navigator.clipboard.writeText(code); e.target.textContent = "Copied ✓"; } catch { const t = document.createElement("textarea"); t.value = code; t.style.cssText = "width:100%;height:90px;font:11px monospace"; e.target.replaceWith(t); t.select(); toast("Copy the code from the box."); } }
     else if (s === "code") { const c = ov.querySelector("#cs-code").value.trim(); if (!c) return;
       try { const r = await fetch("/api/handoff/" + encodeURIComponent(c)); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); close(); if (j.raw) cimpReceive(j.raw); else { cimp = { status: "ready", items: j.items, raw: { count: j.items.length } }; render(); } scrollTo(0, 0); }
       catch (err) { toast(err.message); } } });

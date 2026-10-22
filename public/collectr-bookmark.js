@@ -1,4 +1,5 @@
-/* Price Plot: "Send to Price Plot" bookmark for a Collectr showcase.
+/* Price Plot: "Send to Price Plot" for a Collectr showcase. Used as an iPhone Shortcut ("Run JavaScript on Web
+   Page", started from Safari's Share button) and, where a browser allows it, as a bookmark.
    Runs in the person's own browser, on a Collectr showcase page they opened themselves. It re-reads the
    card list the page itself already loaded from Collectr (same requests, same browser), then carries the
    cards over to Price Plot in the same tab with an ordinary form submit. Nothing is sent anywhere else.
@@ -6,8 +7,9 @@
    because the bookmark is this file squeezed onto one line. */
 (() => {
   const PP = "https://price-plot.onrender.com";
-  if (!/(^|\.)getcollectr\.com$/.test(location.hostname)) { alert("Open your Collectr showcase link in Safari first, then tap this bookmark."); return; }
-  if (window.__ppBusy) return; window.__ppBusy = true;
+  const done = (msg) => { try { if (typeof completion === "function") completion(msg); } catch (e) {} };
+  if (!/(^|\.)getcollectr\.com$/.test(location.hostname)) { alert("Open your Collectr showcase link in Safari first, then use Send to Price Plot from the Share button."); done("not a Collectr page"); return; }
+  if (window.__ppBusy) { done("already running"); return; } window.__ppBusy = true;
   const box = document.createElement("div");
   box.style.cssText = "position:fixed;left:12px;right:12px;bottom:90px;z-index:2147483647;background:#0f2747;color:#fff;font:600 15px/1.4 -apple-system,Helvetica,Arial,sans-serif;padding:14px 16px;border-radius:14px;box-shadow:0 6px 24px rgba(0,0,0,.35)";
   const say = (t) => { box.textContent = "Price Plot: " + t; };
@@ -57,7 +59,7 @@
     say(data.count ? "found " + data.count + " entries, opening Price Plot…" : "couldn't find the cards, opening Price Plot with details…");
     const f = document.createElement("form"); f.method = "POST"; f.action = PP + "/api/collectr-handoff"; f.acceptCharset = "UTF-8"; f.style.display = "none";
     const t = document.createElement("textarea"); t.name = "data"; t.value = JSON.stringify(data); f.appendChild(t);
-    document.body.appendChild(f); f.submit();
+    document.body.appendChild(f); f.submit(); done(data.count ? "Sent " + data.count + " entries to Price Plot" : "No cards found");
     setTimeout(() => { say("Price Plot didn't open. Tap the bookmark again, or send Claude a screenshot of this."); window.__ppBusy = false; }, 15000);
-  }).catch((e) => { say("something went wrong: " + e.message); window.__ppBusy = false; });
+  }).catch((e) => { say("something went wrong: " + e.message); window.__ppBusy = false; done("error: " + e.message); });
 })();
