@@ -543,7 +543,7 @@ const SHORTCUT_URL = "https://www.icloud.com/shortcuts/184c8855876b4d3184419d10b
 async function cimpSetup() {
   let code = "";
   try { code = await (await fetch("/collectr-bookmark.js", { cache: "no-store" })).text(); } catch {}
-  const use = `<p><b>Each time:</b> open your Collectr showcase link in Safari and wait for your cards to show. Tap <b>Share</b> (inside <b>•••</b> on newer iPhones), then <b>Send to Price Plot</b>. Price Plot opens with your cards to review.</p>`;
+  const use = `<p><b>Each time:</b> open your Collectr showcase link in Safari and wait for your cards to show. Tap <b>Share</b> (the square with an arrow), scroll down the list and tap <b>Send to Price Plot</b>. If it isn't there, tap <b>Edit Actions…</b> at the bottom and turn it on. Price Plot opens with your cards to review.</p>`;
   const build = `<ol>
     <li>Open the <b>Shortcuts</b> app, tap <b>+</b>, and name the shortcut <b>Send to Price Plot</b>.</li>
     <li>Tap <b>Add Action</b>, search for <b>Run JavaScript on Web Page</b>, and add it.</li>
