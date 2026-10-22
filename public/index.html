@@ -100,6 +100,30 @@ label.pill{display:inline-block}
 .pg label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--mut)}
 .pg input,.pg select{font:inherit;font-size:15px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;width:100%}
 .pi{flex:none;width:54px;height:75px;border-radius:5px;background:var(--soft);overflow:hidden;display:block}.pi img{width:100%;height:100%;object-fit:contain;display:block}.pi.none{background:var(--soft) center/22px no-repeat url("/brand/icon-small.svg");opacity:.45}
+/* card comps page */
+.pr[data-id]{cursor:pointer}.pr[data-id]:hover .pm b{text-decoration:underline}
+.cdx-top{display:flex;justify-content:space-between;align-items:center;margin-top:12px}
+.cdx-hd{display:flex;gap:14px;margin-top:14px}
+.cdx-pic{flex:none;width:112px;height:156px;border-radius:8px;background:var(--soft);overflow:hidden;display:block}.cdx-pic img{width:100%;height:100%;object-fit:contain;display:block}
+.cdx-pic.none{background:var(--soft) center/30px no-repeat url("/brand/icon-small.svg");opacity:.5}
+.cdx-hm{min-width:0;display:flex;flex-direction:column;gap:3px}.cdx-name{font-size:20px;font-weight:700;line-height:1.15}.cdx-hm .mu{font-size:12.5px}
+.cdx-fair{margin-top:8px;background:#0f2747;color:#fff;border-radius:12px;padding:10px 12px}
+.cdx-fl{font-size:12px;color:#c9d6ea;font-weight:600}.cdx-fr{display:flex;align-items:baseline;gap:8px}.cdx-fv{font-size:30px;font-weight:700;letter-spacing:-.8px}
+.cdx-ft{font-size:12.5px;font-weight:700;color:#fcd28a}.cdx-fs{font-size:12px;color:#c9d6ea}
+.cdx-rg{margin-top:14px}
+.cdx-ch{margin-top:12px}.cdx-ch svg{max-height:220px}
+.cdx-g{stroke:var(--line)}.cdx-t{font-size:10px;fill:var(--mut)}.cdx-band{fill:var(--band)}.cdx-tr{stroke:var(--trend);stroke-width:2;stroke-dasharray:5 4}
+.cdx-e{fill:#3665f3;cursor:pointer}.cdx-c{fill:#c2570c;cursor:pointer}.cdx-e:hover,.cdx-c:hover{stroke:var(--fg);stroke-width:2}
+.cdx-empty{padding:30px 0;text-align:center;color:var(--mut)}
+.cdx-lg{display:flex;gap:16px;font-size:12.5px;color:var(--mut);margin-top:4px}.cdx-lg span{display:inline-flex;align-items:center;gap:5px}
+.cdx-ie,.cdx-it,.cdx-ib{display:inline-block;width:10px;height:10px;flex:none}.cdx-ie{border-radius:50%;background:#3665f3}.cdx-it{border-radius:2px;background:#c2570c}.cdx-ib{width:14px;background:var(--band)}
+.cdx-sites{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px}
+.cdx-site{background:var(--soft);border-radius:12px;padding:14px 12px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.cdx-sh{display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:15px}.cdx-sh>span:first-child{display:inline-flex;align-items:center;gap:6px}
+.cdx-k{font-size:12px;color:var(--mut)}.cdx-big{font-size:22px;font-weight:700}.cdx-v{font-size:14.5px;font-weight:600}
+.up{color:var(--up);font-size:12px;font-weight:700}.dn{color:var(--dn);font-size:12px;font-weight:700}
+.cdx-mine{display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding:12px 14px;border:1px solid var(--line);border-radius:12px}.cdx-mine .mu{font-size:12.5px}.cdx-mr{text-align:right}.cdx-mr b{font-size:18px}
+.cdx-btns{display:flex;gap:8px;margin-top:14px}.cdx-btns .btn{flex:1;margin:0;border:0;font:inherit;font-weight:700;min-height:46px;cursor:pointer}.cdx-btns .btn.o{border:1px solid var(--bd)}
 </style></head><body>
 <header><div class="wrap hd"><a class="brand" href="/" aria-label="Price Plot home"><img src="/brand/icon-small.svg" width="36" height="36" alt=""><span>Price<span class="pp-dot">·</span>Plot</span></a>
 <form id="f"><input id="q" type="search" placeholder="Search a card, e.g. charizard 4/102 base set" aria-label="Search listings" autocomplete="off" enterkeyhint="search" autofocus><button class="go" type="submit">Search</button></form></div></header>

@@ -129,6 +129,7 @@ function form(x) {
 }
 function render() {
   const box = $("pf"); if (!box) return;
+  if (detail) { const x = P.items.find((y) => y.id === detail); if (x) return renderDetail(box, x); detail = null; }
   const o = owned(P.items), T = totals(o), pfs = [...new Set(o.map((x) => x.pf || "Unsorted"))].sort(), w = P.items.filter((x) => x.watch).length;
   if (view !== "all" && view !== "watch" && !pfs.includes(view)) view = "all";
   const list = filtered(), V = view === "all" || view === "watch" ? T : totals(o.filter((x) => (x.pf || "Unsorted") === view));
@@ -160,7 +161,7 @@ let running = 0, saveT;
 function thumb(x) {
   const inner = x.img ? `<img src="${esc(x.img)}" alt="" loading="lazy" onerror="this.parentNode.classList.add('none');this.remove()">` : "";
   const href = x.tcgId ? "https://www.tcgplayer.com/product/" + encodeURIComponent(x.tcgId) : x.big || x.img;
-  return href && x.img ? `<a class="pi" data-pid="${x.id}" href="${esc(href)}" target="_blank" rel="noopener" aria-label="${esc(x.name)} picture">${inner}</a>`
+  return false && href && x.img ? `<a class="pi" data-pid="${x.id}" href="${esc(href)}" target="_blank" rel="noopener" aria-label="${esc(x.name)} picture">${inner}</a>`
     : `<span class="pi${x.img === null ? " none" : ""}" data-pid="${x.id}" aria-hidden="true">${inner}</span>`;
 }
 function wantImg(x) { return x.img === undefined || (x.img === null && Date.now() - (x.imgT || 0) > RETRY); }
@@ -183,6 +184,113 @@ function pump() {
       });
   }
 }
+
+/* ---------- card page: eBay + TCGplayer comps (option H) ---------- */
+// Tapping a card opens its comps: a fair price from both sites' sales, one chart of every sale, and each site's numbers.
+// Numbers load only when a card is opened (and are kept for this visit), so the daily lookup limits stretch.
+const COND_CODE = { "Near Mint": "NM", "Lightly Played": "LP", "Moderately Played": "MP", "Heavily Played": "HP", "Damaged": "DMG" };
+const DRNG = [["14", "2W"], ["30", "1M"], ["90", "3M"], ["365", "1Y"]];
+const compsCache = new Map();
+let detail = null, drng = "30", listY = 0;
+function gradeOf(x) { const m = /^(PSA|BGS|Beckett|CGC|TAG|SGC|ACE)\s*(\d+(?:\.5)?)/i.exec(x.grade || ""); return isGraded(x) && m ? { g: m[1].toUpperCase().replace("BECKETT", "BGS"), n: +m[2] } : null; }
+function compQuery(x) { return [x.name.replace(/\s*\((?:\d+|jp|japanese)\)\s*$/i, ""), x.num, isGraded(x) ? shortGrade(x.grade) : ""].filter(Boolean).join(" "); }
+const getJSON = (u) => fetch(u).then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || "error " + r.status); return j; });
+function loadComps(x) {
+  if (compsCache.has(x.id)) return compsCache.get(x.id);
+  const gi = gradeOf(x), grader = gi ? (["PSA", "BGS", "CGC", "TAG"].includes(gi.g) ? gi.g : "all") : "raw";
+  const p = (async () => {
+    const out = { ebay: null, tcg: null, warn: [] };
+    const eb = getJSON("/api/listings?" + new URLSearchParams({ q: compQuery(x), grader }));
+    let tp = Promise.resolve(null);
+    if (!gi) {
+      if (!x.tcgId) { try { const j = await getJSON("/api/cardimg?" + new URLSearchParams({ name: x.name, set: x.set || "", num: x.num || "", cat: x.cat || "" })); if (j.tcgId) { x.tcgId = j.tcgId; if (j.img) { x.img = j.img; x.big = j.big; } x.imgT = Date.now(); store(); } } catch {} }
+      if (x.tcgId) tp = getJSON("/api/tcgplayer?id=" + encodeURIComponent(x.tcgId));
+    }
+    const [e, t] = await Promise.allSettled([eb, tp]);
+    if (e.status === "fulfilled") out.ebay = e.value; else out.warn.push("eBay: " + e.reason.message);
+    if (t.status === "fulfilled") out.tcg = t.value; else out.warn.push("TCGplayer: " + t.reason.message);
+    if (!gi && !x.tcgId) out.warn.push("Couldn't find this card on TCGplayer.");
+    return out;
+  })();
+  compsCache.set(x.id, p); p.catch(() => compsCache.delete(x.id));
+  return p;
+}
+function ebayData(x, j) {
+  const gi = gradeOf(x), cc = COND_CODE[x.cond] || "NM", L = ((j && j.listings) || []).filter((l) => l.rel !== false && l.price > 0)
+    .filter((l) => (gi ? l.grader === gi.g && l.grade === gi.n : !l.grader && (l.cond === cc || (!l.cond && cc === "NM"))));
+  return { sold: L.filter((l) => l.type === "Sold").map((l) => ({ s: "e", price: l.price, t: Date.parse(l.date), url: l.url, title: l.title })),
+    act: L.filter((l) => l.type !== "Sold").map((l) => ({ price: l.price })), soldOn: !!(j && j.soldEnabled) };
+}
+function tcgData(x, j) {
+  if (!j) return { sold: [], act: [], market: null, url: null };
+  const want = x.cond || "Near Mint", lc = (s) => String(s || "").toLowerCase(), jp = /japan/i.test(x.set || "") || /\(jp\)/i.test(x.name);
+  const langOk = (l) => !l.lang || (jp ? /japan/i.test(l.lang) : /english/i.test(l.lang));
+  const strict = !!x.var && [...(j.sold || []), ...(j.listings || []), ...(j.hist || [])].some((l) => lc(l.print) === lc(x.var));
+  const ok = (l) => l.cond === want && langOk(l) && (!strict || lc(l.print) === lc(x.var));
+  let market = null; for (const s of (j.hist || []).filter(ok)) { const b = s.b[s.b.length - 1]; if (b && b[5]) market = b[5]; }
+  return { sold: (j.sold || []).filter(ok).map((l) => ({ s: "t", price: l.price, t: Date.parse(l.date), url: j.url })), act: (j.listings || []).filter(ok).map((l) => ({ price: l.price })), market, url: j.url };
+}
+const pq = (a, p) => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), i = (s.length - 1) * p, lo = Math.floor(i); return s[lo] + (s[Math.ceil(i)] - s[lo]) * (i - lo); };
+function stats(sold, act, days) {
+  const now = Date.now(), from = now - days * 864e5, w = sold.filter((s) => s.t >= from && s.t <= now + 864e5).sort((a, b) => a.t - b.t), ps = w.map((s) => s.price);
+  const mid = from + (now - from) / 2, a = w.filter((s) => s.t < mid).map((s) => s.price), b = w.filter((s) => s.t >= mid).map((s) => s.price);
+  return { n: w.length, med: pq(ps, 0.5), lo: pq(ps, 0.1), hi: pq(ps, 0.9), p25: pq(ps, 0.25), p75: pq(ps, 0.75), last: w[w.length - 1] || null,
+    trend: a.length >= 2 && b.length >= 2 ? (pq(b, 0.5) / pq(a, 0.5) - 1) * 100 : null, cheap: act.length ? Math.min(...act.map((l) => l.price)) : null, nAct: act.length, pts: w, from, now };
+}
+const m0 = (v) => (v == null ? "—" : v >= 100 ? "$" + Math.round(v).toLocaleString() : money(v));
+const ago = (t) => { const d = Math.floor((Date.now() - t) / 864e5); return d <= 0 ? "today" : d === 1 ? "yesterday" : d + " days ago"; };
+const trendTxt = (v) => (v == null ? "" : `<span class="${v >= 0 ? "up" : "dn"}">${v >= 0 ? "▲" : "▼"} ${Math.abs(v).toFixed(1)}%</span>`);
+function chartSVG(S, all, fairLo, fairHi) {
+  if (!all.length) return `<div class="cdx-empty">No sales in this time range yet.</div>`;
+  const W = 358, H = 170, m = { l: 4, r: 40, t: 10, b: 20 }, ps = all.map((p) => p.price);
+  let lo = Math.min(...ps), hi = Math.max(...ps); const pad = (hi - lo) * 0.12 || hi * 0.1 || 1; lo = Math.max(0, lo - pad); hi += pad;
+  const X = (t) => m.l + ((t - S.from) / (S.now - S.from)) * (W - m.l - m.r), Y = (v) => m.t + (1 - (v - lo) / (hi - lo)) * (H - m.t - m.b);
+  const step = (hi - lo) / 3, grid = [0, 1, 2, 3].map((i) => lo + step * i);
+  let g = grid.map((v) => `<line x1="0" x2="${W - m.r + 4}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" class="cdx-g"/><text x="${W}" y="${(Y(v) + 3).toFixed(1)}" text-anchor="end" class="cdx-t">${m0(v)}</text>`).join("");
+  if (fairLo != null) g += `<rect x="${m.l}" y="${Y(fairHi).toFixed(1)}" width="${W - m.l - m.r}" height="${Math.max(2, Y(fairLo) - Y(fairHi)).toFixed(1)}" class="cdx-band"/>`;
+  if (all.length >= 3) { const n = all.length, mx = all.reduce((a, p) => a + p.t, 0) / n, my = all.reduce((a, p) => a + p.price, 0) / n;
+    let num = 0, den = 0; for (const p of all) { num += (p.t - mx) * (p.price - my); den += (p.t - mx) ** 2; } const k = den ? num / den : 0;
+    const t0 = Math.min(...all.map((p) => p.t)), t1 = S.now; g += `<line x1="${X(t0).toFixed(1)}" y1="${Y(my + k * (t0 - mx)).toFixed(1)}" x2="${X(t1).toFixed(1)}" y2="${Y(my + k * (t1 - mx)).toFixed(1)}" class="cdx-tr"/>`; }
+  for (const p of all) { const x = X(Math.min(p.t, S.now)).toFixed(1), y = Y(p.price).toFixed(1), tip = `${p.s === "e" ? "eBay" : "TCGplayer"} ${money(p.price)}, ${ago(p.t)}`;
+    g += p.s === "e" ? `<circle cx="${x}" cy="${y}" r="4.5" class="cdx-e" data-u="${esc(p.url || "")}"><title>${esc(tip)}</title></circle>` : `<rect x="${(x - 3.5).toFixed(1)}" y="${(y - 3.5).toFixed(1)}" width="7" height="7" class="cdx-c" data-u="${esc(p.url || "")}"><title>${esc(tip)}</title></rect>`; }
+  const d0 = new Date(S.from).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  g += `<text x="0" y="${H - 4}" class="cdx-t">${d0}</text><text x="${W - m.r}" y="${H - 4}" text-anchor="end" class="cdx-t">Today</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Every sale on both sites in this time range">${g}</svg>`;
+}
+function siteCard(name, cls, head, main, S, extra) {
+  return `<div class="cdx-site"><div class="cdx-sh"><span><i class="${cls}"></i>${name}</span>${trendTxt(S.trend)}</div>
+  <div><div class="cdx-k">${head}</div><div class="cdx-big">${m0(main)}</div></div>
+  <div><div class="cdx-k">Sold range</div><div class="cdx-v">${S.n ? m0(S.lo) + " – " + m0(S.hi) : "—"}</div></div>
+  <div><div class="cdx-k">Sales · last sold</div><div class="cdx-v">${S.n}${S.last ? " · " + m0(S.last.price) : ""}</div></div>
+  <div><div class="cdx-k">Cheapest for sale</div><div class="cdx-v">${S.cheap != null ? m0(S.cheap) + ` <span class="mu">of ${S.nAct}</span>` : "—"}</div></div>${extra || ""}</div>`;
+}
+function renderDetail(box, x) {
+  const gi = gradeOf(x), meta = [x.set, x.num, x.var].filter(Boolean).map(esc).join(" · ") + " · " + esc(gi ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond || "NM");
+  const pic = x.img ? `<a class="cdx-pic" href="${esc(x.tcgId ? "https://www.tcgplayer.com/product/" + encodeURIComponent(x.tcgId) : x.big || x.img)}" target="_blank" rel="noopener" aria-label="${esc(x.name)} on TCGplayer"><img src="${esc(x.big || x.img)}" alt="${esc(x.name)}"></a>` : `<span class="cdx-pic none" aria-hidden="true"></span>`;
+  const head = (fair) => `<div class="cdx-top"><button class="pill" type="button" data-dx="back">‹ Portfolio</button><button class="pill sm2" type="button" data-ed="${x.id}">Edit</button></div>
+  <div class="cdx-hd">${pic}<div class="cdx-hm"><div class="cdx-name">${esc(x.name)}</div><div class="mu">${meta}</div>${fair}</div></div>
+  <div class="seg cdx-rg" role="group" aria-label="Time range">${DRNG.map(([k, l]) => `<button type="button" data-dr="${k}" aria-pressed="${k === drng}">${l}</button>`).join("")}</div>`;
+  const C = compsCache.get(x.id);
+  box.innerHTML = head(`<div class="cdx-fair"><div class="cdx-fl">Fair price right now</div><div class="cdx-fv">…</div><div class="cdx-fs">Loading eBay and TCGplayer sales…</div></div>`);
+  loadComps(x).then((R) => {
+    if (detail !== x.id) return;
+    const days = +drng, E = ebayData(x, R.ebay), T = tcgData(x, R.tcg), SE = stats(E.sold, E.act, days), ST = stats(T.sold, T.act, days);
+    const all = [...SE.pts, ...ST.pts], SA = stats(all, [], days), fair = SA.med ?? T.market ?? SE.cheap, n = all.length;
+    const fairBox = `<div class="cdx-fair"><div class="cdx-fl">Fair price right now</div>
+      <div class="cdx-fr"><span class="cdx-fv">${m0(fair)}</span>${SA.trend != null ? `<span class="cdx-ft">${SA.trend >= 0 ? "▲" : "▼"} ${Math.abs(SA.trend).toFixed(1)}%</span>` : ""}</div>
+      <div class="cdx-fs">${n ? `${m0(SA.p25)} – ${m0(SA.p75)} · ${n} sale${n === 1 ? "" : "s"}` : SA.med == null && T.market != null ? "TCGplayer market price · no recent sales" : "No sales in this range"}</div></div>`;
+    const qty = x.qty || 0, mine = qty && fair != null ? `<div class="cdx-mine"><div><b>Your ${qty} cop${qty === 1 ? "y" : "ies"}</b><div class="mu">${x.ovr > 0 ? "Your price" : "Collectr says"} ${money(unit(x) * qty)}</div></div><div class="cdx-mr"><b>${money(fair * qty)}</b><div class="mu">at fair price</div></div></div>` : "";
+    const tcgNote = gi ? `<div class="cdx-k" style="margin-top:2px">TCGplayer doesn't sell graded cards</div>` : "";
+    box.innerHTML = head(fairBox) + `<div class="cdx-ch">${chartSVG(SA, all, SA.p25, SA.p75)}</div>
+    <div class="cdx-lg"><span><i class="cdx-ie"></i>eBay</span><span><i class="cdx-it"></i>TCGplayer</span><span><i class="cdx-ib"></i>Usual range</span></div>
+    <div class="cdx-sites">${siteCard("eBay", "cdx-ie", "Median sold", SE.med, SE, E.soldOn ? "" : `<div class="cdx-k">eBay sold data is off</div>`)}${siteCard("TCGplayer", "cdx-it", T.market != null ? "Market price" : "Median sold", T.market ?? ST.med, ST, tcgNote)}</div>
+    ${mine}<div class="cdx-btns"><button class="btn" type="button" data-dx="ebay">eBay chart</button><button class="btn o" type="button" data-dx="tcg">TCGplayer chart</button></div>
+    <div class="sm">${esc(gi ? shortGrade(x.grade) + " sales only." : (x.cond || "Near Mint") + " raw sales only.")} Tap a dot to open that sale.${R.warn.length ? " " + esc(R.warn.join(" ")) : ""}</div>`;
+  }).catch((e) => { if (detail === x.id) box.innerHTML = head(`<div class="cdx-fair"><div class="cdx-fs">Couldn't load comps: ${esc(e.message)}</div></div>`); });
+}
+function openDetail(id) { if (!P.items.some((y) => y.id === id)) return; listY = scrollY; detail = id; editing = null; try { history.pushState({ ppd: id }, ""); } catch {} render(); scrollTo(0, 0); }
+function closeDetail(viaHistory) { if (!detail) return; detail = null; render(); scrollTo(0, listY); if (!viaHistory && history.state && history.state.ppd) try { history.back(); } catch {} }
+addEventListener("popstate", () => { if (detail) closeDetail(true); });
 
 /* ---------- actions ---------- */
 function exportCSV() {
@@ -208,7 +316,17 @@ function saveForm(fm) {
 }
 document.addEventListener("click", (e) => {
   const box = $("pf"); if (!box || !box.contains(e.target)) return;
-  const d = e.target.closest("button")?.dataset; if (!d) return;
+  const dot = e.target.closest && e.target.closest("[data-u]"); if (dot) { if (dot.dataset.u) openLink(dot.dataset.u); return; }
+  const btn = e.target.closest("button");
+  if (!btn) { const row = !e.target.closest("a,input,select,label,form") && e.target.closest(".pr[data-id]"); if (row && editing !== row.dataset.id) openDetail(row.dataset.id); return; }
+  const d = btn.dataset;
+  if (d.dr) { drng = d.dr; render(); return; }
+  if (d.dx) { const x = P.items.find((y) => y.id === detail);
+    if (d.dx === "back") closeDetail();
+    else if (x && d.dx === "ebay") { closeDetail(); comp(x); }
+    else if (x && d.dx === "tcg") { closeDetail(); $("q").value = compQuery(x); tcgQ = ""; const b = $("tb").querySelector('[data-t="tcg"]'); if (b) b.click(); scrollTo({ top: 0, behavior: "smooth" }); }
+    return; }
+  if (d.ed && detail) { detail = null; }
   if (d.pv != null) { view = d.pv; shown = PAGE; editing = null; render(); }
   else if (d.cmp) { const x = P.items.find((y) => y.id === d.cmp); if (x) comp(x); }
   else if (d.ed) { editing = d.ed; render(); }
