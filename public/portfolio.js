@@ -260,22 +260,66 @@ function stats(sold, act, days) {
 const m0 = (v) => (v == null ? "—" : v >= 100 ? "$" + Math.round(v).toLocaleString() : money(v));
 const ago = (t) => { const d = Math.floor((Date.now() - t) / 864e5); return d <= 0 ? "today" : d === 1 ? "yesterday" : d + " days ago"; };
 const trendTxt = (v) => (v == null ? "" : `<span class="${v >= 0 ? "up" : "dn"}">${v >= 0 ? "▲" : "▼"} ${Math.abs(v).toFixed(1)}%</span>`);
+// The comps chart zooms like the eBay and TCGplayer charts: two fingers pinch and slide, the mouse wheel zooms,
+// dragging the price axis (right) or the date axis (bottom) stretches that axis, and "Reset zoom" goes back.
+let CG = null, cview = null, cpd0 = 0, cpc = null, cax = null;
+const CPT = new Map(), CW = 358, CH = 190, CM = { l: 4, r: 46, t: 10, b: 22 };
 function chartSVG(S, all, fairLo, fairHi) {
-  if (!all.length) return `<div class="cdx-empty">No sales in this time range yet.</div>`;
-  const W = 358, H = 170, m = { l: 4, r: 40, t: 10, b: 20 }, ps = all.map((p) => p.price);
-  let lo = Math.min(...ps), hi = Math.max(...ps); const pad = (hi - lo) * 0.12 || hi * 0.1 || 1; lo = Math.max(0, lo - pad); hi += pad;
-  const X = (t) => m.l + ((t - S.from) / (S.now - S.from)) * (W - m.l - m.r), Y = (v) => m.t + (1 - (v - lo) / (hi - lo)) * (H - m.t - m.b);
-  const step = (hi - lo) / 3, grid = [0, 1, 2, 3].map((i) => lo + step * i);
-  let g = grid.map((v) => `<line x1="0" x2="${W - m.r + 4}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" class="cdx-g"/><text x="${W}" y="${(Y(v) + 3).toFixed(1)}" text-anchor="end" class="cdx-t">${m0(v)}</text>`).join("");
-  if (fairLo != null) g += `<rect x="${m.l}" y="${Y(fairHi).toFixed(1)}" width="${W - m.l - m.r}" height="${Math.max(2, Y(fairLo) - Y(fairHi)).toFixed(1)}" class="cdx-band"/>`;
+  if (!all.length) { CG = null; return `<div class="cdx-empty">No sales in this time range yet.</div>`; }
+  const ps = all.map((p) => p.price); let lo = Math.min(...ps), hi = Math.max(...ps); const pad = (hi - lo) * 0.12 || hi * 0.1 || 1; lo = Math.max(0, lo - pad); hi += pad;
+  CG = { S, all, fairLo, fairHi, full: { x0: S.from, x1: S.now, y0: lo, y1: hi } };
+  return `<div id="cdxc">${chartInner()}</div>`;
+}
+function cClamp(v) { const f = CG.full, fw = f.x1 - f.x0, fh = f.y1 - f.y0, w = Math.min(fw, Math.max(6 * 3600e3, v.x1 - v.x0)), h = Math.min(fh, Math.max(fh / 200, v.y1 - v.y0));
+  const x0 = Math.min(Math.max(v.x0, f.x0), f.x1 - w), y0 = Math.min(Math.max(v.y0, f.y0), f.y1 - h); return { x0, x1: x0 + w, y0, y1: y0 + h }; }
+function cSet(v) { if (!CG) return; cview = cClamp(v); const f = CG.full; if (cview.x1 - cview.x0 >= (f.x1 - f.x0) * 0.999 && cview.y1 - cview.y0 >= (f.y1 - f.y0) * 0.999) cview = null; const b = $("cdxc"); if (b) b.innerHTML = chartInner(); }
+function chartInner() {
+  const { S, all, fairLo, fairHi } = CG, v = cview ? cClamp(cview) : CG.full, m = CM, W = CW, H = CH, iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const X = (t) => m.l + ((t - v.x0) / (v.x1 - v.x0)) * iw, Y = (p) => m.t + (1 - (p - v.y0) / (v.y1 - v.y0)) * ih;
+  const ys = nice((v.y1 - v.y0) / 4); let g = `<defs><clipPath id="cdxcp"><rect x="${m.l}" y="${m.t}" width="${iw}" height="${ih}"/></clipPath></defs>`;
+  for (let y = Math.ceil(v.y0 / ys - 1e-9) * ys; y <= v.y1 + 1e-9; y += ys) g += `<line x1="0" x2="${m.l + iw}" y1="${Y(y).toFixed(1)}" y2="${Y(y).toFixed(1)}" class="cdx-g"/><text x="${W}" y="${(Y(y) + 3).toFixed(1)}" text-anchor="end" class="cdx-t">${m0(+y.toFixed(2))}</text>`;
+  g += `<g clip-path="url(#cdxcp)">`;
+  if (fairLo != null) g += `<rect x="${m.l}" y="${Y(fairHi).toFixed(1)}" width="${iw}" height="${Math.max(2, Y(fairLo) - Y(fairHi)).toFixed(1)}" class="cdx-band"/>`;
   if (all.length >= 3) { const n = all.length, mx = all.reduce((a, p) => a + p.t, 0) / n, my = all.reduce((a, p) => a + p.price, 0) / n;
     let num = 0, den = 0; for (const p of all) { num += (p.t - mx) * (p.price - my); den += (p.t - mx) ** 2; } const k = den ? num / den : 0;
     const t0 = Math.min(...all.map((p) => p.t)), t1 = S.now; g += `<line x1="${X(t0).toFixed(1)}" y1="${Y(my + k * (t0 - mx)).toFixed(1)}" x2="${X(t1).toFixed(1)}" y2="${Y(my + k * (t1 - mx)).toFixed(1)}" class="cdx-tr"/>`; }
-  for (const p of all) { const x = X(Math.min(p.t, S.now)).toFixed(1), y = Y(p.price).toFixed(1), tip = `${p.s === "e" ? "eBay" : "TCGplayer"} ${money(p.price)}, ${ago(p.t)}`;
-    g += p.s === "e" ? `<circle cx="${x}" cy="${y}" r="4.5" class="cdx-e" data-u="${esc(p.url || "")}"><title>${esc(tip)}</title></circle>` : `<rect x="${(x - 3.5).toFixed(1)}" y="${(y - 3.5).toFixed(1)}" width="7" height="7" class="cdx-c" data-u="${esc(p.url || "")}"><title>${esc(tip)}</title></rect>`; }
-  const d0 = new Date(S.from).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  g += `<text x="0" y="${H - 4}" class="cdx-t">${d0}</text><text x="${W - m.r}" y="${H - 4}" text-anchor="end" class="cdx-t">Today</text>`;
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Every sale on both sites in this time range">${g}</svg>`;
+  const r = cview ? 5 : 4.5;
+  for (const p of all) { const x = X(Math.min(p.t, S.now)), y = Y(p.price); if (x < m.l - 8 || x > m.l + iw + 8 || y < m.t - 8 || y > m.t + ih + 8) continue;
+    const tip = `${p.s === "e" ? "eBay" : "TCGplayer"} ${money(p.price)}, ${p.wk ? "week of " + new Date(p.t).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : ago(p.t)}`;
+    g += p.s === "e" ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" class="cdx-e" data-u="${esc(p.url || "")}"><title>${esc(tip)}</title></circle>` : `<rect x="${(x - r + 1).toFixed(1)}" y="${(y - r + 1).toFixed(1)}" width="${2 * r - 2}" height="${2 * r - 2}" class="cdx-c" data-u="${esc(p.url || "")}"><title>${esc(tip)}</title></rect>`; }
+  g += `</g>`;
+  const span = (v.x1 - v.x0) / 864e5, lf = span > 180 ? { month: "short", year: "2-digit" } : span > 3 ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", hour: "numeric" };
+  for (let i = 0; i <= 2; i++) { const t = v.x0 + ((v.x1 - v.x0) * i) / 2, lbl = i === 2 && v.x1 >= S.now - 3600e3 ? "Today" : new Date(t).toLocaleDateString(undefined, lf);
+    g += `<text x="${i === 0 ? m.l : i === 2 ? m.l + iw : X(t)}" y="${H - 5}" text-anchor="${i === 0 ? "start" : i === 2 ? "end" : "middle"}" class="cdx-t">${lbl}</text>`; }
+  const pc = (n, d) => ((n / d) * 100).toFixed(2) + "%";
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Every sale on both sites in this time range">${g}</svg>
+  <div class="az ay" data-cz="y" style="top:0;right:0;width:${pc(m.r, W)};height:${pc(m.t + ih, H)}"></div><div class="az ax" data-cz="x" style="left:0;bottom:0;width:${pc(m.l + iw, W)};height:${pc(m.b, H)}"></div>
+  ${cview ? `<div class="zc"><button class="rs" type="button" data-czr="1">Reset zoom</button></div>` : ""}`;
+}
+{
+  const inC = (e) => e.target && e.target.closest && e.target.closest("#cdxc");
+  const frac = (cx, cy) => { const b = $("cdxc").querySelector("svg").getBoundingClientRect(), s = b.width / CW; return { fx: ((cx - b.left) / s - CM.l) / (CW - CM.l - CM.r), fy: ((cy - b.top) / s - CM.t) / (CH - CM.t - CM.b) }; };
+  const mid = () => { const [a, b] = [...CPT.values()]; return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }, dist = () => { const [a, b] = [...CPT.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+  function gesture(pf, nf, f) { const v = cview || CG.full, w = v.x1 - v.x0, h = v.y1 - v.y0, cx = v.x0 + pf.fx * w, cy = v.y1 - pf.fy * h, nw = w * f, nh = h * f;
+    cSet({ x0: cx - nf.fx * nw, x1: cx - nf.fx * nw + nw, y0: cy - (1 - nf.fy) * nh, y1: cy - (1 - nf.fy) * nh + nh }); }
+  document.addEventListener("pointerdown", (e) => { const box = inC(e); if (!box || !CG || (e.target.closest && e.target.closest("button"))) return;
+    const z = e.target.dataset && e.target.dataset.cz;
+    if (z) { cax = { id: e.pointerId, z, x: e.clientX, y: e.clientY, v: { ...(cview || CG.full) } }; try { box.setPointerCapture(e.pointerId); } catch {} e.preventDefault(); return; }
+    CPT.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (CPT.size === 2) { cpd0 = dist(); cpc = mid(); CPT.forEach((_, id) => { try { box.setPointerCapture(id); } catch {} }); } });
+  document.addEventListener("pointermove", (e) => { if (!CG) return;
+    if (cax && e.pointerId === cax.id) { const dx = e.clientX - cax.x, dy = e.clientY - cax.y, v = cax.v;
+      if (cax.z === "y") { const h = (v.y1 - v.y0) * Math.exp(dy * 0.008), c = (v.y0 + v.y1) / 2; cSet({ x0: v.x0, x1: v.x1, y0: c - h / 2, y1: c + h / 2 }); }
+      else { const w = (v.x1 - v.x0) * Math.exp(-dx * 0.008); cSet({ x0: v.x1 - w, x1: v.x1, y0: v.y0, y1: v.y1 }); } return; }
+    if (!CPT.has(e.pointerId)) return; CPT.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (CPT.size === 2) { const nd = dist(), mm = mid(); if (cpd0 && nd && cpc) gesture(frac(cpc.x, cpc.y), frac(mm.x, mm.y), cpd0 / nd); cpd0 = nd; cpc = mm; } });
+  const up = (e) => { if (cax && e.pointerId === cax.id) { cax = null; return; } CPT.delete(e.pointerId); cpd0 = 0; cpc = null; };
+  document.addEventListener("pointerup", up); document.addEventListener("pointercancel", up);
+  document.addEventListener("wheel", (e) => { if (!inC(e) || !CG) return; e.preventDefault(); const c = frac(e.clientX, e.clientY); c.fx = Math.min(1, Math.max(0, c.fx)); c.fy = Math.min(1, Math.max(0, c.fy));
+    const f = Math.exp(Math.max(-60, Math.min(60, e.deltaY)) * 0.003), v = cview || CG.full, w = v.x1 - v.x0, hh = v.y1 - v.y0, cx = v.x0 + c.fx * w, cy = v.y1 - c.fy * hh;
+    cSet({ x0: cx - c.fx * w * f, x1: cx - c.fx * w * f + w * f, y0: cy - (1 - c.fy) * hh * f, y1: cy - (1 - c.fy) * hh * f + hh * f }); }, { passive: false });
+  ["gesturestart", "gesturechange", "gestureend"].forEach((t) => document.addEventListener(t, (e) => { if (inC(e)) e.preventDefault(); }, { passive: false }));
+  document.addEventListener("touchmove", (e) => { if (inC(e) && e.touches.length > 1 && e.cancelable) e.preventDefault(); }, { passive: false });
 }
 function siteCard(name, cls, head, main, S, extra) {
   return `<div class="cdx-site"><div class="cdx-sh"><span><i class="${cls}"></i>${name}</span>${trendTxt(S.trend)}</div>
@@ -310,7 +354,7 @@ function renderDetail(box, x) {
     <div class="sm">${esc(sgi ? sel + " sales only." : sel + " raw sales only.")}${own ? "" : " ★ marks your copy's condition."} Tap a dot to open that sale.${E.cut.junk + E.cut.far + E.cut.lang ? ` Left out ${E.cut.junk + E.cut.far + E.cut.lang} eBay result${E.cut.junk + E.cut.far + E.cut.lang === 1 ? "" : "s"} that looked like a different item (jumbo or metal cards, other languages, or prices far from TCGplayer's).` : ""}${R.warn.length ? " " + esc(R.warn.join(" ")) : ""}</div>`;
   }).catch((e) => { if (detail === x.id) box.innerHTML = head(`<div class="cdx-fair"><div class="cdx-fs">Couldn't load comps: ${esc(e.message)}</div></div>`); });
 }
-function openDetail(id) { if (!P.items.some((y) => y.id === id)) return; listY = scrollY; detail = id; dsel = ownSel(P.items.find((y) => y.id === id)); editing = null; try { history.pushState({ ppd: id }, ""); } catch {} render(); scrollTo(0, 0); }
+function openDetail(id) { if (!P.items.some((y) => y.id === id)) return; listY = scrollY; detail = id; cview = null; dsel = ownSel(P.items.find((y) => y.id === id)); editing = null; try { history.pushState({ ppd: id }, ""); } catch {} render(); scrollTo(0, 0); }
 function closeDetail(viaHistory) { if (!detail) return; detail = null; render(); scrollTo(0, listY); if (!viaHistory && history.state && history.state.ppd) try { history.back(); } catch {} }
 addEventListener("popstate", () => { if (detail) closeDetail(true); });
 
@@ -342,8 +386,9 @@ document.addEventListener("click", (e) => {
   const btn = e.target.closest("button");
   if (!btn) { const row = !e.target.closest("a,input,select,label,form") && e.target.closest(".pr[data-id]"); if (row && editing !== row.dataset.id) openDetail(row.dataset.id); return; }
   const d = btn.dataset;
-  if (d.dr) { drng = d.dr; render(); return; }
-  if (d.dc) { dsel = d.dc; render(); return; }
+  if (d.czr) { cSet({ x0: -Infinity, x1: Infinity, y0: -Infinity, y1: Infinity }); return; }
+  if (d.dr) { drng = d.dr; cview = null; render(); return; }
+  if (d.dc) { dsel = d.dc; cview = null; render(); return; }
   if (d.dx) { const x = P.items.find((y) => y.id === detail);
     if (d.dx === "back") closeDetail();
     else if (x && d.dx === "ebay") { const q = queryFor(x, dsel); closeDetail(); $("q").value = q; const b = $("tb").querySelector('[data-t="ebay"]'); if (b) b.click(); tcgQ = ""; load(); scrollTo({ top: 0, behavior: "smooth" }); }
