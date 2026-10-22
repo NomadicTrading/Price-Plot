@@ -108,11 +108,11 @@ function rowHTML(x) {
   const g = isGraded(x), line = view === "watch" ? unit(x) : unit(x) * x.qty, gain = x.cost > 0 && x.qty ? (unit(x) - x.cost) * x.qty : null;
   const meta = [x.set, x.num, x.var && x.var !== "Normal" ? x.var : "", x.cat && x.cat !== "Pokemon" ? x.cat : ""].filter(Boolean).map(esc).join(" · ");
   if (editing === x.id) return `<div class="pr" data-id="${x.id}">${form(x)}</div>`;
-  return `<div class="pr" data-id="${x.id}">${thumb(x)}<div class="pm"><b>${esc(x.name)}</b> <span class="cg ${g ? "gr" : ""}">${esc(g ? shortGrade(x.grade) : x.cond || "")}</span>
+  return `<div class="pr" data-id="${x.id}"><button class="prx" type="button" data-trash="${x.id}" tabindex="-1" aria-label="Remove ${esc(x.name)}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></button><div class="prc">${thumb(x)}<div class="pm"><b>${esc(x.name)}</b> <span class="cg ${g ? "gr" : ""}">${esc(g ? shortGrade(x.grade) : x.cond || "")}</span>
   <div class="mu">${meta}${view === "all" && x.pf ? ` · <i>${esc(x.pf)}</i>` : ""}</div>
   <div class="mu">${view === "watch" ? "" : x.qty + " × "}${money(unit(x))}${x.ovr > 0 ? ` <span title="Your own price, set in Collectr or here">(your price)</span>` : x.mkt == null ? " (no price)" : ""}${gain != null ? ` · <span style="color:var(${gain >= 0 ? "--up" : "--dn"})">${gain >= 0 ? "+" : "−"}${money(Math.abs(gain))}</span> vs. ${money(x.cost)} paid` : ""}</div>
   ${x.notes ? `<div class="mu">${esc(x.notes)}</div>` : ""}</div>
-  <div class="pv"><b>${money(line)}</b><div><button class="pill sm2" type="button" data-cmp="${x.id}">Comp</button><button class="pill sm2" type="button" data-ed="${x.id}">Edit</button></div></div></div>`;
+  <div class="pv"><b>${money(line)}</b><div><button class="pill sm2" type="button" data-cmp="${x.id}">Comp</button><button class="pill sm2" type="button" data-ed="${x.id}">Edit</button></div></div></div></div>`;
 }
 function form(x) {
   const f = (k, l, v, t = "text", extra = "") => `<label>${l}<input name="${k}" type="${t}" value="${esc(v ?? "")}" ${extra}></label>`;
@@ -358,6 +358,76 @@ function openDetail(id) { if (!P.items.some((y) => y.id === id)) return; listY =
 function closeDetail(viaHistory) { if (!detail) return; detail = null; render(); scrollTo(0, listY); if (!viaHistory && history.state && history.state.ppd) try { history.back(); } catch {} }
 addEventListener("popstate", () => { if (detail) closeDetail(true); });
 
+/* ---------- pop-up windows and short notices ---------- */
+// modal({ title, text, buttons: [{ label, value, kind: "primary" | "danger" }] }) → the tapped button's value, or null if dismissed
+function modal({ title, text, buttons }) {
+  return new Promise((done) => {
+    const ov = document.createElement("div"); ov.className = "ppm-ov";
+    ov.innerHTML = `<div class="ppm" role="dialog" aria-modal="true" aria-labelledby="ppm-t"><h3 id="ppm-t">${esc(title)}</h3>${text ? `<p>${text}</p>` : ""}
+      <div class="ppm-b">${buttons.map((b, i) => `<button type="button" class="ppm-x ${b.kind || ""}" data-i="${i}">${esc(b.label)}</button>`).join("")}</div></div>`;
+    const prev = document.activeElement, close = (v) => { removeEventListener("keydown", key); ov.remove(); try { prev && prev.focus && prev.focus(); } catch {} done(v); };
+    const key = (e) => { if (e.key === "Escape") close(null); };
+    ov.addEventListener("click", (e) => { const b = e.target.closest("[data-i]"); if (b) close(buttons[+b.dataset.i].value); else if (e.target === ov) close(null); });
+    addEventListener("keydown", key); document.body.appendChild(ov); (ov.querySelector(".ppm-x.primary") || ov.querySelector(".ppm-x")).focus();
+  });
+}
+let toastT;
+function toast(msg, action) {
+  let t = $("ppt"); if (!t) { t = document.createElement("div"); t.id = "ppt"; t.setAttribute("role", "status"); document.body.appendChild(t); }
+  t.innerHTML = `<span>${esc(msg)}</span>${action ? `<button type="button">${esc(action.label)}</button>` : ""}`; t.className = "show";
+  if (action) t.querySelector("button").onclick = () => { t.className = ""; action.run(); };
+  clearTimeout(toastT); toastT = setTimeout(() => (t.className = ""), 4500);
+}
+
+/* ---------- add a card from the TCGplayer tab ---------- */
+// Called by the TCGplayer tab's "Add to portfolio" button with the card on screen, its printing and the conditions picked there.
+window.ppAddFromTcg = async (c, print, conds) => {
+  if (!c) return;
+  const name = String(c.name || "").replace(/\s+-\s+[\w/]+$/, "").trim(), cond = conds && conds.length === 1 ? conds[0] : "Near Mint";
+  const v = (c.variants || []).find((k) => k.print === print && k.cond === cond && (k.lang || "English") === "English") || (c.variants || []).find((k) => k.print === print && k.cond === cond);
+  const folders = [...new Set(P.items.filter((x) => x.qty > 0 && x.pf).map((x) => x.pf))].sort();
+  let pf = folders[0] || "";
+  if (folders.length > 1) {
+    pf = await modal({ title: "Add to which portfolio?", text: `${esc(name)} · ${esc(c.set || "")}<br><span class="mu">${esc(cond)}${print ? " · " + esc(print) : ""} · 1 copy. You can change these later with Edit.</span>`,
+      buttons: [...folders.map((f, i) => ({ label: f, value: f, kind: i === 0 ? "primary" : "" })), { label: "Cancel", value: null, kind: "plain" }] });
+    if (pf == null) return;
+  }
+  const tid = c.tcgId || (String(c.tcgUrl || "").match(/product\/(\d+)/) || [])[1] || null;
+  const x = { id: uid(), pf, cat: "Pokemon", set: c.set || "", name, num: c.number || "", rarity: c.rarity || "", var: print || "", grade: "Ungraded", cond, cost: 0, qty: 1,
+    mkt: v && v.price != null ? +v.price : null, ovr: 0, watch: false, added: today(), notes: "", tcgId: tid,
+    img: tid ? `https://tcgplayer-cdn.tcgplayer.com/product/${tid}_200w.jpg` : undefined, big: tid ? `https://tcgplayer-cdn.tcgplayer.com/product/${tid}_400w.jpg` : undefined, imgT: tid ? Date.now() : 0 };
+  const same = P.items.find((y) => y.qty > 0 && keyOf(y) === keyOf(x));
+  if (same) { same.qty += 1; if (x.mkt != null) same.mkt = x.mkt; } else P.items.push(x);
+  store(); snap(); render();
+  toast(same ? `Added another ${name} to ${pf || "your portfolio"} (now ${same.qty})` : `Added ${name} to ${pf || "your portfolio"}`,
+    { label: "View", run: () => { const b = $("tb").querySelector('[data-t="pf"]'); if (b) b.click(); view = pf || "all"; findTxt = ""; render(); scrollTo({ top: 0, behavior: "smooth" }); } });
+};
+
+/* ---------- swipe a card left to show the trash can ---------- */
+let sw = null, swJust = 0;
+const closeSwipes = (except) => document.querySelectorAll("#pf .pr.open").forEach((r) => r !== except && r.classList.remove("open"));
+document.addEventListener("pointerdown", (e) => {
+  const c = e.target.closest && e.target.closest("#pf .prc"); if (!c || e.button > 0 || e.target.closest("button,a,input,select,label")) return;
+  const row = c.parentNode; sw = { id: e.pointerId, row, c, x: e.clientX, y: e.clientY, base: row.classList.contains("open") ? -84 : 0, on: false };
+});
+document.addEventListener("pointermove", (e) => {
+  if (!sw || e.pointerId !== sw.id) return; const dx = e.clientX - sw.x, dy = e.clientY - sw.y;
+  if (!sw.on) { if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.2) { sw.on = true; sw.c.classList.add("drag"); closeSwipes(sw.row); try { sw.c.setPointerCapture(e.pointerId); } catch {} } else if (Math.abs(dy) > 10) { sw = null; return; } }
+  if (sw.on) sw.c.style.transform = `translateX(${Math.min(0, Math.max(-130, sw.base + dx))}px)`;
+});
+const swEnd = (e) => {
+  if (!sw || e.pointerId !== sw.id) return; const s = sw; sw = null; if (!s.on) return;
+  const t = s.base + (e.clientX - s.x); s.c.classList.remove("drag"); s.c.style.transform = ""; s.row.classList.toggle("open", t < -40); swJust = Date.now();
+};
+document.addEventListener("pointerup", swEnd); document.addEventListener("pointercancel", swEnd);
+async function askRemove(id) {
+  const x = P.items.find((y) => y.id === id); if (!x) return;
+  const ok = await modal({ title: "Are you sure you want to remove this item from your portfolio?", text: esc(x.name) + (x.set ? ` · ${esc(x.set)}` : ""), buttons: [{ label: "Yes", value: true, kind: "danger" }, { label: "No", value: false, kind: "primary" }] });
+  if (!ok) { closeSwipes(); return; }
+  P.items = P.items.filter((y) => y.id !== id); if (editing === id) editing = null; store(); snap(); render();
+  toast(`Removed ${x.name}`);
+}
+
 /* ---------- actions ---------- */
 function exportCSV() {
   const c = (v) => { v = v == null ? "" : String(v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
@@ -383,7 +453,9 @@ function saveForm(fm) {
 document.addEventListener("click", (e) => {
   const box = $("pf"); if (!box || !box.contains(e.target)) return;
   const dot = e.target.closest && e.target.closest("[data-u]"); if (dot) { if (dot.dataset.u) openLink(dot.dataset.u); return; }
+  if (Date.now() - swJust < 400) return;
   const btn = e.target.closest("button");
+  const openRow = document.querySelector("#pf .pr.open"); if (openRow && !(btn && btn.dataset.trash)) { closeSwipes(); return; }
   if (!btn) { const row = !e.target.closest("a,input,select,label,form") && e.target.closest(".pr[data-id]"); if (row && editing !== row.dataset.id) openDetail(row.dataset.id); return; }
   const d = btn.dataset;
   if (d.czr) { cSet({ x0: -Infinity, x1: Infinity, y0: -Infinity, y1: Infinity }); return; }
@@ -399,7 +471,8 @@ document.addEventListener("click", (e) => {
   else if (d.cmp) { const x = P.items.find((y) => y.id === d.cmp); if (x) comp(x); }
   else if (d.ed) { editing = d.ed; render(); }
   else if (d.cx) { editing = null; render(); }
-  else if (d.del) { const x = P.items.find((y) => y.id === d.del); if (x && confirm(`Delete ${x.name} from your portfolio?`)) { P.items = P.items.filter((y) => y.id !== d.del); editing = null; store(); snap(); render(); } }
+  else if (d.del) askRemove(d.del);
+  else if (d.trash) askRemove(d.trash);
   else if (d.pa === "merge" || d.pa === "replace") applyImport(d.pa);
   else if (d.pa === "cancel") { pending = null; $("pfi").hidden = true; }
   else if (d.pa === "add") { editing = "new"; render(); }
