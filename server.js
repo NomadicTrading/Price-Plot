@@ -711,6 +711,28 @@ app.get("/api/debug/collectr-finder", async (req, res) => {
     for (const u of scripts) {
       try { const t = await (await fetch(u, { headers: UA, signal: AbortSignal.timeout(15000) })).text(); scan(t, u.split("/").pop()); } catch {}
     }
+    // step 2: the code around the clues, and a few test reads of the data server with this showcase id
+    const want = [/x-collectr-username/g, /replace\(encodeURIComponent\("\{username\}"\)/g, /\/collections\/\{username\}\/products\?/g, /api-v2\.getcollectr\.com/g, /showcase_profile_page/g, /anonUsername/g];
+    const snips = [];
+    if (req.query.more) for (const u of scripts) {
+      let t = ""; try { t = await (await fetch(u, { headers: UA, signal: AbortSignal.timeout(15000) })).text(); } catch { continue; }
+      for (const re of want) for (const m of t.matchAll(re)) { if (snips.length < 24) snips.push({ file: u.split("/").pop(), find: re.source.slice(0, 30), code: t.slice(Math.max(0, m.index - 600), m.index + 700) }); }
+    }
+    const probes = [];
+    if (req.query.more) {
+      const api = "https://api-v2.getcollectr.com", tries = [
+        [`/collections/${id}/products?offset=0&limit=5`, {}],
+        [`/collections/${id}/products?offset=0&limit=5`, { "x-collectr-username": id }],
+        [`/collections/${id}/products?offset=0&limit=5&unstackedView=false&currency=USD`, { "x-collectr-username": id }],
+        [`/collections/${id}/overview?days=all&currency=USD`, { "x-collectr-username": id }],
+      ];
+      for (const [path, h] of tries) {
+        try { const pr = await fetch(api + path, { headers: { ...UA, Accept: "application/json", Origin: base, Referer: base + "/", ...h }, signal: AbortSignal.timeout(15000) });
+          probes.push({ path, header: Object.keys(h).join(",") || "none", status: pr.status, body: (await pr.text()).slice(0, 1500) }); }
+        catch (e) { probes.push({ path, error: e.message }); }
+      }
+    }
+    if (req.query.more) return res.json({ probes, snips });
     res.json({
       pageStatus: r.status, pageSize: html.length, scriptsRead: scripts.length, hasNextData: !!nextData,
       nextDataStart: nextData ? nextData[1].slice(0, 600) : null,
