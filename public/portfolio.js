@@ -546,11 +546,13 @@ async function cimpSetup() {
   const use = `<p><b>Each time:</b> open your Collectr showcase link in Safari and wait for your cards to show. Tap <b>Share</b> (the square with an arrow), scroll down the list and tap <b>Send to Price Plot</b>. If it isn't there, tap <b>Edit Actions…</b> at the bottom and turn it on. Price Plot opens with your cards to review.</p>`;
   const build = `<ol>
     <li>Open the <b>Shortcuts</b> app, tap <b>+</b>, and name the shortcut <b>Send to Price Plot</b>.</li>
-    <li>Tap <b>Add Action</b>, search for <b>Run JavaScript on Web Page</b>, and add it.</li>
-    <li>Tap the code inside that action, select all of it and delete it. Then come back here, tap <button type="button" class="pill" data-s="copy" style="padding:3px 10px">Copy code</button>, and paste it there.</li>
-    <li>Tap the <b>ⓘ</b> (or the shortcut's name at the top) → turn on <b>Show in Share Sheet</b>. Tap <b>Done</b>.</li>
+    <li>Add the action <b>Get Contents of URL</b> and set its address to <b>https://price-plot.onrender.com/collectr-bookmark.js</b>. This keeps the Shortcut up to date by itself.</li>
+    <li>Add the action <b>Run JavaScript on Web Page</b> below it. Tap the blue word after "on" and pick <b>Shortcut Input</b>.</li>
+    <li>Tap inside its code, select all and delete it. Then tap <b>Contents of URL</b> in the bar above the keyboard, so that's the only thing in the code box.</li>
+    <li>Tap the shortcut's name at the top → <b>Details</b> → turn on <b>Show in Share Sheet</b>. At the top of the editor, tap the blue word after "Receive" and pick only <b>Safari web pages</b>. Tap <b>Done</b>.</li>
     <li>In <b>Settings → Apps → Shortcuts → Advanced</b>, turn on <b>Allow Running Scripts</b>.</li></ol>
-    <p class="mu">To share it: in Shortcuts, hold the shortcut → <b>Share</b> → <b>Copy iCloud Link</b>, and send that link to Claude to put an Install button here.</p>`;
+    <p class="mu">If step 4 won't let you insert Contents of URL, paste the code instead: <button type="button" class="pill" data-s="copy" style="padding:3px 10px">Copy code</button> (you'd then repeat this whenever Price Plot updates it).</p>
+    <p class="mu">To share it: in Shortcuts, hold the shortcut → <b>Share</b> → <b>Copy iCloud Link</b>, and send that link to Claude to update the Install button.</p>`;
   const ov = document.createElement("div"); ov.className = "ppm-ov";
   ov.innerHTML = `<div class="ppm cimp-s" role="dialog" aria-modal="true" aria-labelledby="cs-t"><h3 id="cs-t">Import from a Collectr link</h3>
   <p class="mu">Works without Collectr PRO. Uses an iPhone Shortcut that reads your showcase in Safari.</p>
