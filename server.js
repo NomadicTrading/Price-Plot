@@ -699,6 +699,18 @@ app.post("/api/handoff", express.json({ limit: "8mb" }), async (req, res) => {
   await kv.set("handoff:" + code, data, 30 * 60);
   res.json({ code });
 });
+// The Collectr bookmark sends the cards here with an ordinary form submit (from the showcase tab itself), and the
+// browser is sent straight on to Price Plot with a code that picks them up.
+app.post("/api/collectr-handoff", express.urlencoded({ extended: false, limit: "25mb" }), async (req, res) => {
+  let raw; try { raw = JSON.parse(String(req.body?.data || "")); } catch { return res.redirect(303, "/#ci=bad"); }
+  if (!raw || raw.type !== "collectr-import") return res.redirect(303, "/#ci=bad");
+  const abc = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; let code = "";
+  for (let i = 0; i < 6; i++) code += abc[crypto.randomInt(abc.length)];
+  const data = { raw, made: Date.now() };
+  handoffs.set(code, data); setTimeout(() => handoffs.delete(code), 30 * 60e3).unref?.();
+  await kv.set("handoff:" + code, data, 30 * 60);
+  res.redirect(303, "/#ci=" + code);
+});
 app.get("/api/handoff/:code", async (req, res) => {
   const code = String(req.params.code || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
   const data = handoffs.get(code) || (await kv.get("handoff:" + code));

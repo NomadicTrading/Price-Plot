@@ -494,7 +494,14 @@ function cimpReceive(d) {
   const b = $("tb").querySelector('[data-t="pf"]'); if (b && tab !== "pf") b.click(); detail = null; render(); scrollTo(0, 0);
 }
 addEventListener("message", (e) => { if (COLLECTR_ORIGIN.test(e.origin) && e.data && e.data.type === "collectr-import" && cimp && cimp.status === "waiting") cimpReceive(e.data); });
-if (location.hash === "#collectr-import") {
+if (/^#ci=/.test(location.hash)) {
+  const code = location.hash.slice(4); cimp = { status: "waiting" };
+  try { history.replaceState(null, "", location.pathname); } catch {}
+  setTimeout(() => { const b = $("tb").querySelector('[data-t="pf"]'); if (b) b.click(); render(); }, 0);
+  (code === "bad" ? Promise.reject(new Error("The cards didn't come through from Collectr.")) : getJSON("/api/handoff/" + encodeURIComponent(code)))
+    .then((j) => { if (j.raw) cimpReceive(j.raw); else { cimp = { status: "ready", items: j.items || [], raw: { count: (j.items || []).length } }; render(); } })
+    .catch((e) => { cimp = { status: "error", msg: e.message }; render(); });
+} else if (location.hash === "#collectr-import") {
   cimp = { status: "waiting" };
   try { history.replaceState(null, "", location.pathname); } catch {}
   setTimeout(() => { const b = $("tb").querySelector('[data-t="pf"]'); if (b) b.click(); render(); }, 0);
@@ -541,9 +548,9 @@ async function cimpSetup() {
   <ol><li><button type="button" class="ppm-x primary" data-s="copy">Copy bookmark code</button></li>
   <li><b>Make a bookmark of this page:</b> tap Safari's <b>Share</b> button (the square with an arrow pointing up; on newer iPhones it's inside the <b>•••</b> menu), then <b>Add Bookmark</b>, then <b>Save</b>.</li>
   <li><b>Put the code in the bookmark:</b> open <b>Bookmarks</b> (the open-book icon, or <b>•••</b> → <b>Bookmarks</b>), tap <b>Edit</b>, then tap the bookmark you just made. Change the name to <b>Send to Price Plot</b>. In the box below the name (the web address), delete everything and paste the code. Tap <b>Done</b>.</li>
-  <li><b>Use it:</b> open your Collectr showcase link in Safari and wait for your cards to show. Tap the address bar, type <b>Send to</b>, and tap <b>Send to Price Plot</b> under Bookmarks.</li></ol>
+  <li><b>Use it:</b> open your Collectr showcase link in Safari and wait for your cards to show. Then open <b>Bookmarks</b> (<b>•••</b> → <b>Bookmarks</b>) and tap <b>Send to Price Plot</b>. Don't pick it from the address-bar suggestions; Safari won't run it from there. A blue bar shows the cards being read, then Price Plot opens in the same tab.</li></ol>
   <p class="mu">Don't paste the code into the address bar. Safari blocks that and says JavaScript isn't allowed. It only works saved inside a bookmark.</p>
-  <p class="mu">Price Plot opens with your cards to review. Using the home-screen app? Tap “Send to my Price Plot app” there to get a code, then enter it here:</p>
+  <p class="mu">Using the home-screen app? Tap “Send to my Price Plot app” there to get a code, then enter it here:</p>
   <div class="cimp-c"><input id="cs-code" maxlength="6" placeholder="Code" autocapitalize="characters" autocomplete="off" aria-label="Import code"><button type="button" class="ppm-x" data-s="code">Get cards</button></div>
   <div class="ppm-b"><button type="button" class="ppm-x plain" data-s="close">Close</button></div></div>`;
   const close = () => ov.remove();
@@ -551,7 +558,7 @@ async function cimpSetup() {
     if (s === "close") close();
     else if (s === "copy") { if (!bm) return toast("Couldn't load the bookmark code. Check your connection."); try { await navigator.clipboard.writeText(bm); e.target.textContent = "Copied ✓"; } catch { const t = document.createElement("textarea"); t.value = bm; t.style.cssText = "width:100%;height:90px;font:11px monospace"; e.target.replaceWith(t); t.select(); toast("Copy the code from the box."); } }
     else if (s === "code") { const c = ov.querySelector("#cs-code").value.trim(); if (!c) return;
-      try { const r = await fetch("/api/handoff/" + encodeURIComponent(c)); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); close(); cimp = { status: "ready", items: j.items, raw: { count: j.items.length } }; render(); scrollTo(0, 0); }
+      try { const r = await fetch("/api/handoff/" + encodeURIComponent(c)); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); close(); if (j.raw) cimpReceive(j.raw); else { cimp = { status: "ready", items: j.items, raw: { count: j.items.length } }; render(); } scrollTo(0, 0); }
       catch (err) { toast(err.message); } } });
   document.body.appendChild(ov);
 }
