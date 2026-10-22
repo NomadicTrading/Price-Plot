@@ -217,20 +217,38 @@ async function loadComps(x, sel) {
   if (t.status === "fulfilled") out.tcg = t.value; else out.warn.push("TCGplayer: " + t.reason.message + ".");
   return out;
 }
-function ebayData(x, j, sel) {
-  const gi = selGrade(sel), cc = COND_CODE[sel] || "NM", L = ((j && j.listings) || []).filter((l) => l.rel !== false && l.price > 0)
-    .filter((l) => (gi ? l.grader === gi.g && l.grade === gi.n : !l.grader && (l.cond === cc || (!l.cond && cc === "NM"))));
-  return { sold: L.filter((l) => l.type === "Sold").map((l) => ({ s: "e", price: l.price, t: Date.parse(l.date), url: l.url, title: l.title })),
-    act: L.filter((l) => l.type !== "Sold").map((l) => ({ price: l.price })), soldOn: !!(j && j.soldEnabled) };
+// eBay titles that look like the card but aren't the card itself (an oversized copy, a metal or custom card, a box)
+const EB_JUNK = /\b(jumbo|oversize|oversized|large size|giant|metal|gold plated|gold card|custom|art card|acrylic|slab case|box|collection|tin|pin|coin|sticker|poster|code)\b/i;
+const tcCond = (c) => { c = String(c || "").toLowerCase(); return c.startsWith("near mint") ? "Near Mint" : c.startsWith("lightly") ? "Lightly Played" : c.startsWith("moderately") ? "Moderately Played" : c.startsWith("heavily") ? "Heavily Played" : c.startsWith("damaged") ? "Damaged" : ""; };
+const isJp = (x) => /japan/i.test(x.set || "") || /\(jp\)/i.test(x.name);
+// ref: a trusted price for this card (TCGplayer's market price). eBay sales far from it are almost always a different item.
+function ebayData(x, j, sel, ref) {
+  const gi = selGrade(sel), cc = COND_CODE[sel] || "NM", jp = isJp(x), cut = { junk: 0, far: 0, lang: 0 };
+  const L = ((j && j.listings) || []).filter((l) => l.rel !== false && l.price > 0)
+    .filter((l) => (gi ? l.grader === gi.g && l.grade === gi.n : !l.grader && (l.cond === cc || (!l.cond && cc === "NM"))))
+    .filter((l) => { if (EB_JUNK.test(l.title || "") && !EB_JUNK.test(x.name)) return cut.junk++, false;
+      if (jp ? l.lang && l.lang !== "jp" : l.lang && l.lang !== "en") return cut.lang++, false;
+      if (ref && !gi && (l.price < ref * 0.4 || l.price > ref * 2.5)) return cut.far++, false; return true; });
+  let sold = L.filter((l) => l.type === "Sold").map((l) => ({ s: "e", price: l.price, t: Date.parse(l.date), url: l.url, title: l.title }));
+  if (sold.length >= 8) { const a = sold.map((p) => p.price).sort((u, w) => u - w), q1 = a[Math.floor(a.length * 0.25)], q3 = a[Math.floor(a.length * 0.75)], iq = q3 - q1;
+    const k = sold.filter((p) => p.price >= q1 - 1.5 * iq && p.price <= q3 + 1.5 * iq); cut.far += sold.length - k.length; sold = k; }
+  return { sold, act: L.filter((l) => l.type !== "Sold").map((l) => ({ price: l.price })), soldOn: !!(j && j.soldEnabled), cut };
 }
 function tcgData(x, j, sel) {
-  if (!j || selGrade(sel)) return { sold: [], act: [], market: null, url: null };
-  const want = sel, lc = (s) => String(s || "").toLowerCase(), jp = /japan/i.test(x.set || "") || /\(jp\)/i.test(x.name);
+  if (!j || selGrade(sel)) return { sold: [], act: [], market: null, url: null, weeks: [] };
+  const want = sel, lc = (s) => String(s || "").toLowerCase(), jp = isJp(x);
   const langOk = (l) => !l.lang || (jp ? /japan/i.test(l.lang) : /english/i.test(l.lang));
   const strict = !!x.var && [...(j.sold || []), ...(j.listings || []), ...(j.hist || [])].some((l) => lc(l.print) === lc(x.var));
-  const ok = (l) => l.cond === want && langOk(l) && (!strict || lc(l.print) === lc(x.var));
-  let market = null; for (const s of (j.hist || []).filter(ok)) { const b = s.b[s.b.length - 1]; if (b && b[5]) market = b[5]; }
-  return { sold: (j.sold || []).filter(ok).map((l) => ({ s: "t", price: l.price, t: Date.parse(l.date), url: j.url })), act: (j.listings || []).filter(ok).map((l) => ({ price: l.price })), market, url: j.url };
+  const ok = (l) => tcCond(l.cond) === want && langOk(l) && (!strict || lc(l.print) === lc(x.var));
+  // weekly sale ranges, oldest first: [start ms, lowest, highest, qty, sales, market price, …]
+  const weeks = (j.hist || []).filter(ok).flatMap((s) => s.b).sort((a, b) => a[0] - b[0]);
+  let market = null; for (const b of weeks) if (b[5]) market = b[5];
+  const sold = (j.sold || []).filter(ok).map((l) => ({ s: "t", price: l.price, t: Date.parse(l.date), url: j.url }));
+  // TCGplayer only shows a few single sales to the public, so each week's lowest and highest sale are added as points too
+  const pts = [...sold];
+  for (const b of weeks) { const t0 = b[0], t1 = t0 + 7 * 864e5, vals = b[4] > 1 && b[2] > b[1] ? [[b[1], 0.3], [b[2], 0.7]] : [[b[2] || b[1], 0.5]];
+    for (const [v, f] of vals) if (v && !sold.some((q) => q.t >= t0 && q.t < t1 && Math.abs(q.price - v) < 0.01)) pts.push({ s: "t", price: v, t: Math.min(Date.now(), t0 + 7 * 864e5 * f), url: j.url, wk: true }); }
+  return { sold: pts, act: (j.listings || []).filter(ok).map((l) => ({ price: l.price })), market, url: j.url, weeks };
 }
 const pq = (a, p) => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), i = (s.length - 1) * p, lo = Math.floor(i); return s[lo] + (s[Math.ceil(i)] - s[lo]) * (i - lo); };
 function stats(sold, act, days) {
@@ -277,7 +295,8 @@ function renderDetail(box, x) {
   box.innerHTML = head(`<div class="cdx-fair"><div class="cdx-fl">Fair price right now</div><div class="cdx-fv">…</div><div class="cdx-fs">Loading eBay and TCGplayer sales…</div></div>`);
   loadComps(x, sel).then((R) => {
     if (detail !== x.id || dsel !== sel) return;
-    const days = +drng, E = ebayData(x, R.ebay, sel), T = tcgData(x, R.tcg, sel), SE = stats(E.sold, E.act, days), ST = stats(T.sold, T.act, days);
+    const days = +drng, T = tcgData(x, R.tcg, sel), E = ebayData(x, R.ebay, sel, T.market), SE = stats(E.sold, E.act, days), ST = stats(T.sold, T.act, days);
+    { const from = Date.now() - days * 864e5, wn = T.weeks.filter((b) => b[0] + 7 * 864e5 >= from).reduce((n, b) => n + (b[4] || 0), 0); if (wn > ST.n) ST.n = wn; }
     const all = [...SE.pts, ...ST.pts], SA = stats(all, [], days), fair = SA.med ?? T.market ?? SE.cheap, n = all.length;
     const fairBox = `<div class="cdx-fair"><div class="cdx-fl">Fair price right now</div>
       <div class="cdx-fr"><span class="cdx-fv">${m0(fair)}</span>${SA.trend != null ? `<span class="cdx-ft">${SA.trend >= 0 ? "▲" : "▼"} ${Math.abs(SA.trend).toFixed(1)}%</span>` : ""}</div>
@@ -288,7 +307,7 @@ function renderDetail(box, x) {
     <div class="cdx-lg"><span><i class="cdx-ie"></i>eBay</span><span><i class="cdx-it"></i>TCGplayer</span><span><i class="cdx-ib"></i>Usual range</span></div>
     <div class="cdx-sites">${siteCard("eBay", "cdx-ie", "Median sold", SE.med, SE, E.soldOn ? "" : `<div class="cdx-k">eBay sold data is off</div>`)}${siteCard("TCGplayer", "cdx-it", T.market != null ? "Market price" : "Median sold", T.market ?? ST.med, ST, tcgNote)}</div>
     ${mine}<div class="cdx-btns"><button class="btn" type="button" data-dx="ebay">eBay chart</button><button class="btn o" type="button" data-dx="tcg">TCGplayer chart</button></div>
-    <div class="sm">${esc(sgi ? sel + " sales only." : sel + " raw sales only.")}${own ? "" : " ★ marks your copy's condition."} Tap a dot to open that sale.${R.warn.length ? " " + esc(R.warn.join(" ")) : ""}</div>`;
+    <div class="sm">${esc(sgi ? sel + " sales only." : sel + " raw sales only.")}${own ? "" : " ★ marks your copy's condition."} Tap a dot to open that sale.${E.cut.junk + E.cut.far + E.cut.lang ? ` Left out ${E.cut.junk + E.cut.far + E.cut.lang} eBay result${E.cut.junk + E.cut.far + E.cut.lang === 1 ? "" : "s"} that looked like a different item (jumbo or metal cards, other languages, or prices far from TCGplayer's).` : ""}${R.warn.length ? " " + esc(R.warn.join(" ")) : ""}</div>`;
   }).catch((e) => { if (detail === x.id) box.innerHTML = head(`<div class="cdx-fair"><div class="cdx-fs">Couldn't load comps: ${esc(e.message)}</div></div>`); });
 }
 function openDetail(id) { if (!P.items.some((y) => y.id === id)) return; listY = scrollY; detail = id; dsel = ownSel(P.items.find((y) => y.id === id)); editing = null; try { history.pushState({ ppd: id }, ""); } catch {} render(); scrollTo(0, 0); }
