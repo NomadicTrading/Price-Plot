@@ -539,9 +539,10 @@ async function cimpSetup() {
   ov.innerHTML = `<div class="ppm cimp-s" role="dialog" aria-modal="true" aria-labelledby="cs-t"><h3 id="cs-t">Import from a Collectr link</h3>
   <p class="mu">Works without Collectr PRO. One-time setup in Safari, then two taps each time.</p>
   <ol><li><button type="button" class="ppm-x primary" data-s="copy">Copy bookmark code</button></li>
-  <li>Tap <b>Share</b>, then tap <b>Add Bookmark</b>.</li>
-  <li>Open <b>Bookmarks</b> (the book icon) → <b>Edit</b> → tap the new bookmark. Name it <b>Send to Price Plot</b>, delete its address and paste the code. Tap <b>Done</b>.</li>
-  <li>Open your Collectr showcase link in Safari and wait for your cards to show. Then tap the address bar, type <b>Send to</b> and tap the bookmark.</li></ol>
+  <li><b>Make a bookmark of this page:</b> tap Safari's <b>Share</b> button (the square with an arrow pointing up; on newer iPhones it's inside the <b>•••</b> menu), then <b>Add Bookmark</b>, then <b>Save</b>.</li>
+  <li><b>Put the code in the bookmark:</b> open <b>Bookmarks</b> (the open-book icon, or <b>•••</b> → <b>Bookmarks</b>), tap <b>Edit</b>, then tap the bookmark you just made. Change the name to <b>Send to Price Plot</b>. In the box below the name (the web address), delete everything and paste the code. Tap <b>Done</b>.</li>
+  <li><b>Use it:</b> open your Collectr showcase link in Safari and wait for your cards to show. Tap the address bar, type <b>Send to</b>, and tap <b>Send to Price Plot</b> under Bookmarks.</li></ol>
+  <p class="mu">Don't paste the code into the address bar. Safari blocks that and says JavaScript isn't allowed. It only works saved inside a bookmark.</p>
   <p class="mu">Price Plot opens with your cards to review. Using the home-screen app? Tap “Send to my Price Plot app” there to get a code, then enter it here:</p>
   <div class="cimp-c"><input id="cs-code" maxlength="6" placeholder="Code" autocapitalize="characters" autocomplete="off" aria-label="Import code"><button type="button" class="ppm-x" data-s="code">Get cards</button></div>
   <div class="ppm-b"><button type="button" class="ppm-x plain" data-s="close">Close</button></div></div>`;
