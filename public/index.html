@@ -83,11 +83,27 @@ svg{display:block;width:100%;height:auto;user-select:none;-webkit-user-select:no
 .btn.o{background:var(--bg);color:var(--fg);border:1px solid var(--bd)}
 footer{border-top:1px solid var(--line);margin-top:22px;padding:12px 0;color:var(--mut);font-size:12px}
 .thm{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--fg);font-size:14px}.thm .seg{flex:none}.thm .seg button{padding:7px 16px}
+/* portfolio */
+.pill.on{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:700}.pill.dl{color:var(--dn);border-color:var(--dn)}.pill.sm2{padding:4px 11px;font-size:13px;margin-left:6px}
+label.pill{display:inline-block}
+#pfh{background:var(--soft);border-radius:12px;padding:14px 16px;margin-top:14px}
+#pfh .pt1{display:flex;flex-direction:column;gap:2px}#pfh .pt1 b{font-size:30px;letter-spacing:-.5px}
+.pst{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:13px;color:var(--mut)}.pst b{color:var(--fg)}
+.pbx{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:12px;background:var(--bg)}
+.pch{margin-top:12px}.pch svg{max-height:170px}
+#pfq{flex:1;min-width:160px;font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:999px;padding:7px 14px}
+.pr{display:flex;justify-content:space-between;gap:12px;padding:12px 2px;border-bottom:1px solid var(--line)}
+.pm{min-width:0;flex:1}.pm .mu{font-size:12.5px;margin-top:2px}.pv{text-align:right;flex:none}.pv b{font-size:16px;display:block;margin-bottom:6px}
+.cg{font-size:11.5px;font-weight:700;border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:var(--mut);white-space:nowrap}.cg.gr{border-color:#F59E0B;color:#b46d00}
+.pr .pe{flex:1}
+.pg{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.pg label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--mut)}
+.pg input,.pg select{font:inherit;font-size:15px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;width:100%}
 </style></head><body>
 <header><div class="wrap hd"><a class="brand" href="/" aria-label="Price Plot home"><img src="/brand/icon-small.svg" width="36" height="36" alt=""><span>Price<span class="pp-dot">·</span>Plot</span></a>
 <form id="f"><input id="q" type="search" placeholder="Search a card, e.g. charizard 4/102 base set" aria-label="Search listings" autocomplete="off" enterkeyhint="search" autofocus><button class="go" type="submit">Search</button></form></div></header>
 <main class="wrap">
-<div class="seg tabs" id="tb" role="group" aria-label="Data source"><button type="button" data-t="ebay" aria-pressed="true">eBay</button><button type="button" data-t="tcg" aria-pressed="false">TCGplayer</button></div>
+<div class="seg tabs" id="tb" role="group" aria-label="Data source"><button type="button" data-t="ebay" aria-pressed="true">eBay</button><button type="button" data-t="tcg" aria-pressed="false">TCGplayer</button><button type="button" data-t="pf" aria-pressed="false">Portfolio</button></div>
 <div class="bar" id="sv"></div>
 <div id="ebay">
 <div class="bar fs" id="gr" role="group" aria-label="Grading company"></div>
@@ -120,6 +136,7 @@ footer{border-top:1px solid var(--line);margin-top:22px;padding:12px 0;color:var
 <div class="sm" id="hid"></div><div class="sm" id="hist"></div><div class="sm" id="status">Search for a card to see its listings.</div>
 </div>
 <div id="tcg" hidden></div>
+<div id="pf" hidden></div>
 <p class="sm">Tip: add the card number, like 4/102, to cut out other cards, and put a minus sign in front of a word to leave it out, like -jumbo.</p>
 </main>
 <footer><div class="wrap"><div class="thm"><span>Appearance</span><div class="seg" id="thm" role="group" aria-label="Light or dark mode"><button type="button" data-th="light">Light</button><button type="button" data-th="dark">Dark</button></div></div>Not affiliated with or endorsed by eBay Inc. Active listings come from eBay. Sold data, when shown, comes from an independent data service.</div></footer>
@@ -652,7 +669,7 @@ async function loadTcg(){
  catch(e){if(q!==$("q").value.trim())return;tcgQ=q;TM=null;renderTcgBasic(basic,q,"Condition prices unavailable ("+e.message+"). Showing TCGplayer's overall prices instead.")}}
 $("tb").onclick=e=>{const k=e.target.dataset.t;if(!k)return;tab=k;
  [...$("tb").children].forEach(b=>b.setAttribute("aria-pressed",b.dataset.t===k));
- $("ebay").hidden=k!=="ebay";$("tcg").hidden=k!=="tcg";if(k==="tcg")loadTcg();else draw()};
+ $("ebay").hidden=k!=="ebay";$("tcg").hidden=k!=="tcg";$("pf").hidden=k!=="pf";$("sv").hidden=k==="pf";if(k==="pf")return;if(k==="tcg")loadTcg();else draw()};
 function pillBar(id,opts,cur,on){$(id).innerHTML=opts.map(([k,l])=>`<button class="pill" type="button" data-k="${k}" aria-pressed="${k===cur}">${l}</button>`).join("");
  $(id).onclick=e=>{const k=e.target.dataset.k;if(!k)return;$(id).querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.k===k));on(k);view=null;scrub=null;draw()}}
 pillBar("ln",[["any","Any language"],["en","English"],["jp","Japanese"],["kr","Korean"],["cn","Chinese"],["other","Other"]],lmode,k=>lmode=k);
@@ -685,4 +702,6 @@ function setTheme(t,keep){document.documentElement.dataset.theme=t;
 $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
-</script></body></html>
+</script>
+<script src="/portfolio.js"></script>
+</body></html>
