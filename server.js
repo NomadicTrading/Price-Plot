@@ -629,6 +629,62 @@ app.get("/api/tcgplayer", async (req, res) => {
   res.json(data);
 });
 
+// Card pictures for the Portfolio tab. Collectr's catalog comes from TCGplayer, so each card is looked up in
+// TCGplayer's own search (covers raw, Japanese, sealed, Yu-Gi-Oh!, One Piece, Magic), and its product image is used.
+// Pokémon cards fall back to pokemontcg.io if TCGplayer doesn't answer. Found pictures are remembered for 30 days
+// (in the Upstash database when set), and misses for 1 day, so each card is only looked up once.
+const imgCache = new Map();
+const imgWords = (t) => norm(t).replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter((w) => w && !["the", "of", "and", "pokemon", "tcg"].includes(w));
+const sameWords = (a, b) => { const A = imgWords(a), B = new Set(imgWords(b)); if (!A.length || !B.size) return 0; return A.filter((w) => B.has(w)).length / Math.max(A.length, B.size); };
+const cardNo = (n) => { const m = /^\s*([a-z]*)0*(\d+)([a-z]*)/i.exec(String(n || "").split("/")[0]); return m ? (m[1] + m[2] + m[3]).toLowerCase() : String(n || "").toLowerCase().trim(); };
+const TP_LINES = { pokemon: null, yugioh: "yugioh", "one piece": "one-piece-card-game", "magic: the gathering": "magic" };
+async function imgFromTcgplayer(name, set, num, cat) {
+  const line = TP_LINES[String(cat || "").toLowerCase()];
+  const j = await tpPost("https://mp-search-api.tcgplayer.com/v1/search/request?" + new URLSearchParams({ q: `${name} ${set}`.slice(0, 120), isList: "false" }), {
+    algorithm: "sales_synonym_v2", from: 0, size: 24,
+    filters: { term: line ? { productLineName: [line] } : {}, range: {}, match: {} },
+    listingSearch: { context: { cart: {} }, filters: { term: { sellerStatus: "Live", channelId: 0 }, range: { quantity: { gte: 1 } }, exclude: { channelExclusion: 0 } } },
+    context: { cart: {}, shippingCountry: "US", userProfile: {} }, settings: { useFuzzySearch: true, didYouMean: {} }, sort: {},
+  });
+  const rs = ((j.results || [])[0] || {}).results || [];
+  let best = null, bs = 0;
+  for (const r of rs) {
+    const id = String(Math.round(Number(r.productId) || 0)); if (id === "0") continue;
+    const rn = r.customAttributes?.number || (/\s-\s([\w/]+)$/.exec(r.productName || "") || [])[1] || "";
+    let sc = sameWords(set, r.setName || "") * 4 + sameWords(name, String(r.productName || "").replace(/\s-\s[\w/]+$/, "")) * 3;
+    if (num && rn) sc += cardNo(rn) === cardNo(num) ? 4 : -2;
+    if (!line && !/pokemon/i.test(r.productLineName || "pokemon")) sc -= 3;
+    if (sc > bs) { bs = sc; best = { id, set: r.setName }; }
+  }
+  return best && bs >= 3 ? { img: `https://tcgplayer-cdn.tcgplayer.com/product/${best.id}_200w.jpg`, big: `https://tcgplayer-cdn.tcgplayer.com/product/${best.id}_400w.jpg`, tcgId: best.id } : null;
+}
+async function imgFromPokemonTcg(name, set, num) {
+  const clean = name.replace(/\s*\([^)]*\)\s*/g, " ").replace(/["\\]/g, "").trim(); if (!clean) return null;
+  const n = cardNo(num);
+  const q = [`name:"${clean}"`, ...(n ? [`number:${n}`] : [])].join(" ");
+  const r = await fetch("https://api.pokemontcg.io/v2/cards?" + new URLSearchParams({ q, pageSize: "40", select: "id,name,number,set,images,tcgplayer" }), { headers: PTCG_KEY ? { "X-Api-Key": PTCG_KEY } : {}, signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error("pokemontcg.io returned " + r.status);
+  const cards = (await r.json()).data || [];
+  let best = null, bs = -1;
+  for (const c of cards) { const sc = sameWords(set, c.set?.name || "") + (cardNo(c.number) === n ? 1 : 0); if (sc > bs) { bs = sc; best = c; } }
+  return best && (bs > 0.3 || cards.length === 1) ? { img: best.images?.small, big: best.images?.large, tcgId: null } : null;
+}
+app.get("/api/cardimg", async (req, res) => {
+  const name = String(req.query.name || "").trim().slice(0, 100), set = String(req.query.set || "").trim().slice(0, 100);
+  const num = String(req.query.num || "").trim().slice(0, 20), cat = String(req.query.cat || "").trim().slice(0, 40);
+  if (!name) return res.status(400).json({ error: "Missing name" });
+  const key = "img:" + [cat, set, name, num].map((x) => norm(x)).join("|");
+  const hit = imgCache.get(key) || (await kv.get(key));
+  if (hit) return imgCache.set(key, hit), res.json(hit);
+  let found = null;
+  try { found = await imgFromTcgplayer(name, set, num, cat); } catch (e) { console.error("card picture (TCGplayer):", e.message); }
+  if (!found && /pokemon/i.test(cat || "pokemon")) { try { found = await imgFromPokemonTcg(name, set, num); } catch (e) { console.error("card picture (pokemontcg):", e.message); } }
+  const out = found || { img: null };
+  imgCache.set(key, out); if (imgCache.size > 5000) imgCache.delete(imgCache.keys().next().value);
+  await kv.set(key, out, found ? 30 * 864e2 : 864e2);
+  res.json(out);
+});
+
 // eBay "Marketplace Account Deletion" notifications (required to keep your keys enabled).
 // This app stores no eBay user data, so there is nothing to delete: we only answer eBay's
 // challenge and acknowledge notifications.

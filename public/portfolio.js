@@ -79,7 +79,7 @@ async function onFile(file) {
 function applyImport(how) {
   if (!pending) return;
   if (how === "replace") P.items = pending.items;
-  else { const at = new Map(P.items.map((x, i) => [keyOf(x), i])); for (const x of pending.items) { const k = keyOf(x); if (at.has(k)) P.items[at.get(k)] = { ...x, id: P.items[at.get(k)].id }; else { at.set(k, P.items.length); P.items.push(x); } } }
+  else { const at = new Map(P.items.map((x, i) => [keyOf(x), i])); for (const x of pending.items) { const k = keyOf(x); if (at.has(k)) { const o = P.items[at.get(k)]; P.items[at.get(k)] = { ...x, id: o.id, img: o.img, big: o.big, tcgId: o.tcgId, imgT: o.imgT }; } else { at.set(k, P.items.length); P.items.push(x); } } }
   P.asOf = pending.asOf || today(); P.source = pending.file; store(); snap(P.asOf);
   status(`Imported ${pending.items.length.toLocaleString()} rows from ${pending.file}.`); pending = null; $("pfi").hidden = true; view = "all"; shown = PAGE; render();
 }
@@ -108,7 +108,7 @@ function rowHTML(x) {
   const g = isGraded(x), line = view === "watch" ? unit(x) : unit(x) * x.qty, gain = x.cost > 0 && x.qty ? (unit(x) - x.cost) * x.qty : null;
   const meta = [x.set, x.num, x.var && x.var !== "Normal" ? x.var : "", x.cat && x.cat !== "Pokemon" ? x.cat : ""].filter(Boolean).map(esc).join(" · ");
   if (editing === x.id) return `<div class="pr" data-id="${x.id}">${form(x)}</div>`;
-  return `<div class="pr" data-id="${x.id}"><div class="pm"><b>${esc(x.name)}</b> <span class="cg ${g ? "gr" : ""}">${esc(g ? shortGrade(x.grade) : x.cond || "")}</span>
+  return `<div class="pr" data-id="${x.id}">${thumb(x)}<div class="pm"><b>${esc(x.name)}</b> <span class="cg ${g ? "gr" : ""}">${esc(g ? shortGrade(x.grade) : x.cond || "")}</span>
   <div class="mu">${meta}${view === "all" && x.pf ? ` · <i>${esc(x.pf)}</i>` : ""}</div>
   <div class="mu">${view === "watch" ? "" : x.qty + " × "}${money(unit(x))}${x.ovr > 0 ? ` <span title="Your own price, set in Collectr or here">(your price)</span>` : x.mkt == null ? " (no price)" : ""}${gain != null ? ` · <span style="color:var(${gain >= 0 ? "--up" : "--dn"})">${gain >= 0 ? "+" : "−"}${money(Math.abs(gain))}</span> vs. ${money(x.cost)} paid` : ""}</div>
   ${x.notes ? `<div class="mu">${esc(x.notes)}</div>` : ""}</div>
@@ -150,6 +150,38 @@ function render() {
   <div id="pfl2">${list.slice(0, shown).map(rowHTML).join("")}</div>
   ${list.length > shown ? `<button class="pill" type="button" data-pa="more" style="margin-top:10px">Show ${Math.min(PAGE, list.length - shown)} more</button>` : ""}`
   : `<p class="sm">Your portfolio is empty. Import a Collectr export (in Collectr: Portfolio → ⋯ → Export, then open the emailed file here), or add cards one at a time. Everything stays saved on this device.</p>`}`;
+  if (P.items.length) fetchImgs(list.slice(0, shown));
+}
+
+/* ---------- card pictures ---------- */
+// Looked up once per card through the server (TCGplayer's catalog, which Collectr uses), then saved with the card.
+const RETRY = 3 * 864e5, queue = [], busy = new Set();
+let running = 0, saveT;
+function thumb(x) {
+  const inner = x.img ? `<img src="${esc(x.img)}" alt="" loading="lazy" onerror="this.parentNode.classList.add('none');this.remove()">` : "";
+  const href = x.tcgId ? "https://www.tcgplayer.com/product/" + encodeURIComponent(x.tcgId) : x.big || x.img;
+  return href && x.img ? `<a class="pi" data-pid="${x.id}" href="${esc(href)}" target="_blank" rel="noopener" aria-label="${esc(x.name)} picture">${inner}</a>`
+    : `<span class="pi${x.img === null ? " none" : ""}" data-pid="${x.id}" aria-hidden="true">${inner}</span>`;
+}
+function wantImg(x) { return x.img === undefined || (x.img === null && Date.now() - (x.imgT || 0) > RETRY); }
+function fetchImgs(list) {
+  for (const x of list) if (wantImg(x) && !busy.has(x.id)) { busy.add(x.id); queue.push(x); }
+  pump();
+}
+function pump() {
+  while (running < 3 && queue.length) {
+    const x = queue.shift(); running++;
+    fetch("/api/cardimg?" + new URLSearchParams({ name: x.name, set: x.set || "", num: x.num || "", cat: x.cat || "" }))
+      .then((r) => (r.ok ? r.json() : null)).catch(() => null)
+      .then((j) => {
+        running--; busy.delete(x.id);
+        if (j) { x.img = j.img || null; x.big = j.big || null; x.tcgId = j.tcgId || null; x.imgT = Date.now(); }
+        else { x.img = null; x.imgT = Date.now() - RETRY + 6e5; } // server unreachable: try again in 10 minutes
+        const el = document.querySelector(`[data-pid="${x.id}"]`); if (el) el.outerHTML = thumb(x);
+        clearTimeout(saveT); saveT = setTimeout(store, 800);
+        pump();
+      });
+  }
 }
 
 /* ---------- actions ---------- */
@@ -170,6 +202,7 @@ function saveForm(fm) {
     name: d.name.trim(), set: d.set.trim(), num: d.num.trim(), var: d.var.trim(), cond: d.cond, grade: d.grade.trim() || "Ungraded",
     qty: Math.max(0, Math.round(num(d.qty) ?? 1)), cost: num(d.cost) || 0, ovr: num(d.ovr) || 0, pf: d.pf.trim(), notes: d.notes.trim() };
   if (!x.name) return;
+  if (old && (old.name !== x.name || old.set !== x.set || old.num !== x.num)) { x.img = undefined; x.imgT = 0; }
   if (old) Object.assign(old, x); else P.items.push(x);
   editing = null; store(); snap(); render();
 }
