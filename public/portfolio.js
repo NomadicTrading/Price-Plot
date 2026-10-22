@@ -539,7 +539,7 @@ async function cimpSetup() {
   ov.innerHTML = `<div class="ppm cimp-s" role="dialog" aria-modal="true" aria-labelledby="cs-t"><h3 id="cs-t">Import from a Collectr link</h3>
   <p class="mu">Works without Collectr PRO. One-time setup in Safari, then two taps each time.</p>
   <ol><li><button type="button" class="ppm-x primary" data-s="copy">Copy bookmark code</button></li>
-  <li>In Safari, tap <b>Share</b> → <b>Add Bookmark</b> → <b>Save</b>.</li>
+  <li>Tap <b>Share</b>, then tap <b>Add Bookmark</b>.</li>
   <li>Open <b>Bookmarks</b> (the book icon) → <b>Edit</b> → tap the new bookmark. Name it <b>Send to Price Plot</b>, delete its address and paste the code. Tap <b>Done</b>.</li>
   <li>Open your Collectr showcase link in Safari and wait for your cards to show. Then tap the address bar, type <b>Send to</b> and tap the bookmark.</li></ol>
   <p class="mu">Price Plot opens with your cards to review. Using the home-screen app? Tap “Send to my Price Plot app” there to get a code, then enter it here:</p>
