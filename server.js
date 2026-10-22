@@ -685,6 +685,44 @@ app.get("/api/cardimg", async (req, res) => {
   res.json(out);
 });
 
+// TEMPORARY: finds where Collectr's showcase page loads its card list from, by reading the page's own public
+// script files and listing the web addresses in them. Open /api/debug/collectr-finder?id=<showcase id> once,
+// copy the result, then this route can be removed.
+app.get("/api/debug/collectr-finder", async (req, res) => {
+  const id = String(req.query.id || "").trim();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return res.status(400).json({ error: "Add ?id= with the long code from the end of a Collectr showcase link" });
+  const UA = { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", Accept: "text/html,*/*" };
+  const base = "https://app.getcollectr.com";
+  try {
+    const r = await fetch(`${base}/showcase/profile/${id}`, { headers: UA, signal: AbortSignal.timeout(20000) });
+    const html = await r.text();
+    const scripts = [...new Set([...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map((m) => m[1]))]
+      .map((u) => (u.startsWith("/") ? base + u : u)).filter((u) => /^https:\/\/([a-z0-9-]+\.)*getcollectr\.com\//i.test(u)).slice(0, 60);
+    const urls = new Map(), paths = new Map();
+    const scan = (txt, from) => {
+      for (const m of txt.matchAll(/https?:\/\/[a-z0-9.-]*(?:getcollectr|collectr)[a-z0-9.-]*\.[a-z]{2,}[^"'`\s\\)]{0,120}/gi)) if (!urls.has(m[0])) urls.set(m[0], from);
+      for (const m of txt.matchAll(/["'`](\/?(?:api\/|v\d\/)?[a-z0-9_\-/]*(?:showcase|portfolio|profile|collection|products|user)[a-z0-9_\-/${}.?=&]*)["'`]/gi)) {
+        const k = m[1]; if (k.length < 4 || k.length > 140 || paths.has(k)) continue;
+        const i = m.index; paths.set(k, { from, near: txt.slice(Math.max(0, i - 70), i + k.length + 70).replace(/\s+/g, " ") });
+      }
+    };
+    scan(html, "page");
+    const nextData = /<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/.exec(html);
+    for (const u of scripts) {
+      try { const t = await (await fetch(u, { headers: UA, signal: AbortSignal.timeout(15000) })).text(); scan(t, u.split("/").pop()); } catch {}
+    }
+    res.json({
+      pageStatus: r.status, pageSize: html.length, scriptsRead: scripts.length, hasNextData: !!nextData,
+      nextDataStart: nextData ? nextData[1].slice(0, 600) : null,
+      cardWordsInPage: (html.match(/near mint|ungraded|quantity/gi) || []).length,
+      addresses: [...urls.keys()].slice(0, 80),
+      paths: [...paths.entries()].slice(0, 80).map(([p, v]) => ({ path: p, near: v.near })),
+    });
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 // eBay "Marketplace Account Deletion" notifications (required to keep your keys enabled).
 // This app stores no eBay user data, so there is nothing to delete: we only answer eBay's
 // challenge and acknowledge notifications.
