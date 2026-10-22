@@ -195,35 +195,37 @@ let detail = null, drng = "30", listY = 0;
 function gradeOf(x) { const m = /^(PSA|BGS|Beckett|CGC|TAG|SGC|ACE)\s*(\d+(?:\.5)?)/i.exec(x.grade || ""); return isGraded(x) && m ? { g: m[1].toUpperCase().replace("BECKETT", "BGS"), n: +m[2] } : null; }
 function compQuery(x) { return [x.name.replace(/\s*\((?:\d+|jp|japanese)\)\s*$/i, ""), x.num, isGraded(x) ? shortGrade(x.grade) : ""].filter(Boolean).join(" "); }
 const getJSON = (u) => fetch(u).then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || "error " + r.status); return j; });
-function loadComps(x) {
-  if (compsCache.has(x.id)) return compsCache.get(x.id);
-  const gi = gradeOf(x), grader = gi ? (["PSA", "BGS", "CGC", "TAG"].includes(gi.g) ? gi.g : "all") : "raw";
-  const p = (async () => {
-    const out = { ebay: null, tcg: null, warn: [] };
-    const eb = getJSON("/api/listings?" + new URLSearchParams({ q: compQuery(x), grader }));
-    let tp = Promise.resolve(null);
-    if (!gi) {
-      if (!x.tcgId) { try { const j = await getJSON("/api/cardimg?" + new URLSearchParams({ name: x.name, set: x.set || "", num: x.num || "", cat: x.cat || "" })); if (j.tcgId) { x.tcgId = j.tcgId; if (j.img) { x.img = j.img; x.big = j.big; } x.imgT = Date.now(); store(); } } catch {} }
-      if (x.tcgId) tp = getJSON("/api/tcgplayer?id=" + encodeURIComponent(x.tcgId));
-    }
-    const [e, t] = await Promise.allSettled([eb, tp]);
-    if (e.status === "fulfilled") out.ebay = e.value; else out.warn.push("eBay: " + e.reason.message);
-    if (t.status === "fulfilled") out.tcg = t.value; else out.warn.push("TCGplayer: " + t.reason.message);
-    if (!gi && !x.tcgId) out.warn.push("Couldn't find this card on TCGplayer.");
-    return out;
-  })();
-  compsCache.set(x.id, p); p.catch(() => compsCache.delete(x.id));
-  return p;
+// The condition being looked at: a raw condition ("Near Mint") or a grade ("PSA 10"). Starts at the card's own, from Collectr.
+const RAWC = ["Near Mint", "Lightly Played", "Moderately Played", "Heavily Played", "Damaged"];
+let dsel = "Near Mint";
+const selGrade = (sel) => { const m = /^(PSA|BGS|CGC|TAG|SGC|ACE)\s(\d+(?:\.5)?)$/.exec(sel || ""); return m ? { g: m[1], n: +m[2] } : null; };
+const ownSel = (x) => (gradeOf(x) ? shortGrade(x.grade) : RAWC.includes(x.cond) ? x.cond : "Near Mint");
+const selLabel = (sel) => COND_CODE[sel] || sel;
+function condOptions(x) { const o = [...RAWC]; for (const g of [ownSel(x), "PSA 10", "PSA 9", "CGC 10", "TAG 10"]) if (!o.includes(g)) o.push(g); return o; }
+function queryFor(x, sel) { const gi = selGrade(sel); return [x.name.replace(/\s*\((?:\d+|jp|japanese)\)\s*$/i, ""), x.num, gi ? gi.g + " " + gi.n : ""].filter(Boolean).join(" "); }
+function loadPart(key, make) { if (!compsCache.has(key)) { const p = make(); compsCache.set(key, p); p.catch(() => compsCache.delete(key)); } return compsCache.get(key); }
+async function loadComps(x, sel) {
+  const gi = selGrade(sel), grader = gi ? (["PSA", "BGS", "CGC", "TAG"].includes(gi.g) ? gi.g : "all") : "raw", out = { ebay: null, tcg: null, warn: [] };
+  const eb = loadPart(x.id + "|e|" + (gi ? gi.g + gi.n : "raw"), () => getJSON("/api/listings?" + new URLSearchParams({ q: queryFor(x, sel), grader })));
+  const tp = gi ? Promise.resolve(null) : loadPart(x.id + "|t", async () => {
+    if (!x.tcgId) { try { const j = await getJSON("/api/cardimg?" + new URLSearchParams({ name: x.name, set: x.set || "", num: x.num || "", cat: x.cat || "" })); if (j.tcgId) { x.tcgId = j.tcgId; if (j.img) { x.img = j.img; x.big = j.big; } x.imgT = Date.now(); store(); } } catch {} }
+    if (!x.tcgId) throw new Error("couldn't find this card on TCGplayer");
+    return getJSON("/api/tcgplayer?id=" + encodeURIComponent(x.tcgId));
+  });
+  const [e, t] = await Promise.allSettled([eb, tp]);
+  if (e.status === "fulfilled") out.ebay = e.value; else out.warn.push("eBay: " + e.reason.message + ".");
+  if (t.status === "fulfilled") out.tcg = t.value; else out.warn.push("TCGplayer: " + t.reason.message + ".");
+  return out;
 }
-function ebayData(x, j) {
-  const gi = gradeOf(x), cc = COND_CODE[x.cond] || "NM", L = ((j && j.listings) || []).filter((l) => l.rel !== false && l.price > 0)
+function ebayData(x, j, sel) {
+  const gi = selGrade(sel), cc = COND_CODE[sel] || "NM", L = ((j && j.listings) || []).filter((l) => l.rel !== false && l.price > 0)
     .filter((l) => (gi ? l.grader === gi.g && l.grade === gi.n : !l.grader && (l.cond === cc || (!l.cond && cc === "NM"))));
   return { sold: L.filter((l) => l.type === "Sold").map((l) => ({ s: "e", price: l.price, t: Date.parse(l.date), url: l.url, title: l.title })),
     act: L.filter((l) => l.type !== "Sold").map((l) => ({ price: l.price })), soldOn: !!(j && j.soldEnabled) };
 }
-function tcgData(x, j) {
-  if (!j) return { sold: [], act: [], market: null, url: null };
-  const want = x.cond || "Near Mint", lc = (s) => String(s || "").toLowerCase(), jp = /japan/i.test(x.set || "") || /\(jp\)/i.test(x.name);
+function tcgData(x, j, sel) {
+  if (!j || selGrade(sel)) return { sold: [], act: [], market: null, url: null };
+  const want = sel, lc = (s) => String(s || "").toLowerCase(), jp = /japan/i.test(x.set || "") || /\(jp\)/i.test(x.name);
   const langOk = (l) => !l.lang || (jp ? /japan/i.test(l.lang) : /english/i.test(l.lang));
   const strict = !!x.var && [...(j.sold || []), ...(j.listings || []), ...(j.hist || [])].some((l) => lc(l.print) === lc(x.var));
   const ok = (l) => l.cond === want && langOk(l) && (!strict || lc(l.print) === lc(x.var));
@@ -269,26 +271,27 @@ function renderDetail(box, x) {
   const pic = x.img ? `<a class="cdx-pic" href="${esc(x.tcgId ? "https://www.tcgplayer.com/product/" + encodeURIComponent(x.tcgId) : x.big || x.img)}" target="_blank" rel="noopener" aria-label="${esc(x.name)} on TCGplayer"><img src="${esc(x.big || x.img)}" alt="${esc(x.name)}"></a>` : `<span class="cdx-pic none" aria-hidden="true"></span>`;
   const head = (fair) => `<div class="cdx-top"><button class="pill" type="button" data-dx="back">‹ Portfolio</button><button class="pill sm2" type="button" data-ed="${x.id}">Edit</button></div>
   <div class="cdx-hd">${pic}<div class="cdx-hm"><div class="cdx-name">${esc(x.name)}</div><div class="mu">${meta}</div>${fair}</div></div>
-  <div class="seg cdx-rg" role="group" aria-label="Time range">${DRNG.map(([k, l]) => `<button type="button" data-dr="${k}" aria-pressed="${k === drng}">${l}</button>`).join("")}</div>`;
-  const C = compsCache.get(x.id);
+  <div class="seg cdx-rg" role="group" aria-label="Time range">${DRNG.map(([k, l]) => `<button type="button" data-dr="${k}" aria-pressed="${k === drng}">${l}</button>`).join("")}</div>
+  <div class="tk cdx-cd" role="group" aria-label="Condition">${condOptions(x).map((c) => `<button class="pill" type="button" data-dc="${esc(c)}" aria-pressed="${c === dsel}">${esc(selLabel(c))}${c === ownSel(x) ? " ★" : ""}</button>`).join("")}</div>`;
+  const sel = dsel, own = sel === ownSel(x), sgi = selGrade(sel);
   box.innerHTML = head(`<div class="cdx-fair"><div class="cdx-fl">Fair price right now</div><div class="cdx-fv">…</div><div class="cdx-fs">Loading eBay and TCGplayer sales…</div></div>`);
-  loadComps(x).then((R) => {
-    if (detail !== x.id) return;
-    const days = +drng, E = ebayData(x, R.ebay), T = tcgData(x, R.tcg), SE = stats(E.sold, E.act, days), ST = stats(T.sold, T.act, days);
+  loadComps(x, sel).then((R) => {
+    if (detail !== x.id || dsel !== sel) return;
+    const days = +drng, E = ebayData(x, R.ebay, sel), T = tcgData(x, R.tcg, sel), SE = stats(E.sold, E.act, days), ST = stats(T.sold, T.act, days);
     const all = [...SE.pts, ...ST.pts], SA = stats(all, [], days), fair = SA.med ?? T.market ?? SE.cheap, n = all.length;
     const fairBox = `<div class="cdx-fair"><div class="cdx-fl">Fair price right now</div>
       <div class="cdx-fr"><span class="cdx-fv">${m0(fair)}</span>${SA.trend != null ? `<span class="cdx-ft">${SA.trend >= 0 ? "▲" : "▼"} ${Math.abs(SA.trend).toFixed(1)}%</span>` : ""}</div>
       <div class="cdx-fs">${n ? `${m0(SA.p25)} – ${m0(SA.p75)} · ${n} sale${n === 1 ? "" : "s"}` : SA.med == null && T.market != null ? "TCGplayer market price · no recent sales" : "No sales in this range"}</div></div>`;
-    const qty = x.qty || 0, mine = qty && fair != null ? `<div class="cdx-mine"><div><b>Your ${qty} cop${qty === 1 ? "y" : "ies"}</b><div class="mu">${x.ovr > 0 ? "Your price" : "Collectr says"} ${money(unit(x) * qty)}</div></div><div class="cdx-mr"><b>${money(fair * qty)}</b><div class="mu">at fair price</div></div></div>` : "";
-    const tcgNote = gi ? `<div class="cdx-k" style="margin-top:2px">TCGplayer doesn't sell graded cards</div>` : "";
+    const qty = x.qty || 0, mine = qty && fair != null ? `<div class="cdx-mine"><div><b>Your ${qty} cop${qty === 1 ? "y" : "ies"}</b><div class="mu">${x.ovr > 0 ? "Your price" : "Collectr says"} ${money(unit(x) * qty)}</div></div><div class="cdx-mr"><b>${money(fair * qty)}</b><div class="mu">${own ? "at fair price" : "if " + esc(selLabel(sel))}</div></div></div>` : "";
+    const tcgNote = sgi ? `<div class="cdx-k" style="margin-top:2px">TCGplayer doesn't sell graded cards</div>` : "";
     box.innerHTML = head(fairBox) + `<div class="cdx-ch">${chartSVG(SA, all, SA.p25, SA.p75)}</div>
     <div class="cdx-lg"><span><i class="cdx-ie"></i>eBay</span><span><i class="cdx-it"></i>TCGplayer</span><span><i class="cdx-ib"></i>Usual range</span></div>
     <div class="cdx-sites">${siteCard("eBay", "cdx-ie", "Median sold", SE.med, SE, E.soldOn ? "" : `<div class="cdx-k">eBay sold data is off</div>`)}${siteCard("TCGplayer", "cdx-it", T.market != null ? "Market price" : "Median sold", T.market ?? ST.med, ST, tcgNote)}</div>
     ${mine}<div class="cdx-btns"><button class="btn" type="button" data-dx="ebay">eBay chart</button><button class="btn o" type="button" data-dx="tcg">TCGplayer chart</button></div>
-    <div class="sm">${esc(gi ? shortGrade(x.grade) + " sales only." : (x.cond || "Near Mint") + " raw sales only.")} Tap a dot to open that sale.${R.warn.length ? " " + esc(R.warn.join(" ")) : ""}</div>`;
+    <div class="sm">${esc(sgi ? sel + " sales only." : sel + " raw sales only.")}${own ? "" : " ★ marks your copy's condition."} Tap a dot to open that sale.${R.warn.length ? " " + esc(R.warn.join(" ")) : ""}</div>`;
   }).catch((e) => { if (detail === x.id) box.innerHTML = head(`<div class="cdx-fair"><div class="cdx-fs">Couldn't load comps: ${esc(e.message)}</div></div>`); });
 }
-function openDetail(id) { if (!P.items.some((y) => y.id === id)) return; listY = scrollY; detail = id; editing = null; try { history.pushState({ ppd: id }, ""); } catch {} render(); scrollTo(0, 0); }
+function openDetail(id) { if (!P.items.some((y) => y.id === id)) return; listY = scrollY; detail = id; dsel = ownSel(P.items.find((y) => y.id === id)); editing = null; try { history.pushState({ ppd: id }, ""); } catch {} render(); scrollTo(0, 0); }
 function closeDetail(viaHistory) { if (!detail) return; detail = null; render(); scrollTo(0, listY); if (!viaHistory && history.state && history.state.ppd) try { history.back(); } catch {} }
 addEventListener("popstate", () => { if (detail) closeDetail(true); });
 
@@ -321,10 +324,11 @@ document.addEventListener("click", (e) => {
   if (!btn) { const row = !e.target.closest("a,input,select,label,form") && e.target.closest(".pr[data-id]"); if (row && editing !== row.dataset.id) openDetail(row.dataset.id); return; }
   const d = btn.dataset;
   if (d.dr) { drng = d.dr; render(); return; }
+  if (d.dc) { dsel = d.dc; render(); return; }
   if (d.dx) { const x = P.items.find((y) => y.id === detail);
     if (d.dx === "back") closeDetail();
-    else if (x && d.dx === "ebay") { closeDetail(); comp(x); }
-    else if (x && d.dx === "tcg") { closeDetail(); $("q").value = compQuery(x); tcgQ = ""; const b = $("tb").querySelector('[data-t="tcg"]'); if (b) b.click(); scrollTo({ top: 0, behavior: "smooth" }); }
+    else if (x && d.dx === "ebay") { const q = queryFor(x, dsel); closeDetail(); $("q").value = q; const b = $("tb").querySelector('[data-t="ebay"]'); if (b) b.click(); tcgQ = ""; load(); scrollTo({ top: 0, behavior: "smooth" }); }
+    else if (x && d.dx === "tcg") { closeDetail(); $("q").value = queryFor(x, dsel); tcgQ = ""; const b = $("tb").querySelector('[data-t="tcg"]'); if (b) b.click(); scrollTo({ top: 0, behavior: "smooth" }); }
     return; }
   if (d.ed && detail) { detail = null; }
   if (d.pv != null) { view = d.pv; shown = PAGE; editing = null; render(); }
