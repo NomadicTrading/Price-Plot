@@ -654,9 +654,9 @@ async function imgFromTcgplayer(name, set, num, cat) {
     let sc = sameWords(set, r.setName || "") * 4 + sameWords(name, String(r.productName || "").replace(/\s-\s[\w/]+$/, "")) * 3;
     if (num && rn) sc += cardNo(rn) === cardNo(num) ? 4 : -2;
     if (!line && !/pokemon/i.test(r.productLineName || "pokemon")) sc -= 3;
-    if (sc > bs) { bs = sc; best = { id, set: r.setName }; }
+    if (sc > bs) { bs = sc; best = { id, set: r.setName, market: Number(r.marketPrice) > 0 ? Number(r.marketPrice) : null }; }
   }
-  return best && bs >= 3 ? { img: `https://tcgplayer-cdn.tcgplayer.com/product/${best.id}_200w.jpg`, big: `https://tcgplayer-cdn.tcgplayer.com/product/${best.id}_400w.jpg`, tcgId: best.id } : null;
+  return best && bs >= 3 ? { img: `https://tcgplayer-cdn.tcgplayer.com/product/${best.id}_200w.jpg`, big: `https://tcgplayer-cdn.tcgplayer.com/product/${best.id}_400w.jpg`, tcgId: best.id, market: best.market } : null;
 }
 async function imgFromPokemonTcg(name, set, num) {
   const clean = name.replace(/\s*\([^)]*\)\s*/g, " ").replace(/["\\]/g, "").trim(); if (!clean) return null;
@@ -667,7 +667,8 @@ async function imgFromPokemonTcg(name, set, num) {
   const cards = (await r.json()).data || [];
   let best = null, bs = -1;
   for (const c of cards) { const sc = sameWords(set, c.set?.name || "") + (cardNo(c.number) === n ? 1 : 0); if (sc > bs) { bs = sc; best = c; } }
-  return best && (bs > 0.3 || cards.length === 1) ? { img: best.images?.small, big: best.images?.large, tcgId: null } : null;
+  const mk = best && Object.values(best.tcgplayer?.prices || {}).map((p) => p.market).find((v) => v > 0);
+  return best && (bs > 0.3 || cards.length === 1) ? { img: best.images?.small, big: best.images?.large, tcgId: null, market: mk || null } : null;
 }
 app.get("/api/cardimg", async (req, res) => {
   const name = String(req.query.name || "").trim().slice(0, 100), set = String(req.query.set || "").trim().slice(0, 100);
@@ -683,6 +684,27 @@ app.get("/api/cardimg", async (req, res) => {
   imgCache.set(key, out); if (imgCache.size > 5000) imgCache.delete(imgCache.keys().next().value);
   await kv.set(key, out, found ? 30 * 864e2 : 864e2);
   res.json(out);
+});
+
+// Hand-off codes: a Collectr import read in Safari can be picked up in the home-screen app (which keeps its own,
+// separate storage). The cards wait here for 30 minutes under a short code and are deleted once picked up.
+const handoffs = new Map();
+app.post("/api/handoff", express.json({ limit: "8mb" }), async (req, res) => {
+  const items = Array.isArray(req.body?.items) ? req.body.items.slice(0, 20000) : null;
+  if (!items || !items.length) return res.status(400).json({ error: "No cards to hand off" });
+  const abc = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; let code = "";
+  for (let i = 0; i < 6; i++) code += abc[crypto.randomInt(abc.length)];
+  const data = { items, made: Date.now() };
+  handoffs.set(code, data); setTimeout(() => handoffs.delete(code), 30 * 60e3).unref?.();
+  await kv.set("handoff:" + code, data, 30 * 60);
+  res.json({ code });
+});
+app.get("/api/handoff/:code", async (req, res) => {
+  const code = String(req.params.code || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+  const data = handoffs.get(code) || (await kv.get("handoff:" + code));
+  if (!data) return res.status(404).json({ error: "That code wasn't found or has expired (codes last 30 minutes)" });
+  handoffs.delete(code); if (kv.on) kv.cmd(["DEL", "pp:handoff:" + code]).catch(() => {});
+  res.json(data);
 });
 
 // eBay "Marketplace Account Deletion" notifications (required to keep your keys enabled).

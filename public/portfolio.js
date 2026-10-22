@@ -138,9 +138,9 @@ function render() {
    <b>${view === "watch" ? w + " card" + (w === 1 ? "" : "s") : money(V.value)}</b>
    ${view !== "watch" && gl != null ? `<span style="color:var(${gl >= 0 ? "--up" : "--dn"});font-weight:600">${gl >= 0 ? "▲ +" : "▼ −"}${money(Math.abs(gl))} <span class="mu">on cards with a cost (${money(V.cost)} paid)</span></span>` : ""}</div>
    ${view !== "watch" ? `<div class="pst"><span><b>${V.n.toLocaleString()}</b> cards</span><span><b>${V.graded}</b> graded</span><span><b>${pfs.length}</b> portfolio${pfs.length === 1 ? "" : "s"}</span>${P.asOf ? `<span>Prices as of <b>${esc(P.asOf)}</b></span>` : ""}</div>` : ""}</div>
-  <div class="bar"><label class="pill on" for="pff">Import from Collectr</label><input id="pff" type="file" accept=".csv,.xlsx,.xls,text/csv" hidden>
+  <div class="bar"><label class="pill on" for="pff">Import Collectr file</label><button class="pill" type="button" data-pa="clink">From a Collectr link</button><input id="pff" type="file" accept=".csv,.xlsx,.xls,text/csv" hidden>
    <button class="pill" type="button" data-pa="add">+ Add card</button>${P.items.length ? `<button class="pill" type="button" data-pa="export">Export CSV</button><button class="pill" type="button" data-pa="clear">Clear all</button>` : ""}</div>
-  <div class="sm" id="pfs"></div><div id="pfi" class="pbx" hidden></div>
+  ${cimpPanel()}<div class="sm" id="pfs"></div><div id="pfi" class="pbx" hidden></div>
   ${editing === "new" ? `<div class="pbx">${form({ qty: 1 })}</div>` : ""}
   ${P.items.length ? `
   ${view === "all" ? `<div class="pch">${chart()}</div>` : ""}
@@ -176,7 +176,7 @@ function pump() {
       .then((r) => (r.ok ? r.json() : null)).catch(() => null)
       .then((j) => {
         running--; busy.delete(x.id);
-        if (j) { x.img = j.img || null; x.big = j.big || null; x.tcgId = j.tcgId || null; x.imgT = Date.now(); }
+        if (j) { x.img = j.img || null; x.big = j.big || null; x.tcgId = j.tcgId || x.tcgId || null; x.imgT = Date.now(); if (j.market > 0 && x.mkt == null && !(x.ovr > 0)) { x.mkt = j.market; x.pT = Date.now(); } }
         else { x.img = null; x.imgT = Date.now() - RETRY + 6e5; } // server unreachable: try again in 10 minutes
         const el = document.querySelector(`[data-pid="${x.id}"]`); if (el) el.outerHTML = thumb(x);
         clearTimeout(saveT); saveT = setTimeout(store, 800);
@@ -428,6 +428,133 @@ async function askRemove(id) {
   toast(`Removed ${x.name}`);
 }
 
+/* ---------- prices for cards that came in without one (TCGplayer market price) ---------- */
+// Cards added from a Collectr link (or by hand) have no price yet. They're looked up a couple at a time through the
+// same server lookup as the pictures, then saved with the card. Lookups that found nothing are retried after 3 days.
+let pfq = [], pfRunning = 0, pfTotal = 0, pfDone = 0;
+function fillPrices() {
+  const now = Date.now(), want = owned(P.items).filter((x) => x.mkt == null && !(x.ovr > 0) && !(x.pT && now - x.pT < 3 * 864e5) && !pfq.includes(x));
+  if (!want.length) return; pfq.push(...want); pfTotal += want.length; pricePump();
+}
+function pricePump() {
+  while (pfRunning < 2 && pfq.length) {
+    const x = pfq.shift(); pfRunning++;
+    fetch("/api/cardimg?" + new URLSearchParams({ name: x.name, set: x.set || "", num: x.num || "", cat: x.cat || "" }))
+      .then((r) => (r.ok ? r.json() : null)).catch(() => null)
+      .then((j) => {
+        pfRunning--; pfDone++; x.pT = Date.now();
+        if (j) { if (j.market > 0 && x.mkt == null) x.mkt = j.market; if (x.img === undefined || (x.img === null && j.img)) { x.img = j.img || null; x.big = j.big || null; x.tcgId = j.tcgId || x.tcgId || null; x.imgT = Date.now(); } }
+        const s = $("pfs"); if (s && !pending) s.textContent = pfq.length || pfRunning ? `Looking up TCGplayer prices: ${pfDone.toLocaleString()} of ${pfTotal.toLocaleString()}…` : "";
+        clearTimeout(saveT); saveT = setTimeout(store, 1500);
+        if (!pfq.length && !pfRunning) { pfTotal = pfDone = 0; store(); snap(); if (!detail && !editing) render(); }
+        else pricePump();
+      });
+  }
+}
+
+/* ---------- import from a Collectr showcase link (bookmark) ---------- */
+// The "Send to Price Plot" bookmark runs on the showcase page in the person's own browser, reads the cards that page
+// loaded, opens Price Plot at #collectr-import and hands the cards over with postMessage.
+const COLLECTR_ORIGIN = /^https:\/\/([a-z0-9-]+\.)*getcollectr\.com$/;
+let cimp = null; // { status: "waiting" | "ready" | "error", items, raw, msg }
+function flat(o, pre = "", out = {}, depth = 0) {
+  if (!o || typeof o !== "object" || depth > 3) return out;
+  for (const [k, v] of Object.entries(o)) { const key = (pre ? pre + "." : "") + k.toLowerCase();
+    if (v && typeof v === "object" && !Array.isArray(v)) flat(v, key, out, depth + 1); else if (v != null && typeof v !== "object") out[key] = v; }
+  return out;
+}
+function pick(f, re, not) { for (const [k, v] of Object.entries(f)) { const leaf = k.split(".").pop(), full = k.replace(/\./g, "_"); if ((re.test(leaf) || re.test(full)) && !(not && not.test(k)) && String(v).trim() !== "") return v; } return null; }
+const COND_NAMES = { nm: "Near Mint", lp: "Lightly Played", mp: "Moderately Played", hp: "Heavily Played", dmg: "Damaged", d: "Damaged" };
+function normCond(c) { const s = String(c || "").trim(), l = s.toLowerCase(); if (!s) return "Near Mint";
+  return l.startsWith("near mint") || l === "mint" ? "Near Mint" : l.startsWith("lightly") ? "Lightly Played" : l.startsWith("moderately") ? "Moderately Played" : l.startsWith("heavily") ? "Heavily Played" : l.startsWith("damaged") ? "Damaged" : COND_NAMES[l] || s; }
+function mapCollectr(o) {
+  const f = flat(o);
+  const name = pick(f, /^(product_?name|card_?name|name|title)$/, /(collection|portfolio|group|set|user|account|condition|grad|rarity|category|line)[^.]*\./);
+  if (!name) return null;
+  const company = pick(f, /^(grad(e|ing)_?(company|service|provider|er)|grader|company)$/), gval = pick(f, /^(grade_?(value|number|score)?|grade)$/, /company|service/);
+  let grade = "Ungraded";
+  if (company && gval != null && !/^ungraded$/i.test(String(gval))) grade = `${String(company).toUpperCase()} ${gval}`;
+  else if (gval != null && /[a-z]{2,}\s*\d/i.test(String(gval))) grade = String(gval);
+  const n = (v) => { const x = parseFloat(String(v ?? "").replace(/[$,]/g, "")); return isFinite(x) ? x : null; };
+  const tid = pick(f, /^(tcg_?player_?(product_?)?id|tcgplayerid|external_?product_?id)$/);
+  const img = pick(f, /^(image_?url|img_?url|image|photo_?url|thumbnail)$/);
+  return { id: uid(), pf: String(pick(f, /^(collection_?name|portfolio_?name|collection_?title)$/) || "").trim(),
+    cat: String(pick(f, /^(product_?line(_?name)?|category(_?name)?|game|catalog_?category(_?name)?)$/) || "Pokemon").replace(/^pok[eé]mon.*$/i, "Pokemon"),
+    set: String(pick(f, /^(catalog_?group(_?name)?|group_?name|set_?name|expansion(_?name)?|set)$/, /\.id$/) || "").trim(),
+    name: String(name).trim(), num: String(pick(f, /^(card_?number|collector_?number|number)$/) || "").trim(), rarity: String(pick(f, /^rarity(_?name)?$/) || ""),
+    var: String(pick(f, /^(variance|printing|variant|sub_?type(_?name)?)$/) || ""), grade, cond: grade === "Ungraded" ? normCond(pick(f, /^(card_?)?condition(_?name)?$/)) : "Near Mint",
+    cost: n(pick(f, /^(average_?cost(_?paid)?|avg_?cost|purchase_?price|cost_?paid|cost_?basis|paid)$/)) || 0,
+    qty: Math.max(1, Math.round(n(pick(f, /^(quantity|qty|count|owned_?quantity)$/)) || 1)),
+    mkt: null, ovr: 0, watch: false, added: today(), notes: "",
+    tcgId: tid && /^\d+$/.test(String(tid)) ? String(tid) : null, img: /^https:\/\//.test(String(img || "")) ? String(img) : undefined, src: "collectr-link" };
+}
+function cimpReceive(d) {
+  const items = (d.items || []).map(mapCollectr).filter(Boolean);
+  cimp = items.length ? { status: "ready", items, raw: d } : { status: "error", raw: d, msg: "Couldn't read the cards from that page." };
+  const b = $("tb").querySelector('[data-t="pf"]'); if (b && tab !== "pf") b.click(); detail = null; render(); scrollTo(0, 0);
+}
+addEventListener("message", (e) => { if (COLLECTR_ORIGIN.test(e.origin) && e.data && e.data.type === "collectr-import" && cimp && cimp.status === "waiting") cimpReceive(e.data); });
+if (location.hash === "#collectr-import") {
+  cimp = { status: "waiting" };
+  try { history.replaceState(null, "", location.pathname); } catch {}
+  setTimeout(() => { const b = $("tb").querySelector('[data-t="pf"]'); if (b) b.click(); render(); }, 0);
+  let tries = 0; const ping = setInterval(() => { if (!cimp || cimp.status !== "waiting" || ++tries > 90) { clearInterval(ping); if (cimp && cimp.status === "waiting") { cimp = { status: "error", msg: "No cards arrived from the Collectr tab. Keep that tab open, wait for your cards to show, and tap the bookmark again." }; render(); } return; }
+    try { window.opener && window.opener.postMessage({ type: "pp-ready" }, "*"); } catch {} }, 700);
+}
+function cimpPanel() {
+  if (!cimp) return "";
+  if (cimp.status === "waiting") return `<div class="pbx"><b>Reading your Collectr showcase…</b><div class="sm">Keep the Collectr tab open. This can take a minute for big collections.</div></div>`;
+  const diag = `<button class="pill" type="button" data-cx2="copy">Copy details for Claude</button><button class="pill" type="button" data-cx2="cancel">Close</button>`;
+  if (cimp.status === "error") return `<div class="pbx"><b>${esc(cimp.msg || "Import didn't work.")}</b><div class="sm">Wait until all your cards show on the showcase page before tapping the bookmark. If it keeps failing, copy the details and send them to Claude.</div><div class="bar">${diag}</div></div>`;
+  const it = cimp.items, copies = it.reduce((a, x) => a + x.qty, 0), pfs = new Set(it.map((x) => x.pf).filter(Boolean)), noSet = it.filter((x) => !x.set).length;
+  return `<div class="pbx"><b>Found ${copies.toLocaleString()} card${copies === 1 ? "" : "s"}</b> <span class="mu">(${it.length.toLocaleString()} entries${pfs.size ? " in " + pfs.size + " portfolio" + (pfs.size === 1 ? "" : "s") : ""})</span>
+  <div class="cimp-l">${it.slice(0, 6).map((x) => `<div>${esc(x.name)} <span class="mu">${esc([x.set, x.num].filter(Boolean).join(" · "))} · ${esc(isGraded(x) ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond)} × ${x.qty}</span></div>`).join("")}${it.length > 6 ? `<div class="mu">…and ${(it.length - 6).toLocaleString()} more</div>` : ""}</div>
+  ${noSet > it.length / 2 ? `<div class="sm" style="color:var(--dn)">Most cards came in without a set name, so matching may be off. Copy the details for Claude if the cards look wrong.</div>` : ""}
+  <div class="sm">Prices come from TCGplayer and fill in after import.</div>
+  <div class="bar">${P.items.length ? `<button class="pill on" type="button" data-cx2="merge">Add to my portfolio</button><button class="pill" type="button" data-cx2="replace">Replace my portfolio</button>` : `<button class="pill on" type="button" data-cx2="replace">Import</button>`}
+  ${typeof HOME_APP !== "undefined" && !HOME_APP ? `<button class="pill" type="button" data-cx2="code">Send to my Price Plot app</button>` : ""}${diag}</div></div>`;
+}
+async function cimpAction(a) {
+  if (a === "cancel") { cimp = null; render(); return; }
+  if (a === "copy") { const d = cimp.raw || {}, txt = JSON.stringify({ v: d.v, page: d.page, used: d.used, count: d.count, log: d.log, first: (d.items || []).slice(0, 2), sample: (d.sample || "").slice(0, 2500), mapped: (cimp.items || []).slice(0, 2) }, null, 1);
+    try { await navigator.clipboard.writeText(txt); toast("Copied. Paste it into your chat with Claude."); } catch { modal({ title: "Copy these details", text: `<textarea readonly style="width:100%;height:160px;font:12px monospace">${esc(txt)}</textarea>`, buttons: [{ label: "Done", value: 1, kind: "primary" }] }); } return; }
+  if (a === "code") {
+    try { const r = await fetch("/api/handoff", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: cimp.items }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
+      await modal({ title: `Your code: ${j.code}`, text: "Open the Price Plot app from your home screen, go to Portfolio → From a Collectr link, and enter this code. It works once and expires in 30 minutes.", buttons: [{ label: "Done", value: 1, kind: "primary" }] });
+    } catch (e) { toast("Couldn't make a code: " + e.message); } return; }
+  if (a === "merge" || a === "replace") {
+    if (a === "replace" && P.items.length && !(await modal({ title: "Replace your whole portfolio?", text: "Every card in Price Plot is removed first, then your Collectr cards are added.", buttons: [{ label: "Replace", value: true, kind: "danger" }, { label: "Cancel", value: false }] }))) return;
+    const items = cimp.items;
+    if (a === "replace") P.items = items;
+    else { const at = new Map(P.items.map((x, i) => [keyOf(x), i])); for (const x of items) { const k = keyOf(x); if (at.has(k)) { const o = P.items[at.get(k)]; o.qty = x.qty; if (x.cost) o.cost = x.cost; } else { at.set(k, P.items.length); P.items.push(x); } } }
+    P.source = "Collectr link"; store(); cimp = null; view = "all"; shown = PAGE; render(); fillPrices();
+    toast(`Imported ${items.length.toLocaleString()} entries from Collectr`);
+  }
+}
+async function cimpSetup() {
+  let code = "";
+  try { code = (await (await fetch("/collectr-bookmark.js", { cache: "no-store" })).text()).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\n\s*/g, " ").trim(); } catch {}
+  const bm = code ? "javascript:" + code.replace(/%/g, "%25").replace(/#/g, "%23") : "";
+  const ov = document.createElement("div"); ov.className = "ppm-ov";
+  ov.innerHTML = `<div class="ppm cimp-s" role="dialog" aria-modal="true" aria-labelledby="cs-t"><h3 id="cs-t">Import from a Collectr link</h3>
+  <p class="mu">Works without Collectr PRO. One-time setup in Safari, then two taps each time.</p>
+  <ol><li><button type="button" class="ppm-x primary" data-s="copy">Copy bookmark code</button></li>
+  <li>In Safari, tap <b>Share</b> → <b>Add Bookmark</b> → <b>Save</b>.</li>
+  <li>Open <b>Bookmarks</b> (the book icon) → <b>Edit</b> → tap the new bookmark. Name it <b>Send to Price Plot</b>, delete its address and paste the code. Tap <b>Done</b>.</li>
+  <li>Open your Collectr showcase link in Safari and wait for your cards to show. Then tap the address bar, type <b>Send to</b> and tap the bookmark.</li></ol>
+  <p class="mu">Price Plot opens with your cards to review. Using the home-screen app? Tap “Send to my Price Plot app” there to get a code, then enter it here:</p>
+  <div class="cimp-c"><input id="cs-code" maxlength="6" placeholder="Code" autocapitalize="characters" autocomplete="off" aria-label="Import code"><button type="button" class="ppm-x" data-s="code">Get cards</button></div>
+  <div class="ppm-b"><button type="button" class="ppm-x plain" data-s="close">Close</button></div></div>`;
+  const close = () => ov.remove();
+  ov.addEventListener("click", async (e) => { const s = e.target.closest("[data-s]")?.dataset.s; if (!s) { if (e.target === ov) close(); return; }
+    if (s === "close") close();
+    else if (s === "copy") { if (!bm) return toast("Couldn't load the bookmark code. Check your connection."); try { await navigator.clipboard.writeText(bm); e.target.textContent = "Copied ✓"; } catch { const t = document.createElement("textarea"); t.value = bm; t.style.cssText = "width:100%;height:90px;font:11px monospace"; e.target.replaceWith(t); t.select(); toast("Copy the code from the box."); } }
+    else if (s === "code") { const c = ov.querySelector("#cs-code").value.trim(); if (!c) return;
+      try { const r = await fetch("/api/handoff/" + encodeURIComponent(c)); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); close(); cimp = { status: "ready", items: j.items, raw: { count: j.items.length } }; render(); scrollTo(0, 0); }
+      catch (err) { toast(err.message); } } });
+  document.body.appendChild(ov);
+}
+
 /* ---------- actions ---------- */
 function exportCSV() {
   const c = (v) => { v = v == null ? "" : String(v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
@@ -475,6 +602,8 @@ document.addEventListener("click", (e) => {
   else if (d.trash) askRemove(d.trash);
   else if (d.pa === "merge" || d.pa === "replace") applyImport(d.pa);
   else if (d.pa === "cancel") { pending = null; $("pfi").hidden = true; }
+  else if (d.pa === "clink") cimpSetup();
+  else if (d.cx2) cimpAction(d.cx2);
   else if (d.pa === "add") { editing = "new"; render(); }
   else if (d.pa === "more") { shown += PAGE; render(); }
   else if (d.pa === "export") exportCSV();
@@ -488,4 +617,5 @@ let qt; document.addEventListener("input", (e) => { if (e.target.id !== "pfq") r
   qt = setTimeout(() => { findTxt = e.target.value.trim(); shown = PAGE; render(); const q = $("pfq"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }, 200); });
 document.addEventListener("submit", (e) => { if (e.target.classList?.contains("pe")) { e.preventDefault(); saveForm(e.target); } });
 render();
+setTimeout(fillPrices, 1500);
 })();
