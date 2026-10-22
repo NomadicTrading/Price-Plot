@@ -534,7 +534,7 @@ async function cimpAction(a) {
 async function cimpSetup() {
   let code = "";
   try { code = (await (await fetch("/collectr-bookmark.js", { cache: "no-store" })).text()).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\n\s*/g, " ").trim(); } catch {}
-  const bm = code ? "javascript:" + code.replace(/%/g, "%25").replace(/#/g, "%23") : "";
+  const bm = code ? "javascript:" + encodeURIComponent(code) : "";
   const ov = document.createElement("div"); ov.className = "ppm-ov";
   ov.innerHTML = `<div class="ppm cimp-s" role="dialog" aria-modal="true" aria-labelledby="cs-t"><h3 id="cs-t">Import from a Collectr link</h3>
   <p class="mu">Works without Collectr PRO. One-time setup in Safari, then two taps each time.</p>
