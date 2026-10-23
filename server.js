@@ -513,6 +513,28 @@ app.get("/api/scan-match", async (req, res) => {
 // tier). Claude is used when both are set. SCAN_MODEL picks the model for whichever is used.
 const AI_KEY = process.env.ANTHROPIC_API_KEY, GEM_KEY = process.env.GEMINI_API_KEY;
 const AI_MODEL = process.env.SCAN_MODEL || (AI_KEY ? "claude-haiku-5-5" : "gemini-3.8-flash");
+const GEM_FALLBACK = process.env.SCAN_FALLBACK_MODEL || "gemini-3.5-flash-lite";
+// One Gemini request: thinking turned down to "low" for speed (retried without it if the model refuses that setting)
+async function gemini(model, parts, json, ms) {
+  const go = async (cfg) => {
+    const t0 = Date.now();
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      method: "POST", signal: AbortSignal.timeout(ms), headers: { "x-goog-api-key": GEM_KEY, "content-type": "application/json" },
+      body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: cfg }) });
+    const j = await r.json().catch(() => ({}));
+    return { r, j, secs: (Date.now() - t0) / 1000 };
+  };
+  const base = json ? { responseMimeType: "application/json" } : {};
+  let out = await go({ ...base, thinkingConfig: { thinkingLevel: "low" } });
+  if (!out.r.ok && out.r.status === 400 && /think/i.test(JSON.stringify(out.j))) out = await go(base);
+  if (!out.r.ok) throw Object.assign(new Error(out.j.error?.message || "Gemini returned " + out.r.status), { status: out.r.status });
+  return { text: ((out.j.candidates || [])[0]?.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || "").join(""), secs: out.secs };
+}
+// tries the main model, then the lighter one if the first is too slow or unavailable
+async function geminiAny(parts, json) {
+  try { return { ...(await gemini(AI_MODEL, parts, json, 25000)), model: AI_MODEL }; }
+  catch (e) { if (GEM_FALLBACK === AI_MODEL) throw e; const r = await gemini(GEM_FALLBACK, parts, json, 25000).catch((e2) => { throw new Error(`${AI_MODEL}: ${e.message}; ${GEM_FALLBACK}: ${e2.message}`); }); return { ...r, model: GEM_FALLBACK, note: `${AI_MODEL}: ${e.message}` }; }
+}
 const AI_DAILY = Number(process.env.SCAN_DAILY_LIMIT) || 500, AI_PER_IP_HOUR = Number(process.env.SCAN_PER_IP_HOUR) || 60;
 const aiUse = { day: "", n: 0, ip: new Map() };
 const AI_PROMPT = `You identify collectible trading cards from a phone photo. Look closely at the card, including small print.
@@ -529,13 +551,17 @@ Reply with ONLY a JSON object, no other text:
 app.get("/api/scan-ai/check", async (req, res) => {
   const out = { claudeKey: !!AI_KEY, geminiKey: !!GEM_KEY, using: AI_KEY ? "Claude" : GEM_KEY ? "Gemini" : "none", model: AI_KEY || GEM_KEY ? AI_MODEL : null, scansToday: aiUse.n, dailyLimit: AI_DAILY };
   if (!AI_KEY && !GEM_KEY) return res.json({ ...out, ok: false, error: "No key found. Add GEMINI_API_KEY (or ANTHROPIC_API_KEY) in Render's Environment and redeploy." });
-  try {
-    const r = AI_KEY
-      ? await fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: AbortSignal.timeout(30000), headers: { "x-api-key": AI_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" }, body: JSON.stringify({ model: AI_MODEL, max_tokens: 20, messages: [{ role: "user", content: "Reply with the word ok." }] }) })
-      : await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(AI_MODEL)}:generateContent`, { method: "POST", signal: AbortSignal.timeout(30000), headers: { "x-goog-api-key": GEM_KEY, "content-type": "application/json" }, body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "Reply with the word ok." }] }] }) });
+  if (AI_KEY) try {
+    const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: AbortSignal.timeout(30000), headers: { "x-api-key": AI_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" }, body: JSON.stringify({ model: AI_MODEL, max_tokens: 20, messages: [{ role: "user", content: "Reply with the word ok." }] }) });
     const j = await r.json().catch(() => ({}));
-    res.json({ ...out, ok: r.ok, status: r.status, error: r.ok ? null : (j.error?.message || JSON.stringify(j).slice(0, 400)) });
-  } catch (e) { res.json({ ...out, ok: false, error: e.message }); }
+    return res.json({ ...out, ok: r.ok, status: r.status, error: r.ok ? null : (j.error?.message || JSON.stringify(j).slice(0, 400)) });
+  } catch (e) { return res.json({ ...out, ok: false, error: e.message }); }
+  const tests = {};
+  for (const m of [...new Set([AI_MODEL, GEM_FALLBACK])]) {
+    try { const g = await gemini(m, [{ text: "Reply with the word ok." }], false, 25000); tests[m] = { ok: true, seconds: g.secs, said: g.text.slice(0, 20) }; }
+    catch (e) { tests[m] = { ok: false, error: e.message }; }
+  }
+  res.json({ ...out, ok: Object.values(tests).some((t) => t.ok), tests });
 });
 app.post("/api/scan-ai", express.json({ limit: "4mb" }), async (req, res) => {
   if (!AI_KEY && !GEM_KEY) return res.status(503).json({ error: "AI scanning isn't set up (no ANTHROPIC_API_KEY or GEMINI_API_KEY)", off: true });
@@ -561,15 +587,8 @@ app.post("/api/scan-ai", express.json({ limit: "4mb" }), async (req, res) => {
       if (!r.ok) throw new Error(j.error?.message || "AI service returned " + r.status);
       text = (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
     } else {
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(AI_MODEL)}:generateContent`, {
-        method: "POST", signal: AbortSignal.timeout(45000),
-        headers: { "x-goog-api-key": GEM_KEY, "content-type": "application/json" },
-        body: JSON.stringify({ contents: [{ role: "user", parts: [{ inline_data: { mime_type: "image/jpeg", data: img } }, { text: AI_PROMPT }] }],
-          generationConfig: { responseMimeType: "application/json" } }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error?.message || "AI service returned " + r.status);
-      text = ((j.candidates || [])[0]?.content?.parts || []).map((p) => p.text || "").join("");
+      const g = await geminiAny([{ inline_data: { mime_type: "image/jpeg", data: img } }, { text: AI_PROMPT }], true);
+      text = g.text; if (g.note) console.log("scan-ai fell back to", g.model, "-", g.note);
     }
     const m = /\{[\s\S]*\}/.exec(text); if (!m) throw new Error("the AI answer couldn't be read");
     read = JSON.parse(m[0]);
