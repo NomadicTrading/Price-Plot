@@ -509,7 +509,10 @@ app.get("/api/scan-match", async (req, res) => {
 // AI card recognition: a vision model reads the whole photo (name, number, set, edition stamp, Shadowless, holo or
 // reverse holo, language, promo stamps, graded slab) and Price Plot matches that to the exact product and printing.
 // Needs ANTHROPIC_API_KEY in Render. Costs a fraction of a cent per scan, so it is rate-limited.
-const AI_KEY = process.env.ANTHROPIC_API_KEY, AI_MODEL = process.env.SCAN_MODEL || "claude-haiku-5-5";
+// Either service works: Claude (ANTHROPIC_API_KEY, paid per scan) or Google Gemini (GEMINI_API_KEY, which has a free
+// tier). Claude is used when both are set. SCAN_MODEL picks the model for whichever is used.
+const AI_KEY = process.env.ANTHROPIC_API_KEY, GEM_KEY = process.env.GEMINI_API_KEY;
+const AI_MODEL = process.env.SCAN_MODEL || (AI_KEY ? "claude-haiku-5-5" : "gemini-3.8-flash");
 const AI_DAILY = Number(process.env.SCAN_DAILY_LIMIT) || 500, AI_PER_IP_HOUR = Number(process.env.SCAN_PER_IP_HOUR) || 60;
 const aiUse = { day: "", n: 0, ip: new Map() };
 const AI_PROMPT = `You identify collectible trading cards from a phone photo. Look closely at the card, including small print.
@@ -523,7 +526,7 @@ Reply with ONLY a JSON object, no other text:
 "stamp":"any promo, prerelease, staff, set-logo or event stamp text, or null","graded":{"company":"PSA|BGS|CGC|TAG|SGC","grade":"10"} or null if not in a grading slab,
 "confidence":0.0 to 1.0,"notes":"short note on anything uncertain"}`;
 app.post("/api/scan-ai", express.json({ limit: "4mb" }), async (req, res) => {
-  if (!AI_KEY) return res.status(503).json({ error: "AI scanning isn't set up (no ANTHROPIC_API_KEY)", off: true });
+  if (!AI_KEY && !GEM_KEY) return res.status(503).json({ error: "AI scanning isn't set up (no ANTHROPIC_API_KEY or GEMINI_API_KEY)", off: true });
   const img = String(req.body?.image || "").replace(/^data:image\/\w+;base64,/, "");
   if (!img || img.length > 5.5e6) return res.status(400).json({ error: "Missing or too large photo" });
   const today = new Date().toISOString().slice(0, 10), ip = String(req.headers["x-forwarded-for"] || req.ip || "").split(",")[0].trim(), hour = Math.floor(Date.now() / 3600e3);
@@ -534,15 +537,28 @@ app.post("/api/scan-ai", express.json({ limit: "4mb" }), async (req, res) => {
   aiUse.n++; aiUse.ip.set(ip, { h: hour, n: cnt + 1 });
   let read;
   try {
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST", signal: AbortSignal.timeout(45000),
-      headers: { "x-api-key": AI_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: AI_MODEL, max_tokens: 1500, messages: [{ role: "user", content: [
-        { type: "image", source: { type: "base64", media_type: "image/jpeg", data: img } }, { type: "text", text: AI_PROMPT }] }] }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error?.message || "AI service returned " + r.status);
-    const text = (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+    let text = "";
+    if (AI_KEY) {
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST", signal: AbortSignal.timeout(45000),
+        headers: { "x-api-key": AI_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        body: JSON.stringify({ model: AI_MODEL, max_tokens: 1500, messages: [{ role: "user", content: [
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: img } }, { type: "text", text: AI_PROMPT }] }] }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error?.message || "AI service returned " + r.status);
+      text = (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+    } else {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(AI_MODEL)}:generateContent`, {
+        method: "POST", signal: AbortSignal.timeout(45000),
+        headers: { "x-goog-api-key": GEM_KEY, "content-type": "application/json" },
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ inline_data: { mime_type: "image/jpeg", data: img } }, { text: AI_PROMPT }] }],
+          generationConfig: { responseMimeType: "application/json" } }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error?.message || "AI service returned " + r.status);
+      text = ((j.candidates || [])[0]?.content?.parts || []).map((p) => p.text || "").join("");
+    }
     const m = /\{[\s\S]*\}/.exec(text); if (!m) throw new Error("the AI answer couldn't be read");
     read = JSON.parse(m[0]);
   } catch (e) {
