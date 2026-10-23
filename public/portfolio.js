@@ -631,8 +631,8 @@ function prepImage(file) {
       c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc); const g = c.getContext("2d"); g.drawImage(img, 0, 0, c.width, c.height);
       const d = g.getImageData(0, 0, c.width, c.height), p = d.data;
       for (let i = 0; i < p.length; i += 4) { let v = 0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2]; v = Math.max(0, Math.min(255, (v - 128) * 1.5 + 128)); p[i] = p[i + 1] = p[i + 2] = v; }
-      const color = document.createElement("canvas"), s2 = Math.min(1, 1280 / Math.max(img.width, img.height)); color.width = Math.round(img.width * s2); color.height = Math.round(img.height * s2);
-      color.getContext("2d").drawImage(img, 0, 0, color.width, color.height); const photo = color.toDataURL("image/jpeg", 0.85);
+      const color = document.createElement("canvas"), s2 = Math.min(1, 960 / Math.max(img.width, img.height)); color.width = Math.round(img.width * s2); color.height = Math.round(img.height * s2);
+      color.getContext("2d").drawImage(img, 0, 0, color.width, color.height); const photo = color.toDataURL("image/jpeg", 0.8);
       g.putImageData(d, 0, 0); URL.revokeObjectURL(url); ok({ canvas: c, preview: photo, photo }); };
     img.onerror = () => no(new Error("couldn't open that photo")); img.src = url;
   });

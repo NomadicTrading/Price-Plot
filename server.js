@@ -532,8 +532,8 @@ async function gemini(model, parts, json, ms) {
 }
 // tries the main model, then the lighter one if the first is too slow or unavailable
 async function geminiAny(parts, json) {
-  try { return { ...(await gemini(AI_MODEL, parts, json, 15000)), model: AI_MODEL }; }
-  catch (e) { if (GEM_FALLBACK === AI_MODEL) throw e; const r = await gemini(GEM_FALLBACK, parts, json, 25000).catch((e2) => { throw new Error(`${AI_MODEL}: ${e.message}; ${GEM_FALLBACK}: ${e2.message}`); }); return { ...r, model: GEM_FALLBACK, note: `${AI_MODEL}: ${e.message}` }; }
+  try { return { ...(await gemini(AI_MODEL, parts, json, 12000)), model: AI_MODEL }; }
+  catch (e) { if (GEM_FALLBACK === AI_MODEL) throw e; const r = await gemini(GEM_FALLBACK, parts, json, 40000).catch((e2) => { throw new Error(`${AI_MODEL}: ${e.message}; ${GEM_FALLBACK}: ${e2.message}`); }); return { ...r, model: GEM_FALLBACK, note: `${AI_MODEL}: ${e.message}` }; }
 }
 const AI_DAILY = Number(process.env.SCAN_DAILY_LIMIT) || 500, AI_PER_IP_HOUR = Number(process.env.SCAN_PER_IP_HOUR) || 60;
 const aiUse = { day: "", n: 0, ip: new Map() };
@@ -557,9 +557,13 @@ app.get("/api/scan-ai/check", async (req, res) => {
     return res.json({ ...out, ok: r.ok, status: r.status, error: r.ok ? null : (j.error?.message || JSON.stringify(j).slice(0, 400)) });
   } catch (e) { return res.json({ ...out, ok: false, error: e.message }); }
   const tests = {};
+  let photo = null;
+  if (req.query.image) try { const ir = await fetch("https://images.pokemontcg.io/base5/49.png", { signal: AbortSignal.timeout(15000) }); photo = Buffer.from(await ir.arrayBuffer()).toString("base64"); } catch (e) { tests.photo = "couldn't load the sample card: " + e.message; }
   for (const m of [...new Set([AI_MODEL, GEM_FALLBACK])]) {
     try { const g = await gemini(m, [{ text: "Reply with the word ok." }], false, 25000); tests[m] = { ok: true, seconds: g.secs, said: g.text.slice(0, 20) }; }
     catch (e) { tests[m] = { ok: false, error: e.message }; }
+    if (photo) try { const g = await gemini(m, [{ inline_data: { mime_type: "image/png", data: photo } }, { text: AI_PROMPT }], true, 60000); tests[m + " with a card photo"] = { ok: true, seconds: g.secs, read: g.text.slice(0, 600) }; }
+    catch (e) { tests[m + " with a card photo"] = { ok: false, error: e.message }; }
   }
   res.json({ ...out, ok: Object.values(tests).some((t) => t.ok), tests });
 });
