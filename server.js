@@ -742,6 +742,9 @@ app.post("/api/handoff", express.json({ limit: "8mb" }), async (req, res) => {
 });
 // The Collectr bookmark sends the cards here with an ordinary form submit (from the showcase tab itself), and the
 // browser is sent straight on to Price Plot with a code that picks them up.
+app.get("/api/ping", (req, res) => { res.set("Cache-Control", "no-store"); res.type("gif").send(Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64")); });
+// reloading the hand-off page can't resend the cards; send the person to Price Plot with a note instead
+app.get("/api/collectr-handoff", (req, res) => res.redirect(303, "/#ci=bad"));
 app.post("/api/collectr-handoff", express.urlencoded({ extended: false, limit: "25mb" }), async (req, res) => {
   let raw; try { raw = JSON.parse(String(req.body?.data || "")); } catch { return res.redirect(303, "/#ci=bad"); }
   if (!raw || raw.type !== "collectr-import") return res.redirect(303, "/#ci=bad");

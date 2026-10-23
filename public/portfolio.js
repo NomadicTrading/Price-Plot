@@ -510,7 +510,7 @@ if (/^#ci=/.test(location.hash)) {
   const code = location.hash.slice(4); cimp = { status: "waiting" };
   try { history.replaceState(null, "", location.pathname); } catch {}
   setTimeout(() => { const b = $("tb").querySelector('[data-t="pf"]'); if (b) b.click(); render(); }, 0);
-  (code === "bad" ? Promise.reject(new Error("The cards didn't come through from Collectr.")) : getJSON("/api/handoff/" + encodeURIComponent(code)))
+  (code === "bad" ? Promise.reject(new Error("The cards didn't come through. Go back to your Collectr showcase and run Send to Price Plot again.")) : getJSON("/api/handoff/" + encodeURIComponent(code)))
     .then((j) => { if (j.raw) cimpReceive(j.raw); else { cimp = { status: "ready", items: j.items || [], raw: { count: (j.items || []).length } }; render(); } })
     .catch((e) => { cimp = { status: "error", msg: e.message }; render(); });
 } else if (location.hash === "#collectr-import") {
