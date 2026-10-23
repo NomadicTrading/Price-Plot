@@ -139,7 +139,7 @@ function render() {
    ${view !== "watch" && gl != null ? `<span style="color:var(${gl >= 0 ? "--up" : "--dn"});font-weight:600">${gl >= 0 ? "▲ +" : "▼ −"}${money(Math.abs(gl))} <span class="mu">on cards with a cost (${money(V.cost)} paid)</span></span>` : ""}</div>
    ${view !== "watch" ? `<div class="pst"><span><b>${V.n.toLocaleString()}</b> cards</span><span><b>${V.graded}</b> graded</span><span><b>${pfs.length}</b> portfolio${pfs.length === 1 ? "" : "s"}</span>${P.asOf ? `<span>Prices as of <b>${esc(P.asOf)}</b></span>` : ""}</div>` : ""}</div>
   <div class="bar"><label class="pill on" for="pff">Import Collectr file</label><button class="pill" type="button" data-pa="clink">From a Collectr link</button><input id="pff" type="file" accept=".csv,.xlsx,.xls,text/csv" hidden>
-   <button class="pill on" type="button" data-pa="scan">Scan a card</button><button class="pill" type="button" data-pa="add">+ Add card</button>${P.items.length ? `<button class="pill" type="button" data-pa="export">Export CSV</button><button class="pill" type="button" data-pa="clear">Clear all</button>` : ""}</div>
+   <button class="pill" type="button" data-pa="add">+ Add card</button>${P.items.length ? `<button class="pill" type="button" data-pa="export">Export CSV</button><button class="pill" type="button" data-pa="clear">Clear all</button>` : ""}</div>
   ${cimpPanel()}<div class="sm" id="pfs"></div><div id="pfi" class="pbx" hidden></div>
   ${editing === "new" ? `<div class="pbx">${form({ qty: 1 })}</div>` : ""}
   ${P.items.length ? `
@@ -699,6 +699,7 @@ function scanAdd(fm) {
   toast(same ? `Added ${x.qty} more ${x.name} to ${x.pf || "your portfolio"} (now ${same.qty})` : `Added ${x.name} to ${x.pf || "your portfolio"}`);
   scan.status = "done"; const ov = $("ppscan"); if (ov) ov.querySelector(".ppm").innerHTML = `<h3>Added ✓</h3><p>${esc(x.name)} · ${esc(x.set)} · ${esc(x.cond)} × ${x.qty} → <b>${esc(x.pf || "your portfolio")}</b></p><div class="ppm-b"><button type="button" class="ppm-x primary" data-sc="again">Scan another card</button><button type="button" class="ppm-x plain" data-sc="close">Done</button></div>`;
 }
+document.addEventListener("click", (e) => { if (e.target.closest && e.target.closest("#camb")) scanCamera(); });
 function scanCamera() { let i = $("pfcam"); if (!i) { i = document.createElement("input"); i.type = "file"; i.accept = "image/*"; i.setAttribute("capture", "environment"); i.id = "pfcam"; i.hidden = true; document.body.appendChild(i);
   i.addEventListener("change", () => { if (i.files[0]) scanFile(i.files[0]); i.value = ""; }); } i.click(); }
 document.addEventListener("click", (e) => {
@@ -775,7 +776,6 @@ document.addEventListener("click", (e) => {
   else if (d.pa === "merge" || d.pa === "replace") applyImport(d.pa);
   else if (d.pa === "cancel") { pending = null; $("pfi").hidden = true; }
   else if (d.pa === "clink") cimpSetup();
-  else if (d.pa === "scan") scanCamera();
   else if (d.cx2) cimpAction(d.cx2);
   else if (d.pa === "add") { editing = "new"; render(); }
   else if (d.pa === "more") { shown += PAGE; render(); }
