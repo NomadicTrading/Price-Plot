@@ -525,6 +525,18 @@ Reply with ONLY a JSON object, no other text:
 "finish":"holo" (the artwork itself is foil) | "reverse holo" (the card body is foil but the artwork is not) | "non-holo" | "unknown",
 "stamp":"any promo, prerelease, staff, set-logo or event stamp text, or null","graded":{"company":"PSA|BGS|CGC|TAG|SGC","grade":"10"} or null if not in a grading slab,
 "confidence":0.0 to 1.0,"notes":"short note on anything uncertain"}`;
+// Open /api/scan-ai/check once to see which AI service is set up and whether a tiny test request works.
+app.get("/api/scan-ai/check", async (req, res) => {
+  const out = { claudeKey: !!AI_KEY, geminiKey: !!GEM_KEY, using: AI_KEY ? "Claude" : GEM_KEY ? "Gemini" : "none", model: AI_KEY || GEM_KEY ? AI_MODEL : null, scansToday: aiUse.n, dailyLimit: AI_DAILY };
+  if (!AI_KEY && !GEM_KEY) return res.json({ ...out, ok: false, error: "No key found. Add GEMINI_API_KEY (or ANTHROPIC_API_KEY) in Render's Environment and redeploy." });
+  try {
+    const r = AI_KEY
+      ? await fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: AbortSignal.timeout(30000), headers: { "x-api-key": AI_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" }, body: JSON.stringify({ model: AI_MODEL, max_tokens: 20, messages: [{ role: "user", content: "Reply with the word ok." }] }) })
+      : await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(AI_MODEL)}:generateContent`, { method: "POST", signal: AbortSignal.timeout(30000), headers: { "x-goog-api-key": GEM_KEY, "content-type": "application/json" }, body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "Reply with the word ok." }] }] }) });
+    const j = await r.json().catch(() => ({}));
+    res.json({ ...out, ok: r.ok, status: r.status, error: r.ok ? null : (j.error?.message || JSON.stringify(j).slice(0, 400)) });
+  } catch (e) { res.json({ ...out, ok: false, error: e.message }); }
+});
 app.post("/api/scan-ai", express.json({ limit: "4mb" }), async (req, res) => {
   if (!AI_KEY && !GEM_KEY) return res.status(503).json({ error: "AI scanning isn't set up (no ANTHROPIC_API_KEY or GEMINI_API_KEY)", off: true });
   const img = String(req.body?.image || "").replace(/^data:image\/\w+;base64,/, "");
