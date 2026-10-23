@@ -578,7 +578,9 @@ async function cimpSetup() {
     <p class="mu">To share it: in Shortcuts, hold the shortcut → <b>Share</b> → <b>Copy iCloud Link</b>, and send that link to Claude to update the Install button.</p>`;
   const ov = document.createElement("div"); ov.className = "ppm-ov";
   ov.innerHTML = `<div class="ppm cimp-s" role="dialog" aria-modal="true" aria-labelledby="cs-t"><h3 id="cs-t">Import from a Collectr link</h3>
-  <div data-pane="pick"><p class="mu">Works without Collectr PRO. Which browser do you use to open your Collectr showcase?</p>
+  <div data-pane="pick">${typeof HOME_APP !== "undefined" && HOME_APP ? "" : `<div class="cs-tip"><b>For the best experience, add Price Plot to your Home Screen before importing your portfolio.</b>
+    <details><summary>How</summary><p><b>iPhone (Safari or Chrome):</b> tap <b>Share</b> → <b>Add to Home Screen</b> → <b>Add</b>.<br><b>Android (Chrome):</b> tap <b>⋮</b> → <b>Add to Home screen</b> (or <b>Install app</b>).<br><b>Computer (Chrome or Edge):</b> click the install icon at the right of the address bar.</p></details></div>`}
+  <p class="mu">Works without Collectr PRO. Which browser do you use to open your Collectr showcase?</p>
     <div class="cs-pick"><button type="button" data-s="safari"><b>Safari</b><span>iPhone or iPad</span></button><button type="button" data-s="chrome"><b>Chrome</b><span>iPhone, Android or computer</span></button></div></div>
   <div data-pane="safari" hidden><button type="button" class="cs-back" data-s="pick">‹ Choose a different browser</button><p class="cs-h"><b>Safari</b> · iPhone or iPad</p>
   ${SHORTCUT_URL ? `<p><b>Once:</b></p><a class="ppm-x primary" style="display:flex;align-items:center;justify-content:center;text-decoration:none" href="${esc(SHORTCUT_URL)}" target="_blank" rel="noopener">Install the Shortcut</a>

@@ -141,6 +141,7 @@ label.pill{display:inline-block}
 .cs-pick button{font:inherit;color:var(--fg);background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:16px 10px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;min-height:84px}
 .cs-pick b{font-size:17px}.cs-pick span{font-size:12.5px;color:var(--mut);text-align:center}
 .cs-back{font:inherit;font-size:14px;color:var(--link);background:none;border:0;padding:4px 0;cursor:pointer;min-height:36px}.cs-h{margin:2px 0 6px;font-size:15px}
+.cs-tip{background:var(--soft);border-radius:12px;padding:10px 12px;margin:8px 0 4px;font-size:14px;line-height:1.4}.cs-tip summary{cursor:pointer;color:var(--link);margin-top:4px;font-size:13.5px}.cs-tip p{margin:6px 0 0;font-size:13.5px;line-height:1.5}
 </style></head><body>
 <header><div class="wrap hd"><a class="brand" href="/" aria-label="Price Plot home"><img src="/brand/icon-small.svg" width="36" height="36" alt=""><span>Price<span class="pp-dot">·</span>Plot</span></a>
 <form id="f"><input id="q" type="search" placeholder="Search a card, e.g. charizard 4/102 base set" aria-label="Search listings" autocomplete="off" enterkeyhint="search" autofocus><button class="go" type="submit">Search</button></form></div></header>
@@ -746,5 +747,5 @@ $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
-<script src="/portfolio.js?v=28"></script>
+<script src="/portfolio.js?v=29"></script>
 </body></html>
