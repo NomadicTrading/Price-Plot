@@ -512,8 +512,9 @@ app.get("/api/scan-match", async (req, res) => {
 // Either service works: Claude (ANTHROPIC_API_KEY, paid per scan) or Google Gemini (GEMINI_API_KEY, which has a free
 // tier). Claude is used when both are set. SCAN_MODEL picks the model for whichever is used.
 const AI_KEY = process.env.ANTHROPIC_API_KEY, GEM_KEY = process.env.GEMINI_API_KEY;
-const AI_MODEL = process.env.SCAN_MODEL || (AI_KEY ? "claude-haiku-5-5" : "gemini-3.8-flash");
-const GEM_FALLBACK = process.env.SCAN_FALLBACK_MODEL || "gemini-3.5-flash-lite";
+// Gemini: Flash-Lite first (about a second per scan); 3.8 Flash as the backup (it is often overloaded on the free tier)
+const AI_MODEL = process.env.SCAN_MODEL || (AI_KEY ? "claude-haiku-5-5" : "gemini-3.5-flash-lite");
+const GEM_FALLBACK = process.env.SCAN_FALLBACK_MODEL || "gemini-3.8-flash";
 // One Gemini request: thinking turned down to "low" for speed (retried without it if the model refuses that setting)
 async function gemini(model, parts, json, ms) {
   const go = async (cfg) => {
@@ -543,10 +544,12 @@ Reply with ONLY a JSON object, no other text:
 "name":"card name exactly as printed","name_english":"English name of the card (translate if not English)",
 "number":"collector number before the slash, e.g. 49 or 199 or SWSH050 or TG05","set_total":"number after the slash, or null",
 "set_code":"set code printed on the card if any (e.g. SV2a, PAL, SWSH), or null","set_name":"your best guess of the set name, e.g. Team Rocket, Base Set, Scarlet & Violet 151",
-"year":"copyright year on the card or null","edition":"1st Edition" if the 1st Edition stamp is present, "Shadowless" if it is an early Base Set card without the drop shadow on the right of the art box, otherwise "Unlimited" or null,
+"year":"copyright year on the card or null",
+"edition":"1st Edition" ONLY if you can clearly see the small black circular "Edition 1" stamp (on vintage cards it sits just below the bottom-left corner of the artwork); "Shadowless" ONLY for a 1999 Base Set card where you can clearly see there is no drop shadow along the right edge of the art box; "Unlimited" if it is a vintage card and you can see that spot has no stamp; null if you cannot tell. Do not guess the edition from the set or the card's age,
 "finish":"holo" (the artwork itself is foil) | "reverse holo" (the card body is foil but the artwork is not) | "non-holo" | "unknown",
 "stamp":"any promo, prerelease, staff, set-logo or event stamp text, or null","graded":{"company":"PSA|BGS|CGC|TAG|SGC","grade":"10"} or null if not in a grading slab,
-"confidence":0.0 to 1.0,"notes":"short note on anything uncertain"}`;
+"confidence":0.0 to 1.0,"notes":"short note on anything uncertain"}
+Be literal: report only what is visible in the photo. If something is too small, blurry or covered by glare to read, use null rather than guessing.`;
 // Open /api/scan-ai/check once to see which AI service is set up and whether a tiny test request works.
 app.get("/api/scan-ai/check", async (req, res) => {
   const out = { claudeKey: !!AI_KEY, geminiKey: !!GEM_KEY, using: AI_KEY ? "Claude" : GEM_KEY ? "Gemini" : "none", model: AI_KEY || GEM_KEY ? AI_MODEL : null, scansToday: aiUse.n, dailyLimit: AI_DAILY };
