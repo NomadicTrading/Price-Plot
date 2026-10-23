@@ -324,6 +324,16 @@ function parseEdition(title) {
 const GRADERS = { PSA: "PSA", BGS: "(BGS,Beckett)", CGC: "CGC", TAG: "TAG" };
 const cache = new Map(); // results shared for LISTINGS_CACHE_MIN minutes, to stay well inside eBay's daily limit
 const app = express();
+// Express 4 doesn't catch errors thrown in async handlers, and an uncaught one stops the whole server.
+// Wrap every handler so a bug answers that one request with an error instead.
+for (const m of ["get", "post", "put", "delete"]) {
+  const orig = app[m].bind(app);
+  app[m] = (path, ...hs) => (m === "get" && hs.length === 0) ? orig(path) : orig(path, ...hs.map((h) => typeof h !== "function" || h.length > 3 ? h : (req, res, next) => {
+    try { const p = h(req, res, next); if (p && typeof p.catch === "function") p.catch((e) => { console.error(req.path, e); if (!res.headersSent) res.status(500).json({ error: "Price Plot hit a bug: " + e.message }); }); }
+    catch (e) { console.error(req.path, e); if (!res.headersSent) res.status(500).json({ error: "Price Plot hit a bug: " + e.message }); }
+  }));
+}
+process.on("unhandledRejection", (e) => console.error("unhandled:", e));
 app.use(express.static("public"));
 
 app.get("/api/listings", async (req, res) => {
@@ -626,8 +636,9 @@ app.post("/api/scan-ai", express.json({ limit: "4mb" }), async (req, res) => {
   const name = String(read.name_english || read.name || "").slice(0, 60), n = String(read.number || "").replace(/[^a-z0-9]/gi, "").slice(0, 8);
   const d = String(read.set_total || "").replace(/\D/g, "").slice(0, 4), jp = /japan/i.test(read.language || ""), ed = String(read.edition || ""), stamp = String(read.stamp || "");
   const special = jp || /1st|shadowless/i.test(ed) || !!stamp;
+  const num = /^\d+$/.test(n) ? String(+n) : n;
   const { list: all, errors, nn, words } = await matchCards(name, n, d, { alsoTcg: special,
-    tcgQuery: [name, /shadowless/i.test(ed) ? "Shadowless" : "", /1st/i.test(ed) ? "1st Edition" : "", nn && d ? `${nn}/${d}` : nn].filter(Boolean).join(" ") });
+    tcgQuery: [name, /shadowless/i.test(ed) ? "Shadowless" : "", /1st/i.test(ed) ? "1st Edition" : "", num && d ? `${num}/${d}` : num].filter(Boolean).join(" ") });
   const setGuess = String(read.set_name || "");
   const extra = (c) => {
     let x = setGuess ? sameWords(setGuess, c.set || "") * 4 : 0; const cs = String(c.set || "");
