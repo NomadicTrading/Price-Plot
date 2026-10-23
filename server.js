@@ -427,6 +427,47 @@ app.get("/api/tcg", async (req, res) => {
   }
 });
 
+// Card scanner: the phone reads the card's name and number from a photo; this finds the matching cards on
+// pokemontcg.io. The number with its set size (e.g. 199/165) usually pins the card down by itself.
+const scanCache = new Map();
+async function ptcg(q, size) {
+  for (let tries = 0; tries < 3; tries++) {
+    const r = await fetch("https://api.pokemontcg.io/v2/cards?" + new URLSearchParams({ q, pageSize: String(size), orderBy: "-set.releaseDate", select: "id,name,number,set,images,tcgplayer,rarity" }), {
+      headers: PTCG_KEY ? { "X-Api-Key": PTCG_KEY } : {}, signal: AbortSignal.timeout(15000) }).catch(() => null);
+    if (r && r.ok) return (await r.json()).data || [];
+    if (r && r.status < 500) throw new Error("card lookup returned " + r.status);
+    await new Promise((ok) => setTimeout(ok, 700 * (tries + 1)));
+  }
+  throw new Error("the card lookup service didn't answer, try again in a minute");
+}
+app.get("/api/scan-match", async (req, res) => {
+  const name = String(req.query.name || "").replace(/["\\*:()]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+  const n = String(req.query.n || "").replace(/[^a-z0-9]/gi, "").slice(0, 8), d = String(req.query.d || "").replace(/\D/g, "").slice(0, 4);
+  if (!name && !n) return res.status(400).json({ error: "Nothing to look up" });
+  const key = [name.toLowerCase(), n, d].join("|"), hit = scanCache.get(key);
+  if (hit && hit.exp > Date.now()) return res.json(hit.data);
+  try {
+    const nn = /^\d+$/.test(n) ? String(+n) : n, words = norm(name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length > 1);
+    let cards = [];
+    if (nn && d) cards = await ptcg(`number:${nn} set.printedTotal:${d}`, 30);
+    if (!cards.length && nn && words.length) cards = await ptcg(`number:${nn} name:"${words[0]}*"`, 30);
+    if (!cards.length && words.length) cards = await ptcg(`name:"${words.slice(0, 3).join(" ")}*"`, 40);
+    if (!cards.length && nn && /[a-z]/i.test(nn)) cards = await ptcg(`number:${nn}`, 30);
+    const score = (c) => { const cw = norm(c.name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/); let sc = words.filter((w) => cw.includes(w)).length * 2;
+      if (nn && String(c.number).toLowerCase() === nn.toLowerCase()) sc += 3; if (d && String(c.set?.printedTotal) === d) sc += 3; return sc; };
+    const list = cards.map((c) => ({ c, s: score(c) })).sort((a, b) => b.s - a.s).slice(0, 8).map(({ c }) => ({
+      id: c.id, name: c.name, number: c.number, set: c.set?.name, printedTotal: c.set?.printedTotal, year: Number(String(c.set?.releaseDate || "").slice(0, 4)) || null,
+      image: c.images?.small, big: c.images?.large, rarity: c.rarity || "",
+      prints: Object.keys(c.tcgplayer?.prices || {}).map((k) => ({ normal: "Normal", holofoil: "Holofoil", reverseHolofoil: "Reverse Holofoil", "1stEditionHolofoil": "1st Edition Holofoil", "1stEditionNormal": "1st Edition", unlimitedHolofoil: "Unlimited Holofoil" }[k] || k)),
+    }));
+    const data = { cards: list };
+    scanCache.set(key, { exp: Date.now() + 864e5, data }); if (scanCache.size > 2000) scanCache.delete(scanCache.keys().next().value);
+    res.json(data);
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 // TCGplayer market prices by condition and printing, with up to 1 year of daily history, via JustTCG
 // (an independent service). Set JUSTTCG_API_KEY to use it. The free plan allows about 100 requests a day,
 // so each search is cached for 24 hours (prices only update about daily) and uses 1 to 3 requests.

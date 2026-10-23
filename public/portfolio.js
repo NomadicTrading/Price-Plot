@@ -139,7 +139,7 @@ function render() {
    ${view !== "watch" && gl != null ? `<span style="color:var(${gl >= 0 ? "--up" : "--dn"});font-weight:600">${gl >= 0 ? "▲ +" : "▼ −"}${money(Math.abs(gl))} <span class="mu">on cards with a cost (${money(V.cost)} paid)</span></span>` : ""}</div>
    ${view !== "watch" ? `<div class="pst"><span><b>${V.n.toLocaleString()}</b> cards</span><span><b>${V.graded}</b> graded</span><span><b>${pfs.length}</b> portfolio${pfs.length === 1 ? "" : "s"}</span>${P.asOf ? `<span>Prices as of <b>${esc(P.asOf)}</b></span>` : ""}</div>` : ""}</div>
   <div class="bar"><label class="pill on" for="pff">Import Collectr file</label><button class="pill" type="button" data-pa="clink">From a Collectr link</button><input id="pff" type="file" accept=".csv,.xlsx,.xls,text/csv" hidden>
-   <button class="pill" type="button" data-pa="add">+ Add card</button>${P.items.length ? `<button class="pill" type="button" data-pa="export">Export CSV</button><button class="pill" type="button" data-pa="clear">Clear all</button>` : ""}</div>
+   <button class="pill on" type="button" data-pa="scan">Scan a card</button><button class="pill" type="button" data-pa="add">+ Add card</button>${P.items.length ? `<button class="pill" type="button" data-pa="export">Export CSV</button><button class="pill" type="button" data-pa="clear">Clear all</button>` : ""}</div>
   ${cimpPanel()}<div class="sm" id="pfs"></div><div id="pfi" class="pbx" hidden></div>
   ${editing === "new" ? `<div class="pbx">${form({ qty: 1 })}</div>` : ""}
   ${P.items.length ? `
@@ -609,6 +609,115 @@ async function cimpSetup() {
   document.body.appendChild(ov);
 }
 
+/* ---------- card scanner ---------- */
+// Take a photo of a card: the phone reads the text on it (free, in the browser), Price Plot finds the matching cards
+// by name and number, and you pick the right one and add it to a portfolio.
+let ocrWorker = null;
+function loadOcr() {
+  if (ocrWorker) return ocrWorker;
+  ocrWorker = new Promise((ok, no) => {
+    const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+    s.onload = async () => { try { ok(await window.Tesseract.createWorker("eng")); } catch (e) { no(e); } };
+    s.onerror = () => no(new Error("couldn't load the text reader, check your connection")); document.head.appendChild(s);
+  });
+  ocrWorker.catch(() => (ocrWorker = null));
+  return ocrWorker;
+}
+// photo → a smaller, high-contrast gray image, which reads faster and better
+function prepImage(file) {
+  return new Promise((ok, no) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => { const sc = Math.min(1, 1600 / Math.max(img.width, img.height)), c = document.createElement("canvas");
+      c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc); const g = c.getContext("2d"); g.drawImage(img, 0, 0, c.width, c.height);
+      const d = g.getImageData(0, 0, c.width, c.height), p = d.data;
+      for (let i = 0; i < p.length; i += 4) { let v = 0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2]; v = Math.max(0, Math.min(255, (v - 128) * 1.5 + 128)); p[i] = p[i + 1] = p[i + 2] = v; }
+      g.putImageData(d, 0, 0); URL.revokeObjectURL(url); ok({ canvas: c, preview: c.toDataURL("image/jpeg", 0.7) }); };
+    img.onerror = () => no(new Error("couldn't open that photo")); img.src = url;
+  });
+}
+const SKIP_WORDS = /^(basic|stage|stage ?[12]|pok[eé]mon|trainer|item|supporter|stadium|energy|evolves|tool|ability|weakness|resistance|retreat|illus\.?|hp)$/i;
+function parseCardText(text) {
+  const lines = String(text || "").split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  let n = "", d = "";
+  const m = /\b([A-Z]{0,4}\d{1,3}[a-z]?)\s*\/\s*([A-Z]{0,4}\d{1,3})\b/.exec(text);
+  if (m) { n = m[1]; d = /^\d+$/.test(m[2]) ? String(+m[2]) : ""; }
+  else { const p = /\b(SVP|SWSH|SM|XY|BW|DP|HGSS|SV)\s*-?\s*(\d{1,3})\b/i.exec(text); if (p) n = p[1].toUpperCase() + p[2].padStart(p[1].length > 2 ? 3 : 2, "0"); }
+  let name = "";
+  for (const l of lines.slice(0, 8)) {
+    const w = l.replace(/[^A-Za-zÀ-ÿ'’&.\- ]/g, " ").split(/\s+/).filter((x) => x.length > 1 && !SKIP_WORDS.test(x));
+    const t = w.join(" ").replace(/\bHP\b.*$/i, "").trim();
+    if (t.replace(/[^A-Za-z]/g, "").length >= 3) { name = t.split(" ").slice(0, 4).join(" "); break; }
+  }
+  return { name, n, d };
+}
+let scan = null; // { preview, read: {name,n,d}, cards, pick, status }
+function scanOverlay() {
+  let ov = $("ppscan"); if (!ov) { ov = document.createElement("div"); ov.id = "ppscan"; ov.className = "ppm-ov"; document.body.appendChild(ov); }
+  const S = scan, pfs = [...new Set(P.items.filter((x) => x.qty > 0 && x.pf).map((x) => x.pf))].sort();
+  let body = "";
+  if (S.status === "reading") body = `<p><b>Reading the card…</b></p><p class="mu">The first scan loads the text reader, which can take a few seconds.</p>`;
+  else if (S.status === "error") body = `<p><b>${esc(S.msg)}</b></p>`;
+  else if (S.status === "searching") body = `<p><b>Looking up the card…</b></p>`;
+  else if (S.status === "pick") { const c = S.cards[S.pick];
+    body = `<div class="sc-sel"><img src="${esc(c.image)}" alt=""><div><b>${esc(c.name)}</b><div class="mu">${esc(c.set || "")} · ${esc(c.number)}${c.printedTotal ? "/" + esc(c.printedTotal) : ""}${c.year ? " · " + c.year : ""}</div><button type="button" class="cs-back" data-sc="back">‹ Pick a different card</button></div></div>
+    <form id="scform"><div class="pg">
+      <label>Portfolio<input name="pf" list="scpfl" value="${esc(S.pf || pfs[0] || "")}" placeholder="Portfolio name"><datalist id="scpfl">${pfs.map((p) => `<option value="${esc(p)}">`).join("")}</datalist></label>
+      <label>Condition<select name="cond">${CONDS.map((x) => `<option ${x === (S.cond || "Near Mint") ? "selected" : ""}>${x}</option>`).join("")}</select></label>
+      <label>Printing<select name="var">${(c.prints.length ? c.prints : ["Normal"]).map((x) => `<option>${esc(x)}</option>`).join("")}</select></label>
+      <label>Grade (blank if raw)<input name="grade" placeholder="e.g. PSA 10"></label>
+      <label>Quantity<input name="qty" type="number" min="1" step="1" value="1" inputmode="numeric"></label>
+      <label>Paid each ($)<input name="cost" type="number" min="0" step="0.01" inputmode="decimal"></label></div>
+      <div class="ppm-b"><button type="submit" class="ppm-x primary">Add to portfolio</button></div></form>`; }
+  else { const r = S.read || {};
+    body = `${S.cards.length ? `<p class="mu">Tap your card:</p><div class="sc-grid">${S.cards.map((c, i) => `<button type="button" data-sp="${i}"><img src="${esc(c.image)}" alt="" loading="lazy"><b>${esc(c.name)}</b><span>${esc(c.set || "")} · ${esc(c.number)}${c.printedTotal ? "/" + esc(c.printedTotal) : ""}</span></button>`).join("")}</div>`
+      : `<p><b>No matching cards found.</b> Check the name and number below and search again.</p>`}
+      <form id="scsearch" class="cimp-c" style="margin-top:12px"><input name="q" value="${esc([r.name, r.n && (r.n + (r.d ? "/" + r.d : ""))].filter(Boolean).join(" "))}" placeholder="Name and number, e.g. Charizard 4/102" aria-label="Card name and number" style="letter-spacing:0;text-transform:none"><button type="submit" class="ppm-x">Search</button></form>`; }
+  ov.innerHTML = `<div class="ppm" role="dialog" aria-modal="true" aria-labelledby="sc-t"><h3 id="sc-t">Scan a card</h3>
+    ${S.preview && S.status !== "pick" ? `<img class="sc-photo" src="${S.preview}" alt="Your photo">` : ""}${body}
+    <div class="ppm-b"><button type="button" class="ppm-x" data-sc="again">Scan another card</button><button type="button" class="ppm-x plain" data-sc="close">Close</button></div></div>`;
+}
+async function scanFind(read) {
+  scan.read = read; scan.status = "searching"; scan.cards = [];
+  try { const j = await getJSON("/api/scan-match?" + new URLSearchParams({ name: read.name || "", n: read.n || "", d: read.d || "" })); scan.cards = j.cards || []; scan.status = "list"; }
+  catch (e) { scan.status = "list"; scan.cards = []; toast("Card lookup failed: " + e.message); }
+  scanOverlay();
+}
+async function scanFile(file) {
+  scan = { status: "reading", cards: [], pf: scan && scan.pf, cond: scan && scan.cond }; scanOverlay();
+  try { const im = await prepImage(file); scan.preview = im.preview; scanOverlay();
+    const w = await loadOcr(); const { data } = await w.recognize(im.canvas);
+    await scanFind(parseCardText(data.text));
+  } catch (e) { scan.status = "error"; scan.msg = "Couldn't read the card: " + e.message; scanOverlay(); }
+}
+function scanAdd(fm) {
+  const d = Object.fromEntries(new FormData(fm)), c = scan.cards[scan.pick];
+  const x = { id: uid(), pf: d.pf.trim(), cat: "Pokemon", set: c.set || "", name: c.name, num: /^\d+$/.test(c.number) && c.printedTotal ? `${c.number}/${c.printedTotal}` : c.number, rarity: c.rarity || "",
+    var: d.var || "", grade: d.grade.trim() || "Ungraded", cond: d.cond, qty: Math.max(1, Math.round(num(d.qty) || 1)), cost: num(d.cost) || 0, mkt: null, ovr: 0, watch: false, added: today(), notes: "", img: c.image, big: c.big, imgT: Date.now() };
+  const same = P.items.find((y) => y.qty > 0 && keyOf(y) === keyOf(x));
+  if (same) same.qty += x.qty; else P.items.push(x);
+  scan.pf = x.pf; scan.cond = x.cond; store(); snap(); render(); fillPrices();
+  toast(same ? `Added ${x.qty} more ${x.name} to ${x.pf || "your portfolio"} (now ${same.qty})` : `Added ${x.name} to ${x.pf || "your portfolio"}`);
+  scan.status = "done"; const ov = $("ppscan"); if (ov) ov.querySelector(".ppm").innerHTML = `<h3>Added ✓</h3><p>${esc(x.name)} · ${esc(x.set)} · ${esc(x.cond)} × ${x.qty} → <b>${esc(x.pf || "your portfolio")}</b></p><div class="ppm-b"><button type="button" class="ppm-x primary" data-sc="again">Scan another card</button><button type="button" class="ppm-x plain" data-sc="close">Done</button></div>`;
+}
+function scanCamera() { let i = $("pfcam"); if (!i) { i = document.createElement("input"); i.type = "file"; i.accept = "image/*"; i.setAttribute("capture", "environment"); i.id = "pfcam"; i.hidden = true; document.body.appendChild(i);
+  i.addEventListener("change", () => { if (i.files[0]) scanFile(i.files[0]); i.value = ""; }); } i.click(); }
+document.addEventListener("click", (e) => {
+  const ov = $("ppscan"); if (!ov || !ov.contains(e.target)) return;
+  if (e.target === ov) { ov.remove(); return; }
+  const b = e.target.closest("button"); if (!b) return; const d = b.dataset;
+  if (d.sc === "close") ov.remove();
+  else if (d.sc === "again") scanCamera();
+  else if (d.sc === "back") { scan.status = "list"; scanOverlay(); }
+  else if (d.sp != null) { scan.pick = +d.sp; scan.status = "pick"; scanOverlay(); }
+});
+document.addEventListener("submit", (e) => {
+  if (e.target.id === "scsearch") { e.preventDefault(); const q = new FormData(e.target).get("q") || "", r = parseCardText(q);
+    if (!r.n) { const m = /\b([A-Z]{0,4}\d{1,3}[a-z]?)\b\s*$/.exec(q.trim()); if (m) r.n = m[1]; }
+    r.name = q.replace(/\b[A-Z]{0,4}\d{1,3}[a-z]?\s*\/\s*[A-Z]{0,4}\d{1,3}\b/, "").replace(/\b[A-Z]{0,4}\d{1,3}[a-z]?\b\s*$/, "").trim() || r.name;
+    scan.status = "reading"; scanOverlay(); scanFind(r); }
+  else if (e.target.id === "scform") { e.preventDefault(); scanAdd(e.target); }
+});
+
 /* ---------- actions ---------- */
 function exportCSV() {
   const c = (v) => { v = v == null ? "" : String(v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
@@ -666,6 +775,7 @@ document.addEventListener("click", (e) => {
   else if (d.pa === "merge" || d.pa === "replace") applyImport(d.pa);
   else if (d.pa === "cancel") { pending = null; $("pfi").hidden = true; }
   else if (d.pa === "clink") cimpSetup();
+  else if (d.pa === "scan") scanCamera();
   else if (d.cx2) cimpAction(d.cx2);
   else if (d.pa === "add") { editing = "new"; render(); }
   else if (d.pa === "more") { shown += PAGE; render(); }
