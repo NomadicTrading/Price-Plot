@@ -519,14 +519,16 @@ const AI_MODEL = AI_KEY ? process.env.SCAN_MODEL || "claude-haiku-5-5" : GEM_LIT
 // Claude (paid, if set) → Groq (free, fast) → Gemini Flash-Lite → OpenRouter (free) → Gemini 3.8 Flash.
 const GROQ_KEY = process.env.GROQ_API_KEY, GROQ_MODEL = process.env.GROQ_SCAN_MODEL || "qwen/qwen3.8-27b";
 const OR_KEY = process.env.OPENROUTER_API_KEY, OR_MODEL = process.env.OPENROUTER_SCAN_MODEL || "google/gemma-4-31b-it:free";
-async function openaiStyle(url, key, model, img, prompt, ms, extraHeaders) {
+async function openaiStyle(url, key, model, img, prompt, ms, extraHeaders, extra) {
   const t0 = Date.now();
-  const r = await fetch(url, { method: "POST", signal: AbortSignal.timeout(ms), headers: { Authorization: "Bearer " + key, "content-type": "application/json", ...(extraHeaders || {}) },
-    body: JSON.stringify({ model, max_tokens: 1500, temperature: 0, messages: [{ role: "user", content: [
+  const go = (more) => fetch(url, { method: "POST", signal: AbortSignal.timeout(ms), headers: { Authorization: "Bearer " + key, "content-type": "application/json", ...(extraHeaders || {}) },
+    body: JSON.stringify({ model, max_tokens: 1500, temperature: 0, ...more, messages: [{ role: "user", content: [
       { type: "image_url", image_url: { url: "data:image/jpeg;base64," + img } }, { type: "text", text: prompt }] }] }) });
-  const j = await r.json().catch(() => ({}));
+  let r = await go(extra || {}), j = await r.json().catch(() => ({}));
+  // some models don't accept the "no thinking" setting; ask again without it
+  if (!r.ok && r.status === 400 && extra?.reasoning_effort && /reasoning/i.test(JSON.stringify(j))) { const { reasoning_effort, ...rest } = extra; r = await go(rest); j = await r.json().catch(() => ({})); }
   if (!r.ok) throw new Error(j.error?.message || (typeof j.error === "string" ? j.error : "") || model + " returned " + r.status);
-  const c = j.choices?.[0]?.message?.content; return { text: Array.isArray(c) ? c.map((p) => p.text || "").join("") : String(c || ""), secs: (Date.now() - t0) / 1000 };
+  const c = j.choices?.[0]?.message?.content; return { text: (Array.isArray(c) ? c.map((p) => p.text || "").join("") : String(c || "")).replace(/<think>[\s\S]*?<\/think>/g, ""), secs: (Date.now() - t0) / 1000 };
 }
 function aiChain() {
   const steps = [];
@@ -537,7 +539,7 @@ function aiChain() {
         { type: "image", source: { type: "base64", media_type: mime, data: img } }, { type: "text", text: AI_PROMPT }] }] }) });
     const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error?.message || "Claude returned " + r.status);
     return { text: (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join(""), secs: (Date.now() - t0) / 1000 }; } });
-  if (GROQ_KEY) steps.push({ name: "Groq " + GROQ_MODEL, run: (img) => openaiStyle("https://api.groq.com/openai/v1/chat/completions", GROQ_KEY, GROQ_MODEL, img, AI_PROMPT, 20000) });
+  if (GROQ_KEY) steps.push({ name: "Groq " + GROQ_MODEL, run: (img) => openaiStyle("https://api.groq.com/openai/v1/chat/completions", GROQ_KEY, GROQ_MODEL, img, AI_PROMPT, 20000, null, { max_tokens: 450, reasoning_effort: "none" }) });
   if (GEM_KEY) steps.push({ name: "Gemini " + GEM_LITE, run: (img, mime) => gemini(GEM_LITE, [{ inline_data: { mime_type: mime, data: img } }, { text: AI_PROMPT }], true, 25000) });
   if (OR_KEY) steps.push({ name: "OpenRouter " + OR_MODEL, run: (img) => openaiStyle("https://openrouter.ai/api/v1/chat/completions", OR_KEY, OR_MODEL, img, AI_PROMPT, 25000, { "HTTP-Referer": "https://price-plot.onrender.com", "X-Title": "Price Plot" }) });
   if (GEM_KEY && GEM_BIG !== GEM_LITE) steps.push({ name: "Gemini " + GEM_BIG, run: (img, mime) => gemini(GEM_BIG, [{ inline_data: { mime_type: mime, data: img } }, { text: AI_PROMPT }], true, 20000) });
@@ -580,7 +582,7 @@ Reply with ONLY a JSON object, no other text:
 "edition":"1st Edition" ONLY if you can clearly see the small black circular "Edition 1" stamp (on vintage cards it sits just below the bottom-left corner of the artwork); "Shadowless" ONLY for a 1999 Base Set card where you can clearly see there is no drop shadow along the right edge of the art box; "Unlimited" if it is a vintage card and you can see that spot has no stamp; null if you cannot tell. Do not guess the edition from the set or the card's age,
 "finish":"holo" (the artwork itself is foil) | "reverse holo" (the card body is foil but the artwork is not) | "non-holo" | "unknown",
 "stamp":"any promo, prerelease, staff, set-logo or event stamp text, or null","graded":{"company":"PSA|BGS|CGC|TAG|SGC","grade":"10"} or null if not in a grading slab,
-"confidence":0.0 to 1.0,"notes":"short note on anything uncertain"}
+"confidence":0.0 to 1.0,"notes":"note on anything uncertain, 15 words at most"}
 Be literal: report only what is visible in the photo. If something is too small, blurry or covered by glare to read, use null rather than guessing.`;
 // Open /api/scan-ai/check once to see which AI service is set up and whether a tiny test request works.
 // Open /api/scan-ai/check to see which AI services are set up; add ?image=1 to run a real card photo through them
