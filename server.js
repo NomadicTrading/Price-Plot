@@ -459,7 +459,7 @@ async function tcgScan(q) {
     listingSearch: { context: { cart: {} }, filters: { term: { sellerStatus: "Live", channelId: 0 }, range: { quantity: { gte: 1 } }, exclude: { channelExclusion: 0 } } },
     context: { cart: {}, shippingCountry: "US", userProfile: {} }, settings: { useFuzzySearch: true, didYouMean: {} }, sort: {},
   });
-  return (((j.results || [])[0] || {}).results || []).filter((r) => r.productId && !/code card|booster|box|bundle|tin|deck|pack/i.test(r.productName || "")).map((r) => {
+  return (((j.results || [])[0] || {}).results || []).filter((r) => r.productId && !/\b(code card|booster|box|bundle|tin|deck|pack|blister)\b/i.test(r.productName || "")).map((r) => {
     const id = String(Math.round(Number(r.productId))), raw = String(r.customAttributes?.number || (/\s-\s([\w/]+)$/.exec(r.productName || "") || [])[1] || "");
     const [num, tot] = raw.split("/");
     return { id: "tcg-" + id, tcgId: id, name: String(r.productName || "").replace(/\s-\s[\w/]+$/, "").trim(), number: num || "", set: r.setName || "", printedTotal: tot ? +tot || tot : null, year: null,
@@ -470,35 +470,43 @@ async function tcgScan(q) {
 // Finds candidate cards for a name and number: pokemontcg.io first, TCGplayer's search as a second source.
 async function matchCards(name, n, d, opts = {}) {
   const nn = /^\d+$/.test(n) ? String(+n) : n, words = norm(name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length > 1);
-  const errors = []; let cards = [];
-  if (!opts.tcgOnly) try {
+  const errors = [];
+  // pokemontcg.io and TCGplayer are asked at the same time: pokemontcg.io is often slow or down, and waiting
+  // for it to fail first left only TCGplayer's fuzzy "did you mean" results (Houndour for Houndoom)
+  const ptcgJob = opts.tcgOnly ? Promise.resolve([]) : (async () => {
+    let cards = [];
     if (nn && d) cards = await ptcg(`number:${nn} set.printedTotal:${d}`, 30);
     if (!cards.length && nn && words.length) cards = await ptcg(`number:${nn} name:"${words[0]}*"`, 30);
     if (!cards.length && !(nn && d) && words.length) cards = await ptcg(`name:"${words.slice(0, 3).join(" ")}*"`, 40);
     if (!cards.length && nn && /[a-z]/i.test(nn)) cards = await ptcg(`number:${nn}`, 30);
-  } catch (e) { errors.push("pokemontcg.io: " + e.message); }
+    return cards;
+  })().catch((e) => { errors.push("pokemontcg.io: " + e.message); return []; });
+  const nm = words.slice(0, 3).join(" ");
+  // three searches: name with number, name with set, and the name alone (TCGplayer's search sometimes drops the right card when the number is included)
+  const tq = [...new Map([opts.tcgQuery || (nn && d ? `${nm} ${nn}/${d}` : nn ? `${nm} ${nn}` : ""), nm && opts.setName ? `${nm} ${opts.setName}` : nm && nn ? `${nm} ${nn}` : "", nm]
+    .map((q) => String(q || "").trim()).filter(Boolean).map((q) => [q.toLowerCase(), q])).values()];
+  const tcgJob = Promise.all(tq.map((q) => tcgScan(q).catch((e) => { errors.push("TCGplayer: " + e.message); return []; })));
+  const cards = await ptcgJob;
   let list = cards.map((c) => ({
     id: c.id, name: c.name, number: c.number, set: c.set?.name, printedTotal: c.set?.printedTotal, year: Number(String(c.set?.releaseDate || "").slice(0, 4)) || null,
     image: c.images?.small, big: c.images?.large, rarity: c.rarity || "", tcgId: null,
     prints: Object.keys(c.tcgplayer?.prices || {}).map((k) => ({ normal: "Normal", holofoil: "Holofoil", reverseHolofoil: "Reverse Holofoil", "1stEditionHolofoil": "1st Edition Holofoil", "1stEditionNormal": "1st Edition", unlimitedHolofoil: "Unlimited Holofoil" }[k] || k)),
   }));
-  // TCGplayer too when nothing was found, or when the printing matters (1st Edition, Shadowless, Japanese, stamps):
-  // it lists those as separate products
-  if (!list.length || opts.alsoTcg) {
-    try {
-      let t = [];
-      if (opts.tcgQuery) t = await tcgScan(opts.tcgQuery);
-      if (!t.length && nn && d) t = await tcgScan(`${words.slice(0, 2).join(" ")} ${nn}/${d}`.trim());
-      if (!t.length && nn && d) t = await tcgScan(`${nn}/${d}`);
-      if (!t.length && words.length) t = await tcgScan(words.slice(0, 3).join(" ") + (nn ? " " + nn : ""));
-      const seen = new Set(list.map((c) => (c.name + "|" + c.set + "|" + c.number).toLowerCase()));
-      for (const c of t) { const k = (c.name + "|" + c.set + "|" + c.number).toLowerCase(); if (!seen.has(k)) { seen.add(k); list.push(c); } }
-    } catch (e) { errors.push("TCGplayer: " + e.message); }
+  // TCGplayer's results are used when pokemontcg.io found nothing, or when the printing matters (1st Edition,
+  // Shadowless, Japanese, stamps): TCGplayer lists those as separate products
+  const tcg = (await tcgJob).flat();
+  const fullName = (c) => { const cw = norm(c.name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/); return words.length && words.every((w) => cw.includes(w)); };
+  if (!list.length || opts.alsoTcg || !list.some(fullName)) {
+    const seen = new Set(list.map((c) => (c.name + "|" + c.set + "|" + c.number).toLowerCase()));
+    for (const c of tcg) { const k = (c.name + "|" + c.set + "|" + c.number).toLowerCase(); if (!seen.has(k)) { seen.add(k); list.push(c); } }
   }
+  if (list.length) errors.length = 0;
   return { list, errors, nn, words };
 }
 const scoreCard = (c, nn, d, words, extra) => {
-  const cw = norm(c.name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/); let sc = words.filter((w) => cw.includes(w)).length;
+  const cw = norm(c.name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/), hit = words.filter((w) => cw.includes(w)).length;
+  // the name matters most: a card with the right number but another name (Houndour 133 for Houndoom 133) ranks low
+  let sc = hit * 2 + (words.length && hit === words.length ? 6 : 0) - (words.length && !hit ? 8 : 0);
   const cn = String(c.number || "").toLowerCase().replace(/^0+(?=\d)/, ""); if (nn && cn === nn.toLowerCase()) sc += 5; if (d && String(c.printedTotal) === d) sc += 5;
   return sc + (extra ? extra(c) : 0);
 };
@@ -637,7 +645,7 @@ app.post("/api/scan-ai", express.json({ limit: "4mb" }), async (req, res) => {
   const d = String(read.set_total || "").replace(/\D/g, "").slice(0, 4), jp = /japan/i.test(read.language || ""), ed = String(read.edition || ""), stamp = String(read.stamp || "");
   const special = jp || /1st|shadowless/i.test(ed) || !!stamp;
   const num = /^\d+$/.test(n) ? String(+n) : n;
-  const { list: all, errors, nn, words } = await matchCards(name, n, d, { alsoTcg: special,
+  const { list: all, errors, nn, words } = await matchCards(name, n, d, { alsoTcg: special, setName: String(read.set_name || "").replace(/["\\*:()]/g, " ").slice(0, 40),
     tcgQuery: [name, /shadowless/i.test(ed) ? "Shadowless" : "", /1st/i.test(ed) ? "1st Edition" : "", num && d ? `${num}/${d}` : num].filter(Boolean).join(" ") });
   const setGuess = String(read.set_name || "");
   const extra = (c) => {
