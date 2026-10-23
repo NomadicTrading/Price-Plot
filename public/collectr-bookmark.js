@@ -41,18 +41,36 @@
     XP.open = o; XP.setRequestHeader = sh; XP.send = se; window.fetch = wf; window.scrollTo(0, 0);
     return got;
   };
-  const readAll = async (base, h) => {
-    const U = new URL(base), lim = +(U.searchParams.get("limit") || 30), got = []; let off = 0, sample = null;
-    for (let page = 0; page < 500; page++) {
+  /* Reads one list (one portfolio, one sort order) page by page. Collectr stops answering after about 500 entries,
+     so a long list is read again in other sort orders and the results are merged. */
+  const readAll = async (base, h, extra, maxPages) => {
+    const U = new URL(base), lim = +(U.searchParams.get("limit") || 30), got = []; let off = 0, first = null;
+    for (const k in extra || {}) U.searchParams.set(k, extra[k]);
+    for (let page = 0; page < (maxPages || 200); page++) {
       U.searchParams.set("offset", String(off)); U.searchParams.set("limit", String(lim));
       const r = await F0(U.toString(), { credentials: "include", headers: h });
       if (!r.ok) { if (!got.length) return { status: r.status }; log.push("stopped at " + off + ": status " + r.status); break; }
-      const j = await r.json(); if (!sample) sample = JSON.stringify(j).slice(0, 4000);
-      const arr = findArr(j); if (!arr || !arr.length) break;
-      got.push(...arr); off += arr.length; say("reading your cards… " + got.length + " so far");
-      if (arr.length < lim) break;
+      const j = await r.json(); if (!first) first = j;
+      const arr = (j && Array.isArray(j.products)) ? j.products : findArr(j); if (!arr || !arr.length) break;
+      got.push(...arr); off += arr.length; if (arr.length < lim) break;
     }
-    return { items: got, sample };
+    return { items: got, first };
+  };
+  const keyOf = (x) => [x.product_id, x.card_condition, x.grade_company, x.grade_id, x.product_sub_type].join("|");
+  const qtyOf = (a) => a.reduce((n, x) => n + (+x.quantity || 1), 0);
+  const readCollection = async (base, h, c, sorts, note) => {
+    const extra = c ? { collectionId: c.id } : {}, seen = new Map();
+    const add = (arr) => { for (const x of arr) { const k = keyOf(x); if (!seen.has(k)) seen.set(k, c ? { ...x, __pf: c.name } : x); } };
+    const r = await readAll(base, h, extra); if (!r.items) return { status: r.status };
+    add(r.items); note();
+    const f = r.first || {}, target = (+f.total_cards || 0) + (+f.total_sealed || 0);
+    log.push((c ? c.name : "default") + ": " + r.items.length + " entries, " + qtyOf([...seen.values()]) + " of " + (target || "?") + " cards");
+    if (r.items.length >= 450) for (const so of sorts) {
+      if (target && qtyOf([...seen.values()]) >= target) break;
+      const r2 = await readAll(base, h, { ...extra, ...so }); if (r2.items) { add(r2.items); note(); }
+      log.push("  sort " + JSON.stringify(so) + ": now " + seen.size + " entries, " + qtyOf([...seen.values()]) + " cards");
+    }
+    return { items: [...seen.values()], first: r.first, target };
   };
   const run = async () => {
     const urls = performance.getEntriesByType("resource").map((e) => e.name).filter((u) => /api-v2\.getcollectr\.com/.test(u));
@@ -60,22 +78,45 @@
     const show = urls.filter((u) => /\/data\/showcase\//.test(u));
     let base = show[show.length - 1] || null, items = [], used = null, sample = null;
     if (!base) { const m = /\/showcase\/profile\/([^/?#]+)/.exec(location.pathname); if (m) base = "https://api-v2.getcollectr.com/data/showcase/" + m[1] + "?offset=0&limit=30&filters=&unstackedView=true"; }
-    if (!base) return { type: "collectr-import", v: 3, page: location.href, used, count: 0, items: [], log: log.concat(["no showcase request found"]), sample };
+    if (!base) return { type: "collectr-import", v: 4, page: location.href, used, count: 0, items: [], log: log.concat(["no showcase request found"]), sample };
+    { const U = new URL(base); U.searchParams.delete("collectionId"); base = U.toString(); }
     log.push("showcase: " + base.replace(/[?].*/, ""));
-    /* first try: the headers the page's code says it uses (signed-in name and token if any, otherwise the guest id) */
+    /* the headers the page's code uses (signed-in name and token if any, otherwise the guest id) */
     const tok = cookie("collectrToken"), user = new URL(base).searchParams.get("username");
-    const h1 = { Accept: "application/json, text/plain, */*", "x-collectr-username": (tok && tok.username) || user || "00000000-0000-0000-0000-000000000000" };
-    if (tok && tok.token) h1.Authorization = tok.token;
-    try { if (window.AwsWafIntegration && AwsWafIntegration.getToken) h1["x-aws-waf-token"] = await AwsWafIntegration.getToken(); } catch (e) {}
-    let r = await readAll(base, h1); log.push("try 1 (" + Object.keys(h1).join(", ") + "): " + (r.items ? r.items.length + " cards" : "status " + r.status));
-    if (!r.items || !r.items.length) {
+    let h = { Accept: "application/json, text/plain, */*", "x-collectr-username": (tok && tok.username) || user || "00000000-0000-0000-0000-000000000000" };
+    if (tok && tok.token) h.Authorization = tok.token;
+    try { if (window.AwsWafIntegration && AwsWafIntegration.getToken) h["x-aws-waf-token"] = await AwsWafIntegration.getToken(); } catch (e) {}
+    let probe = await readAll(base, h, {}, 1); log.push("headers " + Object.keys(h).join(", ") + ": " + (probe.items ? "ok" : "status " + probe.status));
+    if (!probe.items || !probe.items.length) {
       say("reading your cards… (learning how this page asks)");
       const L = await learn();
-      if (L) { log.push("learned headers: " + Object.keys(L.h).join(", ")); const h2 = { ...L.h }; r = await readAll(base, h2); log.push("try 2: " + (r.items ? r.items.length + " cards" : "status " + r.status)); }
+      if (L) { h = { ...L.h }; log.push("learned headers: " + Object.keys(h).join(", ")); probe = await readAll(base, h, {}, 1); log.push("learned: " + (probe.items ? "ok" : "status " + probe.status)); }
       else log.push("the page made no new request to learn from");
     }
-    if (r.items && r.items.length) { items = r.items; sample = r.sample; used = base.replace(/[?].*/, ""); }
-    return { type: "collectr-import", v: 3, page: location.href, used, count: items.length, items: items.map((x) => slim(x, 0)), log, sample };
+    if (!probe.items || !probe.items.length) return { type: "collectr-import", v: 4, page: location.href, used, count: 0, items: [], log, sample };
+    sample = JSON.stringify(probe.first).slice(0, 2500);
+    /* sort orders Collectr offers, used to reach past its 500-entry limit */
+    let sorts = [];
+    try { const r = await F0("https://api-v2.getcollectr.com/data/sort-filters", { credentials: "include", headers: h }); if (r.ok) { const j = await r.json(), arr = findArr(j) || [];
+      log.push("sorts: " + JSON.stringify(arr).slice(0, 300));
+      sorts = arr.map((o) => { const p = {}; for (const k in o) if (/^sort/i.test(k) && o[k] != null && typeof o[k] !== "object") p[k] = String(o[k]); return p; }).filter((p) => Object.keys(p).length); } } catch (e) {}
+    if (!sorts.length) sorts = [{ sortType: "price", sortOrder: "desc" }, { sortType: "price", sortOrder: "asc" }, { sortType: "name", sortOrder: "desc" }, { sortType: "name", sortOrder: "asc" }];
+    /* grade names, so a graded card comes in as e.g. "PSA 10" */
+    let grades = {};
+    try { const r = await F0("https://api-v2.getcollectr.com/data/grading-scales", { credentials: "include", headers: h }); if (r.ok) { const q = [await r.json()], seen = new Set();
+      while (q.length) { const v = q.shift(); if (!v || typeof v !== "object" || seen.has(v)) continue; seen.add(v); if (!Array.isArray(v) && v.id != null && (v.name || v.grade || v.label)) grades[String(v.id)] = String(v.name || v.grade || v.label); Object.values(v).forEach((x) => q.push(x)); } } } catch (e) {}
+    /* every portfolio on the showcase, not just the one it opens on */
+    const cols = (probe.first && Array.isArray(probe.first.collections) && probe.first.collections.length) ? probe.first.collections : [null];
+    const all = [];
+    for (const c of cols) {
+      const note = () => say("reading " + (c ? c.name : "your cards") + "…");
+      say("reading " + (c ? c.name : "your cards") + "…");
+      const r = await readCollection(base, h, c, sorts, note);
+      if (r.items) all.push(...r.items); else log.push((c ? c.name : "default") + ": status " + r.status);
+    }
+    for (const x of all) if (x.grade_company && x.grade_id != null) x.grade_label = grades[String(x.grade_id)] || null;
+    items = all; used = base.replace(/[?].*/, "");
+    return { type: "collectr-import", v: 4, page: location.href, used, count: items.length, items: items.map((x) => slim(x, 0)), log, sample };
   };
   run().then((data) => {
     say(data.count ? "found " + data.count + " entries, opening Price Plot…" : "couldn't find the cards, opening Price Plot with details…");

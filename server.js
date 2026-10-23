@@ -636,6 +636,9 @@ app.get("/api/tcgprice", async (req, res) => {
     // no sales in this condition: estimate from Near Mint with the usual condition discount
     const nm = same.find((r) => r.cond === "Near Mint");
     if (nm) return res.json({ market: +(nm.m * COND_STEP[cond]).toFixed(2), cond, print: nm.print, est: true });
+    // sealed products are listed as "Unopened" rather than a card condition
+    const sealed = same.find((r) => !r.cond) || pool.find((r) => !r.cond);
+    if (sealed) return res.json({ market: sealed.m, cond: "Unopened", print: sealed.print, est: false });
     res.json({ market: null, cond, print: null, est: false });
   } catch (e) {
     res.status(502).json({ error: e.message });

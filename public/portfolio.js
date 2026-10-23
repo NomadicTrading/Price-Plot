@@ -480,21 +480,22 @@ function mapCollectr(o) {
   const f = flat(o);
   const name = pick(f, /^(product_?name|card_?name|name|title)$/, /(collection|portfolio|group|set|user|account|condition|grad|rarity|category|line)[^.]*\./);
   if (!name) return null;
-  const company = pick(f, /^(grad(e|ing)_?(company|service|provider|er)|grader|company)$/), gval = pick(f, /^(grade_?(value|number|score)?|grade)$/, /company|service/);
+  const company = pick(f, /^(grad(e|ing)_?(company|service|provider|er)|grader|company)$/), gval = pick(f, /^(grade_?(label|value|number|score)?|grade)$/, /company|service/);
   let grade = "Ungraded";
-  if (company && gval != null && !/^ungraded$/i.test(String(gval))) grade = `${String(company).toUpperCase()} ${gval}`;
+  if (company && gval != null && !/^ungraded$/i.test(String(gval))) { const gn = /\d+(?:\.\d)?/.exec(String(gval)); grade = `${String(company).toUpperCase()} ${gn ? gn[0] : gval}`; }
   else if (gval != null && /[a-z]{2,}\s*\d/i.test(String(gval))) grade = String(gval);
   const n = (v) => { const x = parseFloat(String(v ?? "").replace(/[$,]/g, "")); return isFinite(x) ? x : null; };
-  const tid = pick(f, /^(tcg_?player_?(product_?)?id|tcgplayerid|external_?product_?id)$/);
+  // Collectr's product numbers are TCGplayer's for TCGplayer products; its own (Japanese and other) items are 10,000,000 and up
+  const pid = pick(f, /^product_?id$/), tid = pick(f, /^(tcg_?player_?(product_?)?id|tcgplayerid|external_?product_?id)$/) || (pid && /^\d+$/.test(String(pid)) && +pid < 1e7 ? pid : null);
   const img = pick(f, /^(image_?url|img_?url|image|photo_?url|thumbnail)$/);
-  return { id: uid(), pf: String(pick(f, /^(collection_?name|portfolio_?name|collection_?title)$/) || "").trim(),
+  return { id: uid(), pf: String(o.__pf || pick(f, /^(collection_?name|portfolio_?name|collection_?title)$/) || "").trim(),
     cat: String(pick(f, /^(product_?line(_?name)?|category(_?name)?|game|catalog_?category(_?name)?)$/) || "Pokemon").replace(/^pok[eé]mon.*$/i, "Pokemon"),
     set: String(pick(f, /^(catalog_?group(_?name)?|group_?name|set_?name|expansion(_?name)?|set)$/, /\.id$/) || "").trim(),
     name: String(name).trim(), num: String(pick(f, /^(card_?number|collector_?number|number)$/) || "").trim(), rarity: String(pick(f, /^rarity(_?name)?$/) || ""),
-    var: String(pick(f, /^(variance|printing|variant|sub_?type(_?name)?)$/) || ""), grade, cond: grade === "Ungraded" ? normCond(pick(f, /^(card_?)?condition(_?name)?$/)) : "Near Mint",
+    var: String(pick(f, /^(variance|printing|variant|(product_?)?sub_?type(_?name)?)$/) || ""), grade, cond: grade === "Ungraded" ? normCond(pick(f, /^(card_?)?condition(_?name)?$/)) : "Near Mint",
     cost: n(pick(f, /^(average_?cost(_?paid)?|avg_?cost|purchase_?price|cost_?paid|cost_?basis|paid)$/)) || 0,
     qty: Math.max(1, Math.round(n(pick(f, /^(quantity|qty|count|owned_?quantity)$/)) || 1)),
-    mkt: null, ovr: 0, watch: false, added: today(), notes: "",
+    mkt: null, ovr: n(pick(f, /^price_?override$/)) || 0, watch: o.watchlist === true, added: today(), notes: "", sealed: o.is_card === false || undefined,
     tcgId: tid && /^\d+$/.test(String(tid)) ? String(tid) : null, img: /^https:\/\//.test(String(img || "")) ? String(img) : undefined, src: "collectr-link" };
 }
 function cimpReceive(d) {
