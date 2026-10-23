@@ -760,19 +760,6 @@ app.get("/api/handoff/:code", async (req, res) => {
   res.json(data);
 });
 
-// TEMPORARY: one request from this server to Collectr's showcase list, to see whether a pasted-link import can work
-// without a browser. Open /api/debug/showcase-test?handle=<showcase handle> once.
-app.get("/api/debug/showcase-test", async (req, res) => {
-  const handle = String(req.query.handle || "").replace(/^@/, "").replace(/[^a-z0-9_.-]/gi, "").slice(0, 40);
-  if (!handle) return res.status(400).json({ error: "Add ?handle=" });
-  const url = `https://api-v2.getcollectr.com/data/showcase/@${handle}?offset=0&limit=30&filters=&unstackedView=true&username=00000000-0000-0000-0000-000000000000`;
-  try {
-    const r = await fetch(url, { headers: { Accept: "application/json, text/plain, */*", "x-collectr-username": "00000000-0000-0000-0000-000000000000", Origin: "https://app.getcollectr.com", Referer: "https://app.getcollectr.com/", "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1" }, signal: AbortSignal.timeout(20000) });
-    const body = await r.text();
-    res.json({ status: r.status, wafAction: r.headers.get("x-amzn-waf-action"), length: body.length, start: body.slice(0, 600) });
-  } catch (e) { res.status(502).json({ error: e.message }); }
-});
-
 // eBay "Marketplace Account Deletion" notifications (required to keep your keys enabled).
 // This app stores no eBay user data, so there is nothing to delete: we only answer eBay's
 // challenge and acknowledge notifications.
