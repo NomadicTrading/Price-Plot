@@ -110,7 +110,7 @@ function rowHTML(x) {
   if (editing === x.id) return `<div class="pr" data-id="${x.id}">${form(x)}</div>`;
   return `<div class="pr" data-id="${x.id}"><button class="prx" type="button" data-trash="${x.id}" tabindex="-1" aria-label="Remove ${esc(x.name)}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></button><div class="prc">${thumb(x)}<div class="pm"><b>${esc(x.name)}</b> <span class="cg ${g ? "gr" : ""}">${esc(g ? shortGrade(x.grade) : x.cond || "")}</span>
   <div class="mu">${meta}${view === "all" && x.pf ? ` · <i>${esc(x.pf)}</i>` : ""}</div>
-  <div class="mu">${view === "watch" ? "" : x.qty + " × "}${money(unit(x))}${x.ovr > 0 ? ` <span title="Your own price, set in Collectr or here">(your price)</span>` : x.mkt == null ? " (no price)" : ""}${gain != null ? ` · <span style="color:var(${gain >= 0 ? "--up" : "--dn"})">${gain >= 0 ? "+" : "−"}${money(Math.abs(gain))}</span> vs. ${money(x.cost)} paid` : ""}</div>
+  <div class="mu">${view === "watch" ? "" : x.qty + " × "}${money(unit(x))}${x.ovr > 0 ? ` <span title="Your own price, set in Collectr or here">(your price)</span>` : x.mkt == null ? " (no price)" : x.mktEst ? ` <span title="No recent ${esc(x.cond || "")} sales on TCGplayer, so this is the Near Mint price with the usual discount for this condition">(est.)</span>` : ""}${gain != null ? ` · <span style="color:var(${gain >= 0 ? "--up" : "--dn"})">${gain >= 0 ? "+" : "−"}${money(Math.abs(gain))}</span> vs. ${money(x.cost)} paid` : ""}</div>
   ${x.notes ? `<div class="mu">${esc(x.notes)}</div>` : ""}</div>
   <div class="pv"><b>${money(line)}</b><div><button class="pill sm2" type="button" data-cmp="${x.id}">Comp</button><button class="pill sm2" type="button" data-ed="${x.id}">Edit</button></div></div></div></div>`;
 }
@@ -176,7 +176,7 @@ function pump() {
       .then((r) => (r.ok ? r.json() : null)).catch(() => null)
       .then((j) => {
         running--; busy.delete(x.id);
-        if (j) { x.img = j.img || null; x.big = j.big || null; x.tcgId = j.tcgId || x.tcgId || null; x.imgT = Date.now(); if (j.market > 0 && x.mkt == null && !(x.ovr > 0)) { x.mkt = j.market; x.pT = Date.now(); } }
+        if (j) { x.img = j.img || null; x.big = j.big || null; x.tcgId = x.tcgId || j.tcgId || null; x.imgT = Date.now(); }
         else { x.img = null; x.imgT = Date.now() - RETRY + 6e5; } // server unreachable: try again in 10 minutes
         const el = document.querySelector(`[data-pid="${x.id}"]`); if (el) el.outerHTML = thumb(x);
         clearTimeout(saveT); saveT = setTimeout(store, 800);
@@ -432,23 +432,32 @@ async function askRemove(id) {
 // Cards added from a Collectr link (or by hand) have no price yet. They're looked up a couple at a time through the
 // same server lookup as the pictures, then saved with the card. Lookups that found nothing are retried after 3 days.
 let pfq = [], pfRunning = 0, pfTotal = 0, pfDone = 0;
+// Each card gets TCGplayer's market price for its own condition and printing. Cards whose price came from TCGplayer's
+// search (older versions, which ignored condition and printing) are looked up again. Prices from a Collectr file and
+// your own prices are left alone; graded cards have no TCGplayer price.
+const needsPrice = (x, now) => x.qty > 0 && !(x.ovr > 0) && !isGraded(x) && x.mktV !== 2 && (x.mkt == null || x.pT) && !(x.pTry && now - x.pTry < 3 * 864e5);
 function fillPrices() {
-  const now = Date.now(), want = owned(P.items).filter((x) => x.mkt == null && !(x.ovr > 0) && !(x.pT && now - x.pT < 3 * 864e5) && !pfq.includes(x));
+  const now = Date.now(), want = P.items.filter((x) => needsPrice(x, now) && !pfq.includes(x));
   if (!want.length) return; pfq.push(...want); pfTotal += want.length; pricePump();
+}
+async function priceOne(x) {
+  if (!x.tcgId) { const j = await getJSON("/api/cardimg?" + new URLSearchParams({ name: x.name, set: x.set || "", num: x.num || "", cat: x.cat || "" })).catch(() => null);
+    if (j && j.tcgId) { x.tcgId = j.tcgId; if (!x.img && j.img) { x.img = j.img; x.big = j.big; x.imgT = Date.now(); } } }
+  if (!x.tcgId) return false;
+  const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: x.tcgId, cond: x.cond || "Near Mint", print: x.var || "", jp: isJp(x) ? "1" : "" })).catch(() => null);
+  if (!j || !(j.market > 0)) return false;
+  x.mkt = j.market; x.mktEst = !!j.est; x.mktV = 2; x.pT = Date.now(); return true;
 }
 function pricePump() {
   while (pfRunning < 2 && pfq.length) {
     const x = pfq.shift(); pfRunning++;
-    fetch("/api/cardimg?" + new URLSearchParams({ name: x.name, set: x.set || "", num: x.num || "", cat: x.cat || "" }))
-      .then((r) => (r.ok ? r.json() : null)).catch(() => null)
-      .then((j) => {
-        pfRunning--; pfDone++; x.pT = Date.now();
-        if (j) { if (j.market > 0 && x.mkt == null) x.mkt = j.market; if (x.img === undefined || (x.img === null && j.img)) { x.img = j.img || null; x.big = j.big || null; x.tcgId = j.tcgId || x.tcgId || null; x.imgT = Date.now(); } }
-        const s = $("pfs"); if (s && !pending) s.textContent = pfq.length || pfRunning ? `Looking up TCGplayer prices: ${pfDone.toLocaleString()} of ${pfTotal.toLocaleString()}…` : "";
-        clearTimeout(saveT); saveT = setTimeout(store, 1500);
-        if (!pfq.length && !pfRunning) { pfTotal = pfDone = 0; store(); snap(); if (!detail && !editing) render(); }
-        else pricePump();
-      });
+    priceOne(x).then((ok) => {
+      pfRunning--; pfDone++; x.pTry = Date.now(); if (!ok && x.pT && x.mktV !== 2) { x.mkt = null; x.mktEst = false; }
+      const s = $("pfs"); if (s && !pending) s.textContent = pfq.length || pfRunning ? `Looking up TCGplayer prices: ${pfDone.toLocaleString()} of ${pfTotal.toLocaleString()}…` : "";
+      clearTimeout(saveT); saveT = setTimeout(store, 1500);
+      if (!pfq.length && !pfRunning) { pfTotal = pfDone = 0; store(); snap(); if (!detail && !editing) render(); }
+      else pricePump();
+    });
   }
 }
 
@@ -592,8 +601,9 @@ function saveForm(fm) {
     qty: Math.max(0, Math.round(num(d.qty) ?? 1)), cost: num(d.cost) || 0, ovr: num(d.ovr) || 0, pf: d.pf.trim(), notes: d.notes.trim() };
   if (!x.name) return;
   if (old && (old.name !== x.name || old.set !== x.set || old.num !== x.num)) { x.img = undefined; x.imgT = 0; }
+  if (old && x.pT && (old.cond !== x.cond || old.var !== x.var || old.name !== x.name)) { x.mktV = 0; x.pTry = 0; }
   if (old) Object.assign(old, x); else P.items.push(x);
-  editing = null; store(); snap(); render();
+  editing = null; store(); snap(); render(); fillPrices();
 }
 document.addEventListener("click", (e) => {
   const box = $("pf"); if (!box || !box.contains(e.target)) return;

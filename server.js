@@ -603,6 +603,44 @@ async function tpHistory(id) {
     }).filter((k) => !isNaN(k[0]) && k[4] > 0 && k[1] > 0),
   })).filter((s) => s.b.length);
 }
+// One card's TCGplayer market price for a given condition and printing (the latest week's market price from
+// TCGplayer's price history), for the Portfolio list. Each product's history is remembered for 24 hours.
+const tphCache = new Map();
+const tpCond = (c) => { c = String(c || "").toLowerCase(); return c.startsWith("near mint") ? "Near Mint" : c.startsWith("lightly") ? "Lightly Played" : c.startsWith("moderately") ? "Moderately Played" : c.startsWith("heavily") ? "Heavily Played" : c.startsWith("damaged") ? "Damaged" : ""; };
+const COND_STEP = { "Near Mint": 1, "Lightly Played": 0.85, "Moderately Played": 0.7, "Heavily Played": 0.55, "Damaged": 0.4 };
+app.get("/api/tcgprice", async (req, res) => {
+  const id = String(req.query.id || "").replace(/\D/g, "").slice(0, 12);
+  if (!id) return res.status(400).json({ error: "Missing TCGplayer product id" });
+  const cond = tpCond(req.query.cond) || "Near Mint", print = String(req.query.print || "").toLowerCase().trim(), jp = req.query.jp === "1";
+  try {
+    let rows = tphCache.get(id);
+    if (!rows || rows.exp < Date.now()) {
+      const saved = await kv.get("tph:" + id);
+      if (saved) rows = { exp: Date.now() + 864e5, list: saved };
+      else {
+        const hist = await tpHistory(id);
+        const list = hist.map((s) => { const b = s.b.slice().sort((x, y) => x[0] - y[0]).filter((k) => k[5] > 0); const last = b[b.length - 1]; return last ? { cond: tpCond(s.cond), print: String(s.print || ""), lang: String(s.lang || ""), m: last[5], t: last[0] } : null; }).filter(Boolean);
+        rows = { exp: Date.now() + 864e5, list }; await kv.set("tph:" + id, list, 864e2);
+      }
+      tphCache.set(id, rows); if (tphCache.size > 5000) tphCache.delete(tphCache.keys().next().value);
+    }
+    const langOk = (r) => !r.lang || (jp ? /japan/i.test(r.lang) : /english/i.test(r.lang));
+    let pool = rows.list.filter(langOk); if (!pool.length) pool = rows.list;
+    const prints = [...new Set(pool.map((r) => r.print.toLowerCase()))];
+    // the card's printing when TCGplayer has it; otherwise the printing with a Near Mint price (or any)
+    let use = print && prints.includes(print) ? print : null;
+    if (!use) use = (pool.find((r) => r.cond === "Near Mint") || pool[0] || {}).print?.toLowerCase() ?? null;
+    const same = pool.filter((r) => r.print.toLowerCase() === use);
+    const exact = same.find((r) => r.cond === cond);
+    if (exact) return res.json({ market: exact.m, cond, print: exact.print, est: false });
+    // no sales in this condition: estimate from Near Mint with the usual condition discount
+    const nm = same.find((r) => r.cond === "Near Mint");
+    if (nm) return res.json({ market: +(nm.m * COND_STEP[cond]).toFixed(2), cond, print: nm.print, est: true });
+    res.json({ market: null, cond, print: null, est: false });
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
 const tpCache = new Map();
 app.get("/api/tcgplayer", async (req, res) => {
   const id = String(req.query.id || "").replace(/\D/g, "").slice(0, 12);
