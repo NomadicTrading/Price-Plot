@@ -24,7 +24,7 @@
     return best;
   };
   /* keeps plain values two levels deep and drops long text, so thousands of cards stay a manageable size */
-  const KEEP = ["product_id", "product_name", "catalog_group", "catalog_category_name", "card_number", "rarity", "quantity", "grade_id", "grade_company", "grade_label", "price_override", "card_condition", "product_sub_type", "is_card", "watchlist", "__pf", "image_url"];
+  const KEEP = ["product_id", "product_name", "catalog_group", "catalog_category_name", "card_number", "rarity", "quantity", "grade_id", "grade_company", "grade_label", "price_override", "market_price", "card_condition", "product_sub_type", "is_card", "watchlist", "__pf", "image_url"];
   const pickKnown = (o) => { if (!o || !("product_name" in o)) return null; const r = {}; for (const k of KEEP) if (o[k] != null) r[k] = typeof o[k] === "string" ? o[k].slice(0, 300) : o[k]; return r; };
   const slim = (o, d) => { if (d === 0) { const k = pickKnown(o); if (k) return k; } const r = {}; for (const k in o) { const v = o[k];
     if (v == null || typeof v === "number" || typeof v === "boolean") r[k] = v;

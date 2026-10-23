@@ -110,7 +110,7 @@ function rowHTML(x) {
   if (editing === x.id) return `<div class="pr" data-id="${x.id}">${form(x)}</div>`;
   return `<div class="pr" data-id="${x.id}"><button class="prx" type="button" data-trash="${x.id}" tabindex="-1" aria-label="Remove ${esc(x.name)}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></button><div class="prc">${thumb(x)}<div class="pm"><b>${esc(x.name)}</b> <span class="cg ${g ? "gr" : ""}">${esc(g ? shortGrade(x.grade) : x.cond || "")}</span>
   <div class="mu">${meta}${view === "all" && x.pf ? ` · <i>${esc(x.pf)}</i>` : ""}</div>
-  <div class="mu">${view === "watch" ? "" : x.qty + " × "}${x.mkt == null && !(x.ovr > 0) ? "—" : money(unit(x))}${x.ovr > 0 ? ` <span title="Your own price, set in Collectr or here">(your price)</span>` : x.mkt == null ? (pfq.includes(x) || pfRunning ? " (looking up price…)" : " (no price)") : x.mktEst ? ` <span title="No recent ${esc(x.cond || "")} sales on TCGplayer, so this is the Near Mint price with the usual discount for this condition">(est.)</span>` : ""}${gain != null ? ` · <span style="color:var(${gain >= 0 ? "--up" : "--dn"})">${gain >= 0 ? "+" : "−"}${money(Math.abs(gain))}</span> vs. ${money(x.cost)} paid` : ""}</div>
+  <div class="mu">${view === "watch" ? "" : x.qty + " × "}${x.mkt == null && !(x.ovr > 0) ? "—" : money(unit(x))}${x.ovr > 0 ? ` <span title="Your own price, set in Collectr or here">(your price)</span>` : x.mkt == null ? (pfq.includes(x) || pfRunning ? " (looking up price…)" : " (no price)") : x.mktSrc === "collectr" ? ` <span title="Japanese card: price from Collectr">(Collectr)</span>` : x.mktEst ? ` <span title="No recent ${esc(x.cond || "")} sales on TCGplayer, so this is the Near Mint price with the usual discount for this condition">(est.)</span>` : ""}${gain != null ? ` · <span style="color:var(${gain >= 0 ? "--up" : "--dn"})">${gain >= 0 ? "+" : "−"}${money(Math.abs(gain))}</span> vs. ${money(x.cost)} paid` : ""}</div>
   ${x.notes ? `<div class="mu">${esc(x.notes)}</div>` : ""}</div>
   <div class="pv"><b>${x.mkt == null && !(x.ovr > 0) && x.qty ? "—" : money(line)}</b><div><button class="pill sm2" type="button" data-cmp="${x.id}">Comp</button><button class="pill sm2" type="button" data-ed="${x.id}">Edit</button></div></div></div></div>`;
 }
@@ -436,7 +436,7 @@ let pfq = [], pfRunning = 0, pfTotal = 0, pfDone = 0;
 // search (older versions, which ignored condition and printing) are looked up again. Prices from a Collectr file and
 // your own prices are left alone (the TCGplayer price is still fetched behind them, for when they are removed);
 // graded cards have no TCGplayer price.
-const needsPrice = (x, now) => x.qty > 0 && !isGraded(x) && x.mktV !== 2 && (x.mkt == null || x.pT) && !(x.pTry && now - x.pTry < 3 * 864e5);
+const needsPrice = (x, now) => x.qty > 0 && !isGraded(x) && x.mktSrc !== "collectr" && x.mktV !== 2 && (x.mkt == null || x.pT) && !(x.pTry && now - x.pTry < 3 * 864e5);
 function fillPrices() {
   const now = Date.now(), want = P.items.filter((x) => needsPrice(x, now) && !pfq.includes(x));
   if (!want.length) return; pfq.push(...want); pfTotal += want.length; pricePump();
@@ -498,7 +498,13 @@ function mapCollectr(o) {
     cost: n(pick(f, /^(average_?cost(_?paid)?|avg_?cost|purchase_?price|cost_?paid|cost_?basis|paid)$/)) || 0,
     qty: Math.max(1, Math.round(n(pick(f, /^(quantity|qty|count|owned_?quantity)$/)) || 1)),
     mkt: null, ovr: n(pick(f, /^price_?override$/)) || 0, watch: o.watchlist === true, added: today(), notes: "", sealed: o.is_card === false || undefined,
-    tcgId: tid && /^\d+$/.test(String(tid)) ? String(tid) : null, img: /^https:\/\//.test(String(img || "")) ? String(img) : undefined, src: "collectr-link" };
+    tcgId: tid && /^\d+$/.test(String(tid)) ? String(tid) : null, img: /^https:\/\//.test(String(img || "")) ? String(img) : undefined, src: "collectr-link",
+    ...jpPrice(o, name, f) };
+}
+// Japanese cards: TCGplayer seldom has comps for them, so they keep the price Collectr lists
+function jpPrice(o, name, f) {
+  const set = String(pick(f, /^(catalog_?group(_?name)?|group_?name|set_?name)$/) || ""), mp = parseFloat(o.market_price);
+  return (/japan/i.test(set) || /\(jp\)/i.test(String(name))) && mp > 0 ? { mkt: +mp.toFixed(2), mktSrc: "collectr" } : {};
 }
 function cimpReceive(d) {
   const items = (d.items || []).map(mapCollectr).filter(Boolean);
@@ -548,7 +554,7 @@ async function cimpAction(a) {
     if (a === "replace" && P.items.length && !(await modal({ title: only ? `Replace ${only}?` : "Replace your whole portfolio?", text: only ? `Every card in ${esc(only)} in Price Plot is removed first, then these Collectr cards are added. Your other portfolios aren't touched.` : "Every card in Price Plot is removed first, then your Collectr cards are added.", buttons: [{ label: "Replace", value: true, kind: "danger" }, { label: "Cancel", value: false }] }))) return;
     const items = cimp.items;
     if (a === "replace") P.items = only ? P.items.filter((x) => x.pf !== only).concat(items) : items;
-    else { const at = new Map(P.items.map((x, i) => [keyOf(x), i])); for (const x of items) { const k = keyOf(x); if (at.has(k)) { const o = P.items[at.get(k)]; o.qty = x.qty; if (x.cost) o.cost = x.cost; } else { at.set(k, P.items.length); P.items.push(x); } } }
+    else { const at = new Map(P.items.map((x, i) => [keyOf(x), i])); for (const x of items) { const k = keyOf(x); if (at.has(k)) { const o = P.items[at.get(k)]; o.qty = x.qty; if (x.cost) o.cost = x.cost; if (x.mktSrc === "collectr") { o.mkt = x.mkt; o.mktSrc = "collectr"; o.mktV = 0; } } else { at.set(k, P.items.length); P.items.push(x); } } }
     P.source = "Collectr link"; store(); cimp = null; view = "all"; shown = PAGE; render(); fillPrices();
     toast(`Imported ${items.length.toLocaleString()} entries from Collectr`);
   }
