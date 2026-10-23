@@ -122,7 +122,7 @@ function form(x) {
   ${f("grade", "Grade (blank if raw)", isGraded(x) ? x.grade : "", "text", 'placeholder="e.g. PSA 10"')}
   ${f("qty", "Quantity", x.qty ?? 1, "number", 'min="0" step="1" inputmode="numeric"')}${f("cost", "Paid each ($)", x.cost || "", "number", 'min="0" step="0.01" inputmode="decimal"')}
   ${f("ovr", "Your price each ($)", x.ovr || "", "number", `min="0" step="0.01" inputmode="decimal" placeholder="${x.mkt != null ? "Market " + money(x.mkt) : "Value per card"}"`)}
-  <label>Portfolio<input name="pf" list="pfl" value="${esc(x.pf || (view !== "all" && view !== "watch" ? view : ""))}"><datalist id="pfl">${pfs.map((p) => `<option value="${esc(p)}">`).join("")}</datalist></label>
+  ${pfField(x.pf || (view !== "all" && view !== "watch" ? view : ""), pfs)}
   ${f("notes", "Notes", x.notes)}</div>
   <div class="bar"><button class="pill on" type="submit">Save</button><button class="pill" type="button" data-cx="1">Cancel</button>${x.id ? `<button class="pill dl" type="button" data-del="${x.id}">Delete</button>` : ""}</div>
   <div class="sm">Leave “Your price” blank to use the market price from your last import.</div></form>`;
@@ -664,7 +664,7 @@ function scanOverlay() {
     body = `<div class="sc-sel"><img src="${esc(c.image)}" alt=""><div><b>${esc(c.name)}</b><div class="mu">${esc(c.set || "")} · ${esc(c.number)}${c.printedTotal ? "/" + esc(c.printedTotal) : ""}${c.year ? " · " + c.year : ""}</div><button type="button" class="cs-back" data-sc="back">‹ Pick a different card</button></div></div>
     <div class="ppm-b" style="margin:0 0 12px"><button type="button" class="ppm-x primary" data-sc="comps">See comps for this card</button></div><p class="mu" style="margin:0 0 6px"><b>Or add it to your portfolio:</b></p>
     <form id="scform"><div class="pg">
-      <label>Portfolio<input name="pf" list="scpfl" value="${esc(S.pf || pfs[0] || "")}" placeholder="Portfolio name"><datalist id="scpfl">${pfs.map((p) => `<option value="${esc(p)}">`).join("")}</datalist></label>
+      ${pfField(S.pf || pfs[0] || "", pfs)}
       <label>Condition<select name="cond">${CONDS.map((x) => `<option ${x === (S.cond || "Near Mint") ? "selected" : ""}>${x}</option>`).join("")}</select></label>
       <label>Printing<select name="var">${(() => { let pr = c.prints.length ? c.prints.slice() : ["Normal"]; const w = S.aiPrint; if (w && !pr.includes(w)) pr = [w, ...pr]; return pr.map((x) => `<option ${x === w ? "selected" : ""}>${esc(x)}</option>`).join(""); })()}</select></label>
       <label>Grade (blank if raw)<input name="grade" placeholder="e.g. PSA 10" value="${esc(S.aiGrade || "")}"></label>
@@ -715,6 +715,7 @@ async function scanFile(file) {
 }
 function scanAdd(fm) {
   const d = Object.fromEntries(new FormData(fm)), c = scan.cards[scan.pick];
+  if (d.pf === "__new") { d.pf = String(d.pfNew || "").trim(); if (!d.pf) { toast("Type a name for the new portfolio"); const i = fm.querySelector('[name="pfNew"]'); if (i) i.focus(); return; } } delete d.pfNew;
   const x = { id: uid(), pf: d.pf.trim(), cat: "Pokemon", set: c.set || "", name: c.name, num: /^\d+$/.test(c.number) && c.printedTotal ? `${c.number}/${c.printedTotal}` : c.number, rarity: c.rarity || "",
     var: d.var || "", grade: d.grade.trim() || "Ungraded", cond: d.cond, qty: Math.max(1, Math.round(num(d.qty) || 1)), cost: num(d.cost) || 0, mkt: null, ovr: 0, watch: false, added: today(), notes: "", img: c.image, big: c.big, imgT: Date.now(), tcgId: c.tcgId || undefined };
   const same = P.items.find((y) => y.qty > 0 && keyOf(y) === keyOf(x));
@@ -760,6 +761,7 @@ function comp(x) {
 }
 function saveForm(fm) {
   const d = Object.fromEntries(new FormData(fm)), id = fm.dataset.fid, old = P.items.find((x) => x.id === id);
+  if (d.pf === "__new") { d.pf = String(d.pfNew || "").trim(); if (!d.pf) { toast("Type a name for the new portfolio"); const i = fm.querySelector('[name="pfNew"]'); if (i) i.focus(); return; } } delete d.pfNew;
   const x = { ...(old || { id: uid(), cat: "Pokemon", rarity: "", mkt: null, watch: false, added: today() }),
     name: d.name.trim(), set: d.set.trim(), num: d.num.trim(), var: d.var.trim(), cond: d.cond, grade: d.grade.trim() || "Ungraded",
     qty: Math.max(0, Math.round(num(d.qty) ?? 1)), cost: num(d.cost) || 0, ovr: num(d.ovr) || 0, pf: d.pf.trim(), notes: d.notes.trim() };
@@ -819,3 +821,15 @@ document.addEventListener("submit", (e) => { if (e.target.classList?.contains("p
 render();
 setTimeout(fillPrices, 1500);
 })();
+
+// Portfolio picker for the add/edit forms: a list of existing portfolios plus "New portfolio…", which shows a name box
+function pfField(cur, pfs) {
+  const list = [...new Set([...(pfs || []), ...(cur ? [cur] : [])])].filter(Boolean), isNew = !list.length;
+  return `<label>Portfolio<select name="pf" data-pfsel>${list.map((p) => `<option value="${esc(p)}" ${p === cur ? "selected" : ""}>${esc(p)}</option>`).join("")}<option value="__new" ${isNew ? "selected" : ""}>+ New portfolio…</option></select></label>
+  <label class="pfnew" ${isNew ? "" : "hidden"}>New portfolio name<input name="pfNew" placeholder="e.g. Binder 2" autocomplete="off"></label>`;
+}
+document.addEventListener("change", (e) => {
+  const sel = e.target.closest && e.target.closest("select[data-pfsel]"); if (!sel) return;
+  const box = sel.closest("label").nextElementSibling; if (!box || !box.classList.contains("pfnew")) return;
+  box.hidden = sel.value !== "__new"; if (!box.hidden) box.querySelector("input").focus();
+});
