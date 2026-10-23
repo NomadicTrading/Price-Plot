@@ -554,7 +554,7 @@ async function cimpAction(a) {
   }
 }
 // The iCloud link of the shared "Send to Price Plot" Shortcut. Empty until it has been built and shared once.
-const SHORTCUT_URL = "https://www.icloud.com/shortcuts/184c8855876b4d3184419d10b68716f1";
+const SHORTCUT_URL = "https://www.icloud.com/shortcuts/73e3a76a379841a097a0df146ef1da7e";
 async function cimpSetup() {
   let code = "";
   try { code = await (await fetch("/collectr-bookmark.js", { cache: "no-store" })).text(); } catch {}
