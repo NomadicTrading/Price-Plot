@@ -563,10 +563,10 @@ async function cimpSetup() {
     <li><button type="button" class="ppm-x primary" data-s="copybm">Copy bookmark code</button></li>
     <li><b>Make a bookmark:</b> on this page, tap Chrome's <b>⋮</b> (or <b>•••</b>) menu → the <b>☆</b> star or <b>Add to Bookmarks</b>. On a computer, press <b>Ctrl+D</b> (<b>⌘D</b> on a Mac).</li>
     <li><b>Paste the URL code:</b> open <b>Bookmarks</b>, find the new one, and choose <b>Edit</b>. Name it <b>Send to Price Plot</b>, replace its URL with the code you copied, and save.</li>
-    <li><b>Send to bookmark:</b> open your Collectr showcase link in Chrome and scroll down to the end of your card list, or until all of the desired cards have been loaded on your screen. Tap the address bar, type <b>Send to</b>, and tap <b>Send to Price Plot</b> in the suggestions. On a computer you can also click it in the bookmarks bar.</li></ol>
+    <li><b>Send to bookmark:</b> open your Collectr showcase link in Chrome, choose your desired portfolio, and wait for it to load. Tap the address bar, type <b>Send to</b>, and tap <b>Send to Price Plot</b> in the suggestions. On a computer you can also click it in the bookmarks bar.</li></ol>
     ${bm ? `<p class="mu">On a computer, you can instead drag this to your bookmarks bar: <a class="pill" href="${esc(bm)}" onclick="return false">Send to Price Plot</a></p>` : ""}
     <p class="mu">If you sign into Chrome, a bookmark made on a computer shows up on your phone too.</p>`;
-  const use = `<p><b>Send to Shortcut:</b> open your Collectr showcase link in Safari and scroll down to the end of your card list, or until all of the desired cards have been loaded on your screen. Tap <b>Share</b> (the square with an arrow), scroll down the list and tap <b>Send to Price Plot</b>. If it isn't there, tap <b>Edit Actions…</b> at the bottom and turn it on. Price Plot opens with your cards to review.</p>`;
+  const use = `<p><b>Send to Shortcut:</b> open your Collectr showcase link in Safari, choose your desired portfolio, and wait for it to load. Tap <b>Share</b> (the square with an arrow), scroll down the list and tap <b>Send to Price Plot</b>. If it isn't there, tap <b>Edit Actions…</b> at the bottom and turn it on. Price Plot opens with your cards to review.</p>`;
   const build = `<ol>
     <li>Open the <b>Shortcuts</b> app, tap <b>+</b>, and name the shortcut <b>Send to Price Plot</b>.</li>
     <li>Add the action <b>Get Contents of URL</b> and set its address to <b>https://price-plot.onrender.com/collectr-bookmark.js</b>. This keeps the Shortcut up to date by itself.</li>
