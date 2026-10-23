@@ -744,9 +744,11 @@ async function sqFind(it, read) {
 
 // --- TCGplayer market price for each scanned card, for its chosen condition and printing ---
 const sqJp = (it, c) => /japan/i.test(c.set || "") || !!(it.ai && /japan/i.test(it.ai.language || ""));
+function sqPrints(it, c) { if (!c) return []; let pr = c.prints && c.prints.length ? c.prints.slice() : ["Normal"]; if (it.print && !pr.includes(it.print)) pr = [it.print, ...pr]; return pr; }
 const sqPxKey = (it) => [it.pick, it.cond || "Near Mint", it.print || ""].join("|");
 async function sqPrice(it) {
   const c = it.pick >= 0 ? it.cards[it.pick] : null; if (!c) return;
+  if (!it.print) it.print = sqPrints(it, c)[0];
   const k = sqPxKey(it); if (it.pxK === k) return;
   it.pxK = k; it.px = undefined; it.pxEst = false; it.pxCond = "";
   let px = null, est = false, cond = "";
@@ -783,7 +785,7 @@ function sqPfs() { return [...new Set(P.items.filter((x) => x.qty > 0 && x.pf).m
 function sqRowHTML(it) {
   const c = it.pick >= 0 ? it.cards[it.pick] : null, a = it.ai;
   const status = it.st === "wait" ? "Waiting…" : it.st === "reading" ? (it.note || "Reading the card…") : it.st === "error" ? it.err : it.err ? it.err : it.unsure ? "Check this match" : "";
-  const prints = c ? (() => { let pr = c.prints && c.prints.length ? c.prints.slice() : ["Normal"]; if (it.print && !pr.includes(it.print)) pr = [it.print, ...pr]; return pr; })() : [];
+  const prints = sqPrints(it, c);
   if (c && !it.print) it.print = prints[0];
   const busy = it.st === "wait" || it.st === "reading";
   return `<div class="sq-r${busy ? " busy" : ""}${it.st === "error" || (it.st === "ready" && !c) ? " bad" : ""}" id="sq-${it.id}">
@@ -808,6 +810,7 @@ function sqRow(it) {
   const el = $("sq-" + it.id); if (!el || sqView) return;
   if (el.contains(document.activeElement)) { el.dataset.stale = "1"; return; }
   el.outerHTML = sqRowHTML(it); sqBar();
+  if (it.pick >= 0 && it.pxK !== sqPxKey(it)) setTimeout(() => sqPrice(it), 0);
 }
 function sqCount() { const n = scanQ.filter((x) => x.st === "wait" || x.st === "reading").length, el = $("sq-n"); if (el) el.textContent = n ? `${n} still reading` : ""; }
 function sqBar() {
