@@ -532,7 +532,7 @@ async function gemini(model, parts, json, ms) {
 }
 // tries the main model, then the lighter one if the first is too slow or unavailable
 async function geminiAny(parts, json) {
-  try { return { ...(await gemini(AI_MODEL, parts, json, 25000)), model: AI_MODEL }; }
+  try { return { ...(await gemini(AI_MODEL, parts, json, 15000)), model: AI_MODEL }; }
   catch (e) { if (GEM_FALLBACK === AI_MODEL) throw e; const r = await gemini(GEM_FALLBACK, parts, json, 25000).catch((e2) => { throw new Error(`${AI_MODEL}: ${e.message}; ${GEM_FALLBACK}: ${e2.message}`); }); return { ...r, model: GEM_FALLBACK, note: `${AI_MODEL}: ${e.message}` }; }
 }
 const AI_DAILY = Number(process.env.SCAN_DAILY_LIMIT) || 500, AI_PER_IP_HOUR = Number(process.env.SCAN_PER_IP_HOUR) || 60;
