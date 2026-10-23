@@ -558,6 +558,15 @@ const SHORTCUT_URL = "https://www.icloud.com/shortcuts/73e3a76a379841a097a0df146
 async function cimpSetup() {
   let code = "";
   try { code = await (await fetch("/collectr-bookmark.js", { cache: "no-store" })).text(); } catch {}
+  const bm = code ? "javascript:" + encodeURIComponent(code.replace(/(^|\s)\/\*[\s\S]*?\*\//g, "$1").replace(/\n\s*/g, " ").trim()) : "";
+  const chrome = `<details style="margin-top:10px"${/Android|CriOS|Chrome/.test(navigator.userAgent) && !/Edg/.test(navigator.userAgent) ? " open" : ""}><summary><b>Using Chrome</b> (Android, iPhone or a computer)</summary>
+    <ol>
+    <li><button type="button" class="ppm-x primary" data-s="copybm">Copy bookmark code</button></li>
+    <li><b>Make a bookmark:</b> on this page, tap Chrome's <b>⋮</b> (or <b>•••</b>) menu → the <b>☆</b> star or <b>Add to Bookmarks</b>. On a computer, press <b>Ctrl+D</b> (<b>⌘D</b> on a Mac).</li>
+    <li><b>Put the code in it:</b> open <b>Bookmarks</b>, find the new one, and choose <b>Edit</b>. Name it <b>Send to Price Plot</b>, replace its URL with the code you copied, and save.</li>
+    <li><b>Use it:</b> open your Collectr showcase in Chrome and wait for the cards. Tap the address bar, type <b>Send to</b>, and tap <b>Send to Price Plot</b> in the suggestions. On a computer you can also click it in the bookmarks bar.</li></ol>
+    ${bm ? `<p class="mu">On a computer, you can instead drag this to your bookmarks bar: <a class="pill" href="${esc(bm)}" onclick="return false">Send to Price Plot</a></p>` : ""}
+    <p class="mu">If you sign into Chrome, a bookmark made on a computer shows up on your phone too.</p></details>`;
   const use = `<p><b>Each time:</b> open your Collectr showcase link in Safari and wait for your cards to show. Tap <b>Share</b> (the square with an arrow), scroll down the list and tap <b>Send to Price Plot</b>. If it isn't there, tap <b>Edit Actions…</b> at the bottom and turn it on. Price Plot opens with your cards to review.</p>`;
   const build = `<ol>
     <li>Open the <b>Shortcuts</b> app, tap <b>+</b>, and name the shortcut <b>Send to Price Plot</b>.</li>
@@ -570,11 +579,12 @@ async function cimpSetup() {
     <p class="mu">To share it: in Shortcuts, hold the shortcut → <b>Share</b> → <b>Copy iCloud Link</b>, and send that link to Claude to update the Install button.</p>`;
   const ov = document.createElement("div"); ov.className = "ppm-ov";
   ov.innerHTML = `<div class="ppm cimp-s" role="dialog" aria-modal="true" aria-labelledby="cs-t"><h3 id="cs-t">Import from a Collectr link</h3>
-  <p class="mu">Works without Collectr PRO. Uses an iPhone Shortcut that reads your showcase in Safari.</p>
+  <p class="mu">Works without Collectr PRO. On iPhone with Safari, use the Shortcut. On Android or a computer, or with Chrome on iPhone, use a bookmark (below).</p>
   ${SHORTCUT_URL ? `<p><b>Once:</b></p><a class="ppm-x primary" style="display:flex;align-items:center;justify-content:center;text-decoration:none" href="${esc(SHORTCUT_URL)}" target="_blank" rel="noopener">Install the Shortcut</a>
     <p class="mu" style="margin-top:8px">Tap <b>Add Shortcut</b>. Then in <b>Settings → Apps → Shortcuts → Advanced</b>, turn on <b>Allow Running Scripts</b>.</p>${use}
     <details style="margin-top:8px"><summary class="mu">Build the Shortcut yourself instead</summary>${build}</details>`
   : `<p><b>Once — build the Shortcut</b> (about 2 minutes):</p>${build}${use}`}
+  ${chrome}
   <p class="mu" style="margin-top:12px">Using the Price Plot home-screen app? After Safari shows your cards, tap “Send to my Price Plot app” there for a code, then enter it here:</p>
   <div class="cimp-c"><input id="cs-code" maxlength="6" placeholder="Code" autocapitalize="characters" autocomplete="off" aria-label="Import code"><button type="button" class="ppm-x" data-s="code">Get cards</button></div>
   <div class="ppm-b"><button type="button" class="ppm-x plain" data-s="close">Close</button></div></div>`;
@@ -582,6 +592,7 @@ async function cimpSetup() {
   ov.addEventListener("click", async (e) => { const s = e.target.closest("[data-s]")?.dataset.s; if (!s) { if (e.target === ov) close(); return; }
     if (s === "close") close();
     else if (s === "copy") { if (!code) return toast("Couldn't load the code. Check your connection."); try { await navigator.clipboard.writeText(code); e.target.textContent = "Copied ✓"; } catch { const t = document.createElement("textarea"); t.value = code; t.style.cssText = "width:100%;height:90px;font:11px monospace"; e.target.replaceWith(t); t.select(); toast("Copy the code from the box."); } }
+    else if (s === "copybm") { if (!bm) return toast("Couldn't load the code. Check your connection."); try { await navigator.clipboard.writeText(bm); e.target.textContent = "Copied ✓"; } catch { const t = document.createElement("textarea"); t.value = bm; t.style.cssText = "width:100%;height:90px;font:11px monospace"; e.target.replaceWith(t); t.select(); toast("Copy the code from the box."); } }
     else if (s === "code") { const c = ov.querySelector("#cs-code").value.trim(); if (!c) return;
       try { const r = await fetch("/api/handoff/" + encodeURIComponent(c)); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); close(); if (j.raw) cimpReceive(j.raw); else { cimp = { status: "ready", items: j.items, raw: { count: j.items.length } }; render(); } scrollTo(0, 0); }
       catch (err) { toast(err.message); } } });

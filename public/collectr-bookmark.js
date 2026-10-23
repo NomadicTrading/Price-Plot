@@ -8,7 +8,7 @@
 (() => {
   const PP = "https://price-plot.onrender.com";
   const done = (msg) => { try { if (typeof completion === "function") completion(msg); } catch (e) {} };
-  if (!/(^|\.)getcollectr\.com$/.test(location.hostname)) { alert("Open your Collectr showcase link in Safari first, then use Send to Price Plot from the Share button."); done("not a Collectr page"); return; }
+  if (!/(^|\.)getcollectr\.com$/.test(location.hostname)) { alert("Open your Collectr showcase link first, wait for your cards to show, then run Send to Price Plot."); done("not a Collectr page"); return; }
   if (window.__ppBusy) { done("already running"); return; } window.__ppBusy = true;
   const box = document.createElement("div");
   box.style.cssText = "position:fixed;left:12px;right:12px;bottom:90px;z-index:2147483647;background:#0f2747;color:#fff;font:600 15px/1.4 -apple-system,Helvetica,Arial,sans-serif;padding:14px 16px;border-radius:14px;box-shadow:0 6px 24px rgba(0,0,0,.35)";
