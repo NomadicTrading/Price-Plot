@@ -631,7 +631,9 @@ function prepImage(file) {
       c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc); const g = c.getContext("2d"); g.drawImage(img, 0, 0, c.width, c.height);
       const d = g.getImageData(0, 0, c.width, c.height), p = d.data;
       for (let i = 0; i < p.length; i += 4) { let v = 0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2]; v = Math.max(0, Math.min(255, (v - 128) * 1.5 + 128)); p[i] = p[i + 1] = p[i + 2] = v; }
-      g.putImageData(d, 0, 0); URL.revokeObjectURL(url); ok({ canvas: c, preview: c.toDataURL("image/jpeg", 0.7) }); };
+      const color = document.createElement("canvas"), s2 = Math.min(1, 1280 / Math.max(img.width, img.height)); color.width = Math.round(img.width * s2); color.height = Math.round(img.height * s2);
+      color.getContext("2d").drawImage(img, 0, 0, color.width, color.height); const photo = color.toDataURL("image/jpeg", 0.85);
+      g.putImageData(d, 0, 0); URL.revokeObjectURL(url); ok({ canvas: c, preview: photo, photo }); };
     img.onerror = () => no(new Error("couldn't open that photo")); img.src = url;
   });
 }
@@ -664,13 +666,14 @@ function scanOverlay() {
     <form id="scform"><div class="pg">
       <label>Portfolio<input name="pf" list="scpfl" value="${esc(S.pf || pfs[0] || "")}" placeholder="Portfolio name"><datalist id="scpfl">${pfs.map((p) => `<option value="${esc(p)}">`).join("")}</datalist></label>
       <label>Condition<select name="cond">${CONDS.map((x) => `<option ${x === (S.cond || "Near Mint") ? "selected" : ""}>${x}</option>`).join("")}</select></label>
-      <label>Printing<select name="var">${(c.prints.length ? c.prints : ["Normal"]).map((x) => `<option>${esc(x)}</option>`).join("")}</select></label>
-      <label>Grade (blank if raw)<input name="grade" placeholder="e.g. PSA 10"></label>
+      <label>Printing<select name="var">${(() => { let pr = c.prints.length ? c.prints.slice() : ["Normal"]; const w = S.aiPrint; if (w && !pr.includes(w)) pr = [w, ...pr]; return pr.map((x) => `<option ${x === w ? "selected" : ""}>${esc(x)}</option>`).join(""); })()}</select></label>
+      <label>Grade (blank if raw)<input name="grade" placeholder="e.g. PSA 10" value="${esc(S.aiGrade || "")}"></label>
       <label>Quantity<input name="qty" type="number" min="1" step="1" value="1" inputmode="numeric"></label>
       <label>Paid each ($)<input name="cost" type="number" min="0" step="0.01" inputmode="decimal"></label></div>
       <div class="ppm-b"><button type="submit" class="ppm-x">Add to portfolio</button></div></form>`; }
-  else { const r = S.read || {};
-    body = `${S.cards.length ? `<p class="mu">Tap your card:</p><div class="sc-grid">${S.cards.map((c, i) => `<button type="button" data-sp="${i}"><img src="${esc(c.image)}" alt="" loading="lazy"><b>${esc(c.name)}</b><span>${esc(c.set || "")} · ${esc(c.number)}${c.printedTotal ? "/" + esc(c.printedTotal) : ""}</span></button>`).join("")}</div>`
+  else { const r = S.read || {}, a = S.ai;
+    const saw = a && a.found !== false ? [a.name_english && a.name && a.name_english !== a.name ? `${a.name} (${a.name_english})` : a.name || a.name_english, a.number && (a.number + (a.set_total ? "/" + a.set_total : "")), a.set_name, a.language && a.language !== "English" ? a.language : "", a.edition && a.edition !== "Unlimited" ? a.edition : "", a.finish && a.finish !== "unknown" ? a.finish : "", a.stamp, S.aiGrade].filter(Boolean).map(esc).join(" · ") : "";
+    body = `${saw ? `<p class="sc-saw"><span class="mu">Read:</span> ${saw}</p>` : ""}${S.cards.length ? `<p class="mu">Tap your card:</p><div class="sc-grid">${S.cards.map((c, i) => `<button type="button" data-sp="${i}"${a && i === 0 ? ' class="best"' : ""}>${a && i === 0 ? `<i class="sc-best">Best match</i>` : ""}<img src="${esc(c.image)}" alt="" loading="lazy"><b>${esc(c.name)}</b><span>${esc(c.set || "")} · ${esc(c.number)}${c.printedTotal ? "/" + esc(c.printedTotal) : ""}</span></button>`).join("")}</div>`
       : S.err ? `<p><b>${esc(S.err)}</b> Tap Search to try again, or fix the name and number first.</p>` : `<p><b>No matching cards found.</b> Check the name and number below and search again.</p>`}
       <form id="scsearch" class="cimp-c" style="margin-top:12px"><input name="q" value="${esc([r.name, r.n && (r.n + (r.d ? "/" + r.d : ""))].filter(Boolean).join(" "))}" placeholder="Name and number, e.g. Charizard 4/102" aria-label="Card name and number" style="letter-spacing:0;text-transform:none"><button type="submit" class="ppm-x">Search</button></form>`; }
   ov.innerHTML = `<div class="ppm" role="dialog" aria-modal="true" aria-labelledby="sc-t"><h3 id="sc-t">Scan a card</h3>
@@ -686,6 +689,17 @@ async function scanFind(read) {
 async function scanFile(file) {
   scan = { status: "reading", cards: [], pf: scan && scan.pf, cond: scan && scan.cond }; scanOverlay();
   try { const im = await prepImage(file); scan.preview = im.preview; scanOverlay();
+    // the AI reads the whole card (edition, holo, language, stamps); text reading is the fallback when it isn't set up
+    try {
+      const r = await fetch("/api/scan-ai", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: im.photo }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) { const a = j.read || {};
+        scan.ai = a; scan.aiPrint = j.print || ""; scan.aiGrade = j.grade || "";
+        scan.read = { name: a.name_english || a.name || "", n: a.number || "", d: a.set_total || "" };
+        scan.cards = j.cards || []; scan.status = "list"; scan.err = a.found === false ? "Couldn't find a card in that photo. Try again closer, with less glare." : ""; scanOverlay(); return; }
+      if (!j.off) throw new Error(j.error || "AI scan failed");
+    } catch (e) { if (!/AI scan failed|off/.test(e.message)) console.warn(e); }
+    scan.ai = null; scan.aiPrint = ""; scan.aiGrade = "";
     const w = await loadOcr(); const { data } = await w.recognize(im.canvas);
     await scanFind(parseCardText(data.text));
   } catch (e) { scan.status = "error"; scan.msg = "Couldn't read the card: " + e.message; scanOverlay(); }

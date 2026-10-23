@@ -457,16 +457,11 @@ async function tcgScan(q) {
       prints: ["Normal", "Holofoil", "Reverse Holofoil", "1st Edition", "1st Edition Holofoil", "Unlimited", "Unlimited Holofoil"] };
   });
 }
-app.get("/api/scan-match", async (req, res) => {
-  const name = String(req.query.name || "").replace(/["\\*:()]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
-  const n = String(req.query.n || "").replace(/[^a-z0-9]/gi, "").slice(0, 8), d = String(req.query.d || "").replace(/\D/g, "").slice(0, 4);
-  if (!name && !n) return res.status(400).json({ error: "Nothing to look up" });
-  const key = [name.toLowerCase(), n, d].join("|"), hit = scanCache.get(key);
-  if (hit && hit.exp > Date.now()) return res.json(hit.data);
+// Finds candidate cards for a name and number: pokemontcg.io first, TCGplayer's search as a second source.
+async function matchCards(name, n, d, opts = {}) {
   const nn = /^\d+$/.test(n) ? String(+n) : n, words = norm(name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length > 1);
-  const errors = [];
-  let cards = [];
-  try {
+  const errors = []; let cards = [];
+  if (!opts.tcgOnly) try {
     if (nn && d) cards = await ptcg(`number:${nn} set.printedTotal:${d}`, 30);
     if (!cards.length && nn && words.length) cards = await ptcg(`number:${nn} name:"${words[0]}*"`, 30);
     if (!cards.length && !(nn && d) && words.length) cards = await ptcg(`name:"${words.slice(0, 3).join(" ")}*"`, 40);
@@ -477,21 +472,104 @@ app.get("/api/scan-match", async (req, res) => {
     image: c.images?.small, big: c.images?.large, rarity: c.rarity || "", tcgId: null,
     prints: Object.keys(c.tcgplayer?.prices || {}).map((k) => ({ normal: "Normal", holofoil: "Holofoil", reverseHolofoil: "Reverse Holofoil", "1stEditionHolofoil": "1st Edition Holofoil", "1stEditionNormal": "1st Edition", unlimitedHolofoil: "Unlimited Holofoil" }[k] || k)),
   }));
-  // nothing (or the first source failed): ask TCGplayer, by number first since names are often misread
-  if (!list.length) {
+  // TCGplayer too when nothing was found, or when the printing matters (1st Edition, Shadowless, Japanese, stamps):
+  // it lists those as separate products
+  if (!list.length || opts.alsoTcg) {
     try {
-      if (nn && d) list = await tcgScan(`${nn}/${d}`);
-      if (!list.length && words.length) list = await tcgScan(words.slice(0, 3).join(" ") + (nn ? " " + nn : ""));
+      let t = [];
+      if (opts.tcgQuery) t = await tcgScan(opts.tcgQuery);
+      if (!t.length && nn && d) t = await tcgScan(`${words.slice(0, 2).join(" ")} ${nn}/${d}`.trim());
+      if (!t.length && nn && d) t = await tcgScan(`${nn}/${d}`);
+      if (!t.length && words.length) t = await tcgScan(words.slice(0, 3).join(" ") + (nn ? " " + nn : ""));
+      const seen = new Set(list.map((c) => (c.name + "|" + c.set + "|" + c.number).toLowerCase()));
+      for (const c of t) { const k = (c.name + "|" + c.set + "|" + c.number).toLowerCase(); if (!seen.has(k)) { seen.add(k); list.push(c); } }
     } catch (e) { errors.push("TCGplayer: " + e.message); }
   }
-  // the number and set size outweigh the name, which the camera often misreads
-  const score = (c) => { const cw = norm(c.name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/); let sc = words.filter((w) => cw.includes(w)).length;
-    const cn = String(c.number || "").toLowerCase().replace(/^0+(?=\d)/, ""); if (nn && cn === nn.toLowerCase()) sc += 5; if (d && String(c.printedTotal) === d) sc += 5; return sc; };
-  list = list.map((c) => ({ c, s: score(c) })).sort((a, b) => b.s - a.s).slice(0, 8).map(({ c }) => c);
+  return { list, errors, nn, words };
+}
+const scoreCard = (c, nn, d, words, extra) => {
+  const cw = norm(c.name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/); let sc = words.filter((w) => cw.includes(w)).length;
+  const cn = String(c.number || "").toLowerCase().replace(/^0+(?=\d)/, ""); if (nn && cn === nn.toLowerCase()) sc += 5; if (d && String(c.printedTotal) === d) sc += 5;
+  return sc + (extra ? extra(c) : 0);
+};
+app.get("/api/scan-match", async (req, res) => {
+  const name = String(req.query.name || "").replace(/["\\*:()]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+  const n = String(req.query.n || "").replace(/[^a-z0-9]/gi, "").slice(0, 8), d = String(req.query.d || "").replace(/\D/g, "").slice(0, 4);
+  if (!name && !n) return res.status(400).json({ error: "Nothing to look up" });
+  const key = [name.toLowerCase(), n, d].join("|"), hit = scanCache.get(key);
+  if (hit && hit.exp > Date.now()) return res.json(hit.data);
+  const { list: all, errors, nn, words } = await matchCards(name, n, d);
+  const list = all.map((c) => ({ c, s: scoreCard(c, nn, d, words) })).sort((a, b) => b.s - a.s).slice(0, 8).map(({ c }) => c);
   if (!list.length && errors.length) return res.status(502).json({ error: "The card lookup didn't answer. Try again in a moment.", detail: errors });
   const data = { cards: list };
   if (list.length) { scanCache.set(key, { exp: Date.now() + 864e5, data }); if (scanCache.size > 2000) scanCache.delete(scanCache.keys().next().value); }
   res.json(data);
+});
+
+// AI card recognition: a vision model reads the whole photo (name, number, set, edition stamp, Shadowless, holo or
+// reverse holo, language, promo stamps, graded slab) and Price Plot matches that to the exact product and printing.
+// Needs ANTHROPIC_API_KEY in Render. Costs a fraction of a cent per scan, so it is rate-limited.
+const AI_KEY = process.env.ANTHROPIC_API_KEY, AI_MODEL = process.env.SCAN_MODEL || "claude-haiku-5-5";
+const AI_DAILY = Number(process.env.SCAN_DAILY_LIMIT) || 500, AI_PER_IP_HOUR = Number(process.env.SCAN_PER_IP_HOUR) || 60;
+const aiUse = { day: "", n: 0, ip: new Map() };
+const AI_PROMPT = `You identify collectible trading cards from a phone photo. Look closely at the card, including small print.
+Reply with ONLY a JSON object, no other text:
+{"found":true|false,"game":"Pokemon"|"Magic"|"Yu-Gi-Oh"|"One Piece"|"other","language":"English"|"Japanese"|"other",
+"name":"card name exactly as printed","name_english":"English name of the card (translate if not English)",
+"number":"collector number before the slash, e.g. 49 or 199 or SWSH050 or TG05","set_total":"number after the slash, or null",
+"set_code":"set code printed on the card if any (e.g. SV2a, PAL, SWSH), or null","set_name":"your best guess of the set name, e.g. Team Rocket, Base Set, Scarlet & Violet 151",
+"year":"copyright year on the card or null","edition":"1st Edition" if the 1st Edition stamp is present, "Shadowless" if it is an early Base Set card without the drop shadow on the right of the art box, otherwise "Unlimited" or null,
+"finish":"holo" (the artwork itself is foil) | "reverse holo" (the card body is foil but the artwork is not) | "non-holo" | "unknown",
+"stamp":"any promo, prerelease, staff, set-logo or event stamp text, or null","graded":{"company":"PSA|BGS|CGC|TAG|SGC","grade":"10"} or null if not in a grading slab,
+"confidence":0.0 to 1.0,"notes":"short note on anything uncertain"}`;
+app.post("/api/scan-ai", express.json({ limit: "4mb" }), async (req, res) => {
+  if (!AI_KEY) return res.status(503).json({ error: "AI scanning isn't set up (no ANTHROPIC_API_KEY)", off: true });
+  const img = String(req.body?.image || "").replace(/^data:image\/\w+;base64,/, "");
+  if (!img || img.length > 5.5e6) return res.status(400).json({ error: "Missing or too large photo" });
+  const today = new Date().toISOString().slice(0, 10), ip = String(req.headers["x-forwarded-for"] || req.ip || "").split(",")[0].trim(), hour = Math.floor(Date.now() / 3600e3);
+  if (aiUse.day !== today) { aiUse.day = today; aiUse.n = 0; aiUse.ip.clear(); }
+  const per = aiUse.ip.get(ip); const cnt = per && per.h === hour ? per.n : 0;
+  if (aiUse.n >= AI_DAILY) return res.status(429).json({ error: "Today's AI scan limit was reached; scanning falls back to reading text until tomorrow", off: true });
+  if (cnt >= AI_PER_IP_HOUR) return res.status(429).json({ error: "Too many scans this hour; try again a little later", off: true });
+  aiUse.n++; aiUse.ip.set(ip, { h: hour, n: cnt + 1 });
+  let read;
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST", signal: AbortSignal.timeout(45000),
+      headers: { "x-api-key": AI_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({ model: AI_MODEL, max_tokens: 1500, messages: [{ role: "user", content: [
+        { type: "image", source: { type: "base64", media_type: "image/jpeg", data: img } }, { type: "text", text: AI_PROMPT }] }] }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error?.message || "AI service returned " + r.status);
+    const text = (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+    const m = /\{[\s\S]*\}/.exec(text); if (!m) throw new Error("the AI answer couldn't be read");
+    read = JSON.parse(m[0]);
+  } catch (e) {
+    console.error("scan-ai:", e.message);
+    return res.status(502).json({ error: "AI scan failed: " + e.message, off: true });
+  }
+  if (!read || read.found === false) return res.json({ read: read || {}, cards: [] });
+  const name = String(read.name_english || read.name || "").slice(0, 60), n = String(read.number || "").replace(/[^a-z0-9]/gi, "").slice(0, 8);
+  const d = String(read.set_total || "").replace(/\D/g, "").slice(0, 4), jp = /japan/i.test(read.language || ""), ed = String(read.edition || ""), stamp = String(read.stamp || "");
+  const special = jp || /1st|shadowless/i.test(ed) || !!stamp;
+  const { list: all, errors, nn, words } = await matchCards(name, n, d, { alsoTcg: special,
+    tcgQuery: [name, /shadowless/i.test(ed) ? "Shadowless" : "", /1st/i.test(ed) ? "1st Edition" : "", nn && d ? `${nn}/${d}` : nn].filter(Boolean).join(" ") });
+  const setGuess = String(read.set_name || "");
+  const extra = (c) => {
+    let x = setGuess ? sameWords(setGuess, c.set || "") * 4 : 0; const cs = String(c.set || "");
+    if (/shadowless/i.test(ed)) x += /shadowless/i.test(cs) ? 4 : -2; else if (/shadowless/i.test(cs)) x -= 3;
+    if (/1st/i.test(ed) && /1st edition/i.test(cs + " " + c.name)) x += 3;
+    if (jp) x += /japan/i.test(cs) ? 4 : -4; else if (/japan/i.test(cs)) x -= 4;
+    if (stamp && /promo|prerelease|staff|stamp/i.test(c.name + " " + cs + " " + (c.rarity || ""))) x += 2;
+    return x;
+  };
+  const list = all.map((c) => ({ c, s: scoreCard(c, nn, d, words, extra) })).sort((a, b) => b.s - a.s).slice(0, 8).map(({ c }) => c);
+  // the printing to preselect, from what the photo shows
+  const fin = String(read.finish || ""), want = /1st/i.test(ed) ? (/^holo$/i.test(fin) ? "1st Edition Holofoil" : "1st Edition") : /reverse/i.test(fin) ? "Reverse Holofoil" : /^holo$/i.test(fin) ? (/unlimited/i.test(ed) ? "Unlimited Holofoil" : "Holofoil") : /non/i.test(fin) ? "Normal" : "";
+  const g = read.graded && read.graded.company ? `${String(read.graded.company).toUpperCase()} ${read.graded.grade || ""}`.trim() : "";
+  if (!list.length && errors.length) return res.status(502).json({ error: "The card lookup didn't answer. Try again in a moment.", read });
+  res.json({ read, cards: list, print: want, grade: g });
 });
 
 // TCGplayer market prices by condition and printing, with up to 1 year of daily history, via JustTCG
