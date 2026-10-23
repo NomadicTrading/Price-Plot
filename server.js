@@ -559,10 +559,12 @@ app.get("/api/scan-ai/check", async (req, res) => {
   const tests = {};
   let photo = null;
   if (req.query.image) try { const ir = await fetch("https://images.pokemontcg.io/base5/49.png", { signal: AbortSignal.timeout(15000) }); photo = Buffer.from(await ir.arrayBuffer()).toString("base64"); } catch (e) { tests.photo = "couldn't load the sample card: " + e.message; }
-  for (const m of [...new Set([AI_MODEL, GEM_FALLBACK])]) {
-    try { const g = await gemini(m, [{ text: "Reply with the word ok." }], false, 25000); tests[m] = { ok: true, seconds: g.secs, said: g.text.slice(0, 20) }; }
+  // ?model=… tests just that one model (a photo test of both can outlast the browser's patience)
+  const models = req.query.model ? [String(req.query.model).replace(/[^a-z0-9.\-]/gi, "").slice(0, 60)] : [...new Set([AI_MODEL, GEM_FALLBACK])];
+  for (const m of models) {
+    if (!photo) try { const g = await gemini(m, [{ text: "Reply with the word ok." }], false, 25000); tests[m] = { ok: true, seconds: g.secs, said: g.text.slice(0, 20) }; }
     catch (e) { tests[m] = { ok: false, error: e.message }; }
-    if (photo) try { const g = await gemini(m, [{ inline_data: { mime_type: "image/png", data: photo } }, { text: AI_PROMPT }], true, 60000); tests[m + " with a card photo"] = { ok: true, seconds: g.secs, read: g.text.slice(0, 600) }; }
+    if (photo) try { const g = await gemini(m, [{ inline_data: { mime_type: "image/png", data: photo } }, { text: AI_PROMPT }], true, 50000); tests[m + " with a card photo"] = { ok: true, seconds: g.secs, read: g.text.slice(0, 600) }; }
     catch (e) { tests[m + " with a card photo"] = { ok: false, error: e.message }; }
   }
   res.json({ ...out, ok: Object.values(tests).some((t) => t.ok), tests });
