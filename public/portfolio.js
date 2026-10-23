@@ -202,7 +202,11 @@ const selGrade = (sel) => { const m = /^(PSA|BGS|CGC|TAG|SGC|ACE)\s(\d+(?:\.5)?)
 const ownSel = (x) => (gradeOf(x) ? shortGrade(x.grade) : RAWC.includes(x.cond) ? x.cond : "Near Mint");
 const selLabel = (sel) => COND_CODE[sel] || sel;
 function condOptions(x) { const o = [...RAWC]; for (const g of [ownSel(x), "PSA 10", "PSA 9", "CGC 10", "TAG 10"]) if (!o.includes(g)) o.push(g); return o; }
-function queryFor(x, sel) { const gi = selGrade(sel); return [x.name.replace(/\s*\((?:\d+|jp|japanese)\)\s*$/i, ""), x.num, gi ? gi.g + " " + gi.n : ""].filter(Boolean).join(" "); }
+// eBay sellers write the card's name and its own number ("Arceus VSTAR GG70"), not Collectr's notes ("(Secret)")
+// or gallery numbers in full ("GG70/GG70"), so those are trimmed before searching
+const ebName = (n) => String(n || "").replace(/\s*\([^)]*\)/g, " ").replace(/\s+-\s+\S+$/, "").replace(/\s+/g, " ").trim();
+const ebNum = (n) => { n = String(n || "").trim(); const m = /^([a-z]{1,4}\d{1,3}[a-z]?)\s*\/\s*[a-z]{1,4}\d{1,3}$/i.exec(n); return m ? m[1] : n; };
+function queryFor(x, sel) { const gi = selGrade(sel); return [ebName(x.name), ebNum(x.num), gi ? gi.g + " " + gi.n : ""].filter(Boolean).join(" "); }
 function loadPart(key, make) { if (!compsCache.has(key)) { const p = make(); compsCache.set(key, p); p.catch(() => compsCache.delete(key)); } return compsCache.get(key); }
 async function loadComps(x, sel) {
   const gi = selGrade(sel), grader = gi ? (["PSA", "BGS", "CGC", "TAG"].includes(gi.g) ? gi.g : "all") : "raw", out = { ebay: null, tcg: null, warn: [] };
@@ -213,7 +217,7 @@ async function loadComps(x, sel) {
     return getJSON("/api/tcgplayer?id=" + encodeURIComponent(x.tcgId));
   });
   const [e, t] = await Promise.allSettled([eb, tp]);
-  if (e.status === "fulfilled") out.ebay = e.value; else out.warn.push("eBay: " + e.reason.message + ".");
+  if (e.status === "fulfilled") { out.ebay = e.value; for (const w of e.value.warnings || []) out.warn.push("eBay: " + w); } else out.warn.push("eBay: " + e.reason.message + ".");
   if (t.status === "fulfilled") out.tcg = t.value; else out.warn.push("TCGplayer: " + t.reason.message + ".");
   return out;
 }

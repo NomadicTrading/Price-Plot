@@ -258,7 +258,12 @@ const JUNK = /\b(lots?|bundle|proxy|proxies|custom|replica|reprint|fake|digital|
 function parseQuery(raw) {
   const parts = String(raw).trim().split(/\s+/).filter(Boolean);
   const ex = parts.filter((w) => w.length > 1 && w[0] === "-").map((w) => norm(w.slice(1)));
-  const search = parts.filter((w) => !(w.length > 1 && w[0] === "-")).join(" ");
+  // Collectr-style names carry notes like "(Secret)" or "(Full Art)" that eBay titles rarely repeat, and gallery
+  // numbers like "GG70/GG70" or "TG05/TG30" are written on eBay as just "GG70": search by the card's own code
+  const search = parts.filter((w) => !(w.length > 1 && w[0] === "-")).join(" ")
+    .replace(/\((?:secret|full art|alt(?:ernate)? art|special illustration|illustration rare|hyper rare|gold|rainbow|shiny|promo|holo|reverse holo|[^)]*rare[^)]*)\)/gi, " ")
+    .replace(/\b([a-z]{1,4}\d{1,3}[a-z]?)\s*\/\s*[a-z]{1,4}\d{1,3}\b/gi, "$1")
+    .replace(/\s+/g, " ").trim();
   let num = null;
   const rest = search.replace(/(\d{1,3})\s*\/\s*(\d{1,3})/, (_, n, d) => ((num = { n: String(+n), d: String(+d) }), " "));
   const words = norm(rest).split(/\s+/).map((w) => w.replace(/[^a-z0-9]/g, "")).filter((w) => w && !STOP.has(w) && (w.length > 1 || /\d/.test(w)));
@@ -391,9 +396,11 @@ app.get("/api/tcg", async (req, res) => {
   const hit = tcgCache.get(base);
   if (hit && hit.exp > Date.now()) return res.json(hit.data);
   const tokens = norm(pq.search.replace(/\d{1,3}\s*\/\s*\d{1,3}/, " ")).split(/\s+/).map((w) => w.replace(/[^a-z0-9]/g, "")).filter((w) => w && !STOP.has(w) && !NAME_SKIP.has(w) && !/^\d+$/.test(w));
+  let ptcgErr = null;
   try {
     let cards = [];
     // try the whole name first, then drop words from the end until something matches
+    try {
     for (let k = Math.min(tokens.length, 4); k >= 1 && !cards.length; k--) {
       const use = tokens.slice(0, k);
       const q = [`name:"${use.join(" ")}"`, ...(pq.num ? [`number:${pq.num.n}`] : [])].join(" ");
@@ -416,6 +423,25 @@ app.get("/api/tcg", async (req, res) => {
         const w = norm(c.name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/);
         return use.every((t) => w.includes(t));
       });
+    }
+    } catch (e) { ptcgErr = e; cards = []; console.error("tcg search (pokemontcg.io):", e.message); }
+    // pokemontcg.io is often slow or down, and it misses some cards: then use TCGplayer's own search instead
+    if (!cards.length) {
+      const tq = linkWords.join(" ").trim() || pq.search;
+      let tc = [];
+      try { tc = await tcgScan(pq.num ? `${tq.replace(/\d{1,3}\s*\/\s*\d{1,3}/, " ").trim()} ${pq.num.n}${pq.num.d ? "/" + pq.num.d : ""}` : tq); } catch (e) { console.error("tcg search (TCGplayer):", e.message); }
+      if (!tc.length && pq.num) try { tc = await tcgScan(tq.replace(/\d{1,3}\s*\/\s*\d{1,3}/, " ").trim()); } catch {}
+      if (!tc.length && ptcgErr) throw ptcgErr;
+      const data = {
+        searchUrl, source: "tcgplayer",
+        cards: tc.slice(0, 12).map((c) => ({
+          id: c.id, name: c.name, number: c.number, set: c.set, printedTotal: c.printedTotal, year: 0,
+          exact: !!(pq.num && String(+c.number) === pq.num.n && (!pq.num.d || String(c.printedTotal) === pq.num.d)),
+          finishes: [], image: c.image, tcgUrl: `https://www.tcgplayer.com/product/${c.tcgId}`, tcgId: c.tcgId, updated: null, prices: {},
+        })).sort((x, y) => Number(y.exact) - Number(x.exact)),
+      };
+      if (data.cards.length) tcgCache.set(base, { exp: Date.now() + 3600e3, data });
+      return res.json(data);
     }
     const finishesOf = (p) => [...new Set(Object.keys(p || {}).map((k) => (/reverse/i.test(k) ? "reverse" : /normal/i.test(k) ? "nonholo" : "holo")))];
     const list = cards
