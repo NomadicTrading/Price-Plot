@@ -110,7 +110,7 @@ function rowHTML(x) {
   if (editing === x.id) return `<div class="pr" data-id="${x.id}">${form(x)}</div>`;
   return `<div class="pr" data-id="${x.id}"><button class="prx" type="button" data-trash="${x.id}" tabindex="-1" aria-label="Remove ${esc(x.name)}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></button><div class="prc">${thumb(x)}<div class="pm"><b>${esc(x.name)}</b> <span class="cg ${g ? "gr" : ""}">${esc(g ? shortGrade(x.grade) : x.cond || "")}</span>
   <div class="mu">${meta}${view === "all" && x.pf ? ` · <i>${esc(x.pf)}</i>` : ""}</div>
-  <div class="mu">${view === "watch" ? "" : x.qty + " × "}${money(unit(x))}${x.ovr > 0 ? ` <span title="Your own price, set in Collectr or here">(your price)</span>` : x.mkt == null ? " (no price)" : x.mktEst ? ` <span title="No recent ${esc(x.cond || "")} sales on TCGplayer, so this is the Near Mint price with the usual discount for this condition">(est.)</span>` : ""}${gain != null ? ` · <span style="color:var(${gain >= 0 ? "--up" : "--dn"})">${gain >= 0 ? "+" : "−"}${money(Math.abs(gain))}</span> vs. ${money(x.cost)} paid` : ""}</div>
+  <div class="mu">${view === "watch" ? "" : x.qty + " × "}${money(unit(x))}${x.ovr > 0 ? ` <span title="Your own price, set in Collectr or here">(your price)</span>` : x.mkt == null ? (pfq.includes(x) || pfRunning ? " (looking up price…)" : " (no price)") : x.mktEst ? ` <span title="No recent ${esc(x.cond || "")} sales on TCGplayer, so this is the Near Mint price with the usual discount for this condition">(est.)</span>` : ""}${gain != null ? ` · <span style="color:var(${gain >= 0 ? "--up" : "--dn"})">${gain >= 0 ? "+" : "−"}${money(Math.abs(gain))}</span> vs. ${money(x.cost)} paid` : ""}</div>
   ${x.notes ? `<div class="mu">${esc(x.notes)}</div>` : ""}</div>
   <div class="pv"><b>${money(line)}</b><div><button class="pill sm2" type="button" data-cmp="${x.id}">Comp</button><button class="pill sm2" type="button" data-ed="${x.id}">Edit</button></div></div></div></div>`;
 }
@@ -434,8 +434,9 @@ async function askRemove(id) {
 let pfq = [], pfRunning = 0, pfTotal = 0, pfDone = 0;
 // Each card gets TCGplayer's market price for its own condition and printing. Cards whose price came from TCGplayer's
 // search (older versions, which ignored condition and printing) are looked up again. Prices from a Collectr file and
-// your own prices are left alone; graded cards have no TCGplayer price.
-const needsPrice = (x, now) => x.qty > 0 && !(x.ovr > 0) && !isGraded(x) && x.mktV !== 2 && (x.mkt == null || x.pT) && !(x.pTry && now - x.pTry < 3 * 864e5);
+// your own prices are left alone (the TCGplayer price is still fetched behind them, for when they are removed);
+// graded cards have no TCGplayer price.
+const needsPrice = (x, now) => x.qty > 0 && !isGraded(x) && x.mktV !== 2 && (x.mkt == null || x.pT) && !(x.pTry && now - x.pTry < 3 * 864e5);
 function fillPrices() {
   const now = Date.now(), want = P.items.filter((x) => needsPrice(x, now) && !pfq.includes(x));
   if (!want.length) return; pfq.push(...want); pfTotal += want.length; pricePump();
@@ -607,6 +608,7 @@ function saveForm(fm) {
   if (!x.name) return;
   if (old && (old.name !== x.name || old.set !== x.set || old.num !== x.num)) { x.img = undefined; x.imgT = 0; }
   if (old && x.pT && (old.cond !== x.cond || old.var !== x.var || old.name !== x.name)) { x.mktV = 0; x.pTry = 0; }
+  if (old && old.ovr > 0 && !(x.ovr > 0)) x.pTry = 0;
   if (old) Object.assign(old, x); else P.items.push(x);
   editing = null; store(); snap(); render(); fillPrices();
 }
