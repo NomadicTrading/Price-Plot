@@ -529,8 +529,9 @@ function cimpPanel() {
   <div class="cimp-l">${it.slice(0, 6).map((x) => `<div>${esc(x.name)} <span class="mu">${esc([x.set, x.num].filter(Boolean).join(" · "))} · ${esc(isGraded(x) ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond)} × ${x.qty}</span></div>`).join("")}${it.length > 6 ? `<div class="mu">…and ${(it.length - 6).toLocaleString()} more</div>` : ""}</div>
   ${noSet > it.length / 2 ? `<div class="sm" style="color:var(--dn)">Most cards came in without a set name, so matching may be off. Copy the details for Claude if the cards look wrong.</div>` : ""}
   ${((cimp.raw && cimp.raw.log) || []).some((l) => /^PARTIAL/.test(l)) ? `<div class="sm" style="color:var(--dn)">Collectr asked Price Plot to slow down, so some cards may be missing. Import these now, then wait an hour, run Send to Price Plot again and tap “Add to my portfolio” to fill in the rest.</div>` : ""}
+  ${cimp.raw && cimp.raw.portfolio ? `<div class="sm">These are the cards in <b>${esc(cimp.raw.portfolio)}</b>.${(cimp.raw.others || []).length ? ` To bring in ${esc(cimp.raw.others.join(" or "))}, switch the portfolio on your Collectr showcase, wait for it to load, and run Send to Price Plot again.` : ""}</div>` : ""}
   <div class="sm">Prices come from TCGplayer and fill in after import.</div>
-  <div class="bar">${P.items.length ? `<button class="pill on" type="button" data-cx2="merge">Add to my portfolio</button><button class="pill" type="button" data-cx2="replace">Replace my portfolio</button>` : `<button class="pill on" type="button" data-cx2="replace">Import</button>`}
+  <div class="bar">${P.items.length ? `<button class="pill on" type="button" data-cx2="merge">Add to my portfolio</button><button class="pill" type="button" data-cx2="replace">${cimp.raw && cimp.raw.portfolio ? "Replace " + esc(cimp.raw.portfolio) + " only" : "Replace my portfolio"}</button>` : `<button class="pill on" type="button" data-cx2="replace">Import</button>`}
   ${typeof HOME_APP !== "undefined" && !HOME_APP ? `<button class="pill" type="button" data-cx2="code">Send to my Price Plot app</button>` : ""}${diag}</div></div>`;
 }
 async function cimpAction(a) {
@@ -542,9 +543,10 @@ async function cimpAction(a) {
       await modal({ title: `Your code: ${j.code}`, text: "Open the Price Plot app from your home screen, go to Portfolio → From a Collectr link, and enter this code. It works once and expires in 30 minutes.", buttons: [{ label: "Done", value: 1, kind: "primary" }] });
     } catch (e) { toast("Couldn't make a code: " + e.message); } return; }
   if (a === "merge" || a === "replace") {
-    if (a === "replace" && P.items.length && !(await modal({ title: "Replace your whole portfolio?", text: "Every card in Price Plot is removed first, then your Collectr cards are added.", buttons: [{ label: "Replace", value: true, kind: "danger" }, { label: "Cancel", value: false }] }))) return;
+    const only = cimp.raw && cimp.raw.portfolio;
+    if (a === "replace" && P.items.length && !(await modal({ title: only ? `Replace ${only}?` : "Replace your whole portfolio?", text: only ? `Every card in ${esc(only)} in Price Plot is removed first, then these Collectr cards are added. Your other portfolios aren't touched.` : "Every card in Price Plot is removed first, then your Collectr cards are added.", buttons: [{ label: "Replace", value: true, kind: "danger" }, { label: "Cancel", value: false }] }))) return;
     const items = cimp.items;
-    if (a === "replace") P.items = items;
+    if (a === "replace") P.items = only ? P.items.filter((x) => x.pf !== only).concat(items) : items;
     else { const at = new Map(P.items.map((x, i) => [keyOf(x), i])); for (const x of items) { const k = keyOf(x); if (at.has(k)) { const o = P.items[at.get(k)]; o.qty = x.qty; if (x.cost) o.cost = x.cost; } else { at.set(k, P.items.length); P.items.push(x); } } }
     P.source = "Collectr link"; store(); cimp = null; view = "all"; shown = PAGE; render(); fillPrices();
     toast(`Imported ${items.length.toLocaleString()} entries from Collectr`);

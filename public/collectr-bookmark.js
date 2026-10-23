@@ -67,7 +67,7 @@
   const keyOf = (x) => [x.product_id, x.card_condition, x.grade_company, x.grade_id, x.product_sub_type].join("|");
   const qtyOf = (a) => a.reduce((n, x) => n + (+x.quantity || 1), 0);
   const readCollection = async (base, h, c, sorts, note) => {
-    const extra = c ? { collectionId: c.id } : {}, seen = new Map();
+    const extra = {}, seen = new Map();
     const add = (arr) => { for (const x of arr) { const k = keyOf(x); if (!seen.has(k)) seen.set(k, c ? { ...x, __pf: c.name } : x); } };
     const r = await readAll(base, h, extra); if (!r.items) return { status: r.status };
     add(r.items); note();
@@ -87,7 +87,6 @@
     let base = show[show.length - 1] || null, items = [], used = null, sample = null;
     if (!base) { const m = /\/showcase\/profile\/([^/?#]+)/.exec(location.pathname); if (m) base = "https://api-v2.getcollectr.com/data/showcase/" + m[1] + "?offset=0&limit=30&filters=&unstackedView=true"; }
     if (!base) return { type: "collectr-import", v: 4, page: location.href, used, count: 0, items: [], log: log.concat(["no showcase request found"]), sample };
-    { const U = new URL(base); U.searchParams.delete("collectionId"); base = U.toString(); }
     log.push("showcase: " + base.replace(/[?].*/, ""));
     /* the headers the page's code uses (signed-in name and token if any, otherwise the guest id) */
     const tok = cookie("collectrToken"), user = new URL(base).searchParams.get("username");
@@ -113,19 +112,20 @@
     let grades = {};
     try { await pace(); const r = await F0("https://api-v2.getcollectr.com/data/grading-scales", { credentials: "include", headers: h }); if (r.ok) { const q = [await r.json()], seen = new Set();
       while (q.length) { const v = q.shift(); if (!v || typeof v !== "object" || seen.has(v)) continue; seen.add(v); if (!Array.isArray(v) && v.id != null && (v.name || v.grade || v.label)) grades[String(v.id)] = String(v.name || v.grade || v.label); Object.values(v).forEach((x) => q.push(x)); } } } catch (e) {}
-    /* every portfolio on the showcase, not just the one it opens on */
-    const cols = (probe.first && Array.isArray(probe.first.collections) && probe.first.collections.length) ? probe.first.collections : [null];
+    /* Only the portfolio shown on the page. Collectr ignores requests for other portfolios and sends the shown one
+       again, which doubled cards before. The page's own latest request says which portfolio is on screen. */
+    const cols = (probe.first && Array.isArray(probe.first.collections)) ? probe.first.collections : [];
+    const vals = [...new URL(base).searchParams.values()];
+    const shown = cols.find((c) => vals.includes(String(c.id))) || cols.find((c) => c.default) || cols[0] || null;
+    log.push("portfolio on screen: " + (shown ? shown.name : "(unnamed)") + (cols.length > 1 ? " (others on this showcase: " + cols.filter((c) => c !== shown).map((c) => c.name).join(", ") + ")" : ""));
     const all = [];
-    for (const c of cols) {
-      const note = () => say("reading " + (c ? c.name : "your cards") + "…");
-      say("reading " + (c ? c.name : "your cards") + "…");
-      let r; try { r = await readCollection(base, h, c, sorts, note); } catch (e) { r = { status: "error " + e.message }; }
-      if (r.items) all.push(...r.items); else log.push((c ? c.name : "default") + ": " + r.status);
-    }
+    say("reading " + (shown ? shown.name : "your cards") + "…");
+    { let r; try { r = await readCollection(base, h, shown, sorts, () => say("reading " + (shown ? shown.name : "your cards") + "…")); } catch (e) { r = { status: "error " + e.message }; }
+      if (r.items) all.push(...r.items); else log.push((shown ? shown.name : "default") + ": " + r.status); }
     for (const x of all) if (x.grade_company && x.grade_id != null) x.grade_label = grades[String(x.grade_id)] || null;
     items = all; used = base.replace(/[?].*/, "");
     if (slowDown) log.push("PARTIAL: Collectr asked to slow down, so this import may be missing cards. Wait an hour and run it again, then use Add to fill in the rest.");
-    return { type: "collectr-import", v: 4, page: location.href, used, count: items.length, items: items.map((x) => slim(x, 0)), log, sample };
+    return { type: "collectr-import", v: 5, page: location.href, used, count: items.length, items: items.map((x) => slim(x, 0)), log, sample, portfolio: shown ? shown.name : "", others: cols.filter((c) => c !== shown).map((c) => c.name) };
   };
   run().then((data) => {
     say(data.count ? "found " + data.count + " entries, opening Price Plot…" : "couldn't find the cards, opening Price Plot with details…");
