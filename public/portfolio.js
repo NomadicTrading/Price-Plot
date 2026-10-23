@@ -657,7 +657,7 @@ function scanOverlay() {
   let ov = $("ppscan"); if (!ov) { ov = document.createElement("div"); ov.id = "ppscan"; ov.className = "ppm-ov"; document.body.appendChild(ov); }
   const S = scan, pfs = [...new Set(P.items.filter((x) => x.qty > 0 && x.pf).map((x) => x.pf))].sort();
   let body = "";
-  if (S.status === "reading") body = `<p><b>Reading the card…</b></p><p class="mu">The first scan loads the text reader, which can take a few seconds.</p>`;
+  if (S.status === "reading") body = `<p><b>Reading the card…</b></p><p class="mu">${S.note ? esc(S.note) : "This usually takes a few seconds."}</p>`;
   else if (S.status === "error") body = `<p><b>${esc(S.msg)}</b></p>`;
   else if (S.status === "searching") body = `<p><b>Looking up the card…</b></p>`;
   else if (S.status === "pick") { const c = S.cards[S.pick];
@@ -691,8 +691,17 @@ async function scanFile(file) {
   try { const im = await prepImage(file); scan.preview = im.preview; scanOverlay();
     // the AI reads the whole card (edition, holo, language, stamps); text reading is the fallback when it isn't set up
     try {
-      const r = await fetch("/api/scan-ai", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: im.photo }) });
-      const j = await r.json().catch(() => ({}));
+      // a bare 502/503/504 (no message from Price Plot) means the server is restarting or waking up: wait and try again
+      let r, j;
+      for (let t = 0; t < 4; t++) {
+        r = await fetch("/api/scan-ai", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: im.photo }) }).catch(() => null);
+        j = r ? await r.json().catch(() => null) : null;
+        if (r && (r.ok || j) || t === 3) break;
+        scan.note = "Price Plot is starting up, trying again…"; scanOverlay(); await new Promise((ok) => setTimeout(ok, 5000));
+      }
+      scan.note = ""; j = j || {};
+      if (!r) throw new Error("no connection");
+      if (!r.ok && !j.error && r.status >= 502) j.error = "Price Plot's server was restarting. Tap Scan another card to try again in a moment.";
       if (r.ok) { const a = j.read || {};
         scan.ai = a; scan.aiPrint = j.print || ""; scan.aiGrade = j.grade || "";
         scan.read = { name: a.name_english || a.name || "", n: a.number || "", d: a.set_total || "" };
