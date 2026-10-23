@@ -652,99 +652,259 @@ function parseCardText(text) {
   }
   return { name, n, d };
 }
-let scan = null; // { preview, read: {name,n,d}, cards, pick, status }
-function scanOverlay() {
+/* Scan queue: take photos one after another (or pick several from the photo library). Each card is read in the
+   background while you take the next, and the results build up in one list you can check, edit and add
+   individually or all at once. The list is kept on this device (with small thumbnails) until you clear it. */
+const SQ_KEY = "pp_scanq", SQ_MAX = 80, SQ_PARALLEL = 2;
+let scanQ = (() => { try { const q = JSON.parse(localStorage.getItem(SQ_KEY) || "[]"); return Array.isArray(q) ? q : []; } catch { return []; } })();
+// a card that was still being read when the page closed lost its photo
+for (const it of scanQ) if (it.st === "wait" || it.st === "reading") { it.st = "error"; it.err = "The photo was lost when the page closed. Scan this card again."; }
+const sqPhotos = new Map(); // id -> { photo, canvas }, kept only until the card is read
+let sqView = null, sqBusy = 0, sqDefaults = (() => { try { return JSON.parse(localStorage.getItem(SQ_KEY + "_d") || "{}"); } catch { return {}; } })();
+function sqSave() {
+  try { localStorage.setItem(SQ_KEY, JSON.stringify(scanQ.slice(-SQ_MAX))); localStorage.setItem(SQ_KEY + "_d", JSON.stringify(sqDefaults)); }
+  catch { try { localStorage.setItem(SQ_KEY, JSON.stringify(scanQ.slice(-SQ_MAX).map((x) => ({ ...x, thumb: "" })))); } catch {} }
+}
+const sqItem = (id) => scanQ.find((x) => x.id === id);
+const sqNum = (c) => (c ? `${c.number}${c.printedTotal && /^\d+$/.test(c.number) ? "/" + c.printedTotal : ""}` : "");
+function sqThumb(dataUrl) {
+  return new Promise((ok) => { const img = new Image(); img.onload = () => { const s = Math.min(1, 220 / Math.max(img.width, img.height)), c = document.createElement("canvas");
+    c.width = Math.round(img.width * s); c.height = Math.round(img.height * s); c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); ok(c.toDataURL("image/jpeg", 0.7)); };
+    img.onerror = () => ok(""); img.src = dataUrl; });
+}
+
+// add photos (File or Blob) to the list; reading starts right away, two at a time
+async function sqAdd(files) {
+  const list = [...files].filter(Boolean);
+  for (const f of list) {
+    const it = { id: uid(), st: "wait", thumb: "", cards: [], pick: -1, cond: sqDefaults.cond || "Near Mint", qty: 1, sel: true, added: Date.now() };
+    scanQ.push(it);
+    const lst = !sqView && document.querySelector("#ppscan .sq-list");
+    if (lst) { lst.insertAdjacentHTML("beforeend", sqRowHTML(it)); const top = document.querySelector("#ppscan .sq-top .mu"); if (top) top.textContent = `${scanQ.length} card${scanQ.length === 1 ? "" : "s"}`; sqBar(); }
+    else { sqView = null; sqRender(); }
+    try { const im = await prepImage(f); sqPhotos.set(it.id, im); it.thumb = await sqThumb(im.preview); }
+    catch (e) { it.st = "error"; it.err = "Couldn't open that photo: " + e.message; }
+    sqRow(it); sqSave(); sqPump();
+  }
+  if (scanQ.length > SQ_MAX) toast(`The list keeps the last ${SQ_MAX} cards. Add or clear some to make room.`);
+}
+function sqPump() {
+  while (sqBusy < SQ_PARALLEL) {
+    const it = scanQ.find((x) => x.st === "wait" && sqPhotos.has(x.id)); if (!it) break;
+    sqBusy++; it.st = "reading"; sqRow(it);
+    sqRead(it).catch((e) => { it.st = "error"; it.err = "Couldn't read the card: " + e.message; })
+      .finally(() => { sqBusy--; sqPhotos.delete(it.id); sqRow(it); sqBar(); sqSave(); sqPump(); });
+  }
+  sqCount();
+}
+async function sqRead(it) {
+  const im = sqPhotos.get(it.id); it.aiErr = "";
+  // the AI reads the whole card (edition, holo, language, stamps); text reading is the fallback
+  try {
+    let r, j;
+    for (let t = 0; t < 4; t++) {
+      r = await fetch("/api/scan-ai", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: im.photo }) }).catch(() => null);
+      j = r ? await r.json().catch(() => null) : null;
+      if (r && (r.ok || j) && !(r.status === 429 && t < 3 && !/today/i.test((j && j.error) || ""))) break;
+      if (t === 3) break;
+      it.note = r && r.status === 429 ? "Busy, waiting a moment…" : "Price Plot is starting up, trying again…"; sqRow(it);
+      await new Promise((ok) => setTimeout(ok, r && r.status === 429 ? 15000 : 5000));
+    }
+    it.note = ""; j = j || {};
+    if (!r) throw new Error("no connection");
+    if (r.ok) { const a = j.read || {};
+      it.ai = a; it.print = j.print || ""; it.grade = j.grade || "";
+      it.read = { name: a.name_english || a.name || "", n: a.number || "", d: a.set_total || "" };
+      it.cards = j.cards || []; it.pick = it.cards.length ? 0 : -1;
+      it.unsure = a.found === false || !it.cards.length || (a.confidence != null && +a.confidence < 0.6);
+      it.err = a.found === false ? "Couldn't find a card in that photo. Try again closer, with less glare." : !it.cards.length ? "No matching cards found. Tap Fix to search." : "";
+      it.st = "ready"; return; }
+    it.aiErr = j.error || (r.status >= 502 ? "Price Plot's server was restarting" : "AI scan failed (" + r.status + ")");
+  } catch (e) { it.aiErr = "AI scan failed: " + e.message; }
+  it.ai = null; it.print = ""; it.grade = "";
+  it.note = "Reading the text instead…"; sqRow(it);
+  const w = await loadOcr(); const { data } = await w.recognize(im.canvas);
+  await sqFind(it, parseCardText(data.text));
+  it.unsure = true;
+}
+async function sqFind(it, read) {
+  it.read = read; it.err = ""; it.note = "";
+  try { const j = await getJSON("/api/scan-match?" + new URLSearchParams({ name: read.name || "", n: read.n || "", d: read.d || "" })); it.cards = j.cards || []; }
+  catch (e) { it.cards = []; it.err = e.message; }
+  it.pick = it.cards.length ? 0 : -1; if (!it.cards.length && !it.err) it.err = "No matching cards found. Tap Fix to search.";
+  it.st = "ready";
+}
+
+// --- the list window ---
+function sqOpen() { sqView = null; sqRender(); }
+function sqPfs() { return [...new Set(P.items.filter((x) => x.qty > 0 && x.pf).map((x) => x.pf))].sort(); }
+function sqRowHTML(it) {
+  const c = it.pick >= 0 ? it.cards[it.pick] : null, a = it.ai;
+  const status = it.st === "wait" ? "Waiting…" : it.st === "reading" ? (it.note || "Reading the card…") : it.st === "error" ? it.err : it.err ? it.err : it.unsure ? "Check this match" : "";
+  const prints = c ? (() => { let pr = c.prints && c.prints.length ? c.prints.slice() : ["Normal"]; if (it.print && !pr.includes(it.print)) pr = [it.print, ...pr]; return pr; })() : [];
+  if (c && !it.print) it.print = prints[0];
+  const busy = it.st === "wait" || it.st === "reading";
+  return `<div class="sq-r${busy ? " busy" : ""}${it.st === "error" || (it.st === "ready" && !c) ? " bad" : ""}" id="sq-${it.id}">
+    <label class="sq-ck"><input type="checkbox" data-qk="${it.id}" ${it.sel ? "checked" : ""} ${c ? "" : "disabled"} aria-label="Select this card"></label>
+    <button type="button" class="sq-pics" data-qo="${it.id}" aria-label="Fix or change the match">${it.thumb ? `<img src="${it.thumb}" alt="">` : `<span class="sq-ph"></span>`}${c ? `<img src="${esc(c.image)}" alt="" loading="lazy">` : busy ? `<span class="sq-spin" aria-hidden="true"></span>` : ""}</button>
+    <div class="sq-t">
+      ${c ? `<b>${esc(c.name)}</b><div class="mu">${esc(c.set || "")} · ${esc(sqNum(c))}${a && a.language && a.language !== "English" ? " · " + esc(a.language) : ""}</div>` : `<b>${busy ? "Scanning…" : "No match yet"}</b>`}
+      ${status ? `<div class="sq-st${it.st === "error" || it.err || it.unsure ? " warn" : ""}">${esc(status)}</div>` : ""}
+      ${c && it.grade ? `<div class="mu sq-g">Graded: ${esc(it.grade)}</div>` : ""}
+    </div>
+    <div class="sq-a">${busy ? "" : `<button type="button" class="sq-b" data-qo="${it.id}">${c ? "Change" : "Fix"}</button>`}<button type="button" class="sq-x" data-qx="${it.id}" aria-label="Remove from list">✕</button></div>
+      ${c ? `<div class="sq-f">
+        <select data-qf="print" data-qid="${it.id}" aria-label="Printing">${prints.map((x) => `<option ${x === it.print ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>
+        <select data-qf="cond" data-qid="${it.id}" aria-label="Condition">${CONDS.map((x) => `<option value="${x}" ${x === it.cond ? "selected" : ""}>${{ "Near Mint": "NM", "Lightly Played": "LP", "Moderately Played": "MP", "Heavily Played": "HP", Damaged: "DMG" }[x] || x}</option>`).join("")}</select>
+        <input data-qf="qty" data-qid="${it.id}" type="number" min="1" step="1" inputmode="numeric" value="${it.qty || 1}" aria-label="Quantity">
+      </div>` : ""}
+  </div>`;
+}
+// replace just one row, so typing in another box isn't interrupted
+function sqRow(it) {
+  const el = $("sq-" + it.id); if (!el || sqView) return;
+  if (el.contains(document.activeElement)) { el.dataset.stale = "1"; return; }
+  el.outerHTML = sqRowHTML(it); sqBar();
+}
+function sqCount() { const n = scanQ.filter((x) => x.st === "wait" || x.st === "reading").length, el = $("sq-n"); if (el) el.textContent = n ? `${n} still reading` : ""; }
+function sqBar() {
+  const el = $("sq-bar"); if (!el) return;
+  const ready = scanQ.filter((x) => x.pick >= 0), sel = ready.filter((x) => x.sel);
+  el.querySelector("[data-qa=add]").textContent = sel.length ? `Add ${sel.length} card${sel.length === 1 ? "" : "s"} to portfolio` : "Add to portfolio";
+  el.querySelector("[data-qa=add]").disabled = !sel.length;
+  const all = el.querySelector("[data-qa=all]"); if (all) all.textContent = ready.length && sel.length === ready.length ? "Select none" : "Select all";
+  const rm = document.querySelector("#ppscan [data-qa=rmsel]"); if (rm) rm.textContent = sel.length ? `Remove ${sel.length} from list` : "Remove from list", rm.disabled = !sel.length;
+  sqCount();
+}
+function sqRender() {
   let ov = $("ppscan"); if (!ov) { ov = document.createElement("div"); ov.id = "ppscan"; ov.className = "ppm-ov"; document.body.appendChild(ov); }
-  const S = scan, pfs = [...new Set(P.items.filter((x) => x.qty > 0 && x.pf).map((x) => x.pf))].sort();
-  let body = "";
-  if (S.status === "reading") body = `<p><b>Reading the card…</b></p><p class="mu">${S.note ? esc(S.note) : "This usually takes a few seconds."}</p>`;
-  else if (S.status === "error") body = `<p><b>${esc(S.msg)}</b></p>`;
-  else if (S.status === "searching") body = `<p><b>Looking up the card…</b></p>`;
-  else if (S.status === "pick") { const c = S.cards[S.pick];
-    body = `<div class="sc-sel"><img src="${esc(c.image)}" alt=""><div><b>${esc(c.name)}</b><div class="mu">${esc(c.set || "")} · ${esc(c.number)}${c.printedTotal ? "/" + esc(c.printedTotal) : ""}${c.year ? " · " + c.year : ""}</div><button type="button" class="cs-back" data-sc="back">‹ Pick a different card</button></div></div>
-    <div class="ppm-b" style="margin:0 0 12px"><button type="button" class="ppm-x primary" data-sc="comps">See comps for this card</button></div><p class="mu" style="margin:0 0 6px"><b>Or add it to your portfolio:</b></p>
-    <form id="scform"><div class="pg">
-      ${pfField(S.pf || pfs[0] || "", pfs)}
-      <label>Condition<select name="cond">${CONDS.map((x) => `<option ${x === (S.cond || "Near Mint") ? "selected" : ""}>${x}</option>`).join("")}</select></label>
-      <label>Printing<select name="var">${(() => { let pr = c.prints.length ? c.prints.slice() : ["Normal"]; const w = S.aiPrint; if (w && !pr.includes(w)) pr = [w, ...pr]; return pr.map((x) => `<option ${x === w ? "selected" : ""}>${esc(x)}</option>`).join(""); })()}</select></label>
-      <label>Grade (blank if raw)<input name="grade" placeholder="e.g. PSA 10" value="${esc(S.aiGrade || "")}"></label>
-      <label>Quantity<input name="qty" type="number" min="1" step="1" value="1" inputmode="numeric"></label>
-      <label>Paid each ($)<input name="cost" type="number" min="0" step="0.01" inputmode="decimal"></label></div>
-      <div class="ppm-b"><button type="submit" class="ppm-x">Add to portfolio</button></div></form>`; }
-  else { const r = S.read || {}, a = S.ai;
-    const saw = a && a.found !== false ? [a.name_english && a.name && a.name_english !== a.name ? `${a.name} (${a.name_english})` : a.name || a.name_english, a.number && (a.number + (a.set_total ? "/" + a.set_total : "")), a.set_name, a.language && a.language !== "English" ? a.language : "", a.edition && a.edition !== "Unlimited" ? a.edition : "", a.finish && a.finish !== "unknown" ? a.finish : "", a.stamp, S.aiGrade].filter(Boolean).map(esc).join(" · ") : "";
-    body = `${saw ? `<p class="sc-saw"><span class="mu">Read:</span> ${saw}${a._by ? ` <span class="mu">(${esc(String(a._by).split(" ")[0])}${a._secs ? ", " + (+a._secs).toFixed(1) + "s" : ""})</span>` : ""}</p>` : S.aiErr ? `<p class="sc-saw" style="color:var(--dn)">${esc(S.aiErr)}. Used basic text reading instead, which can't tell printings apart.</p>` : ""}${S.cards.length ? `<p class="mu">Tap your card:</p><div class="sc-grid">${S.cards.map((c, i) => `<button type="button" data-sp="${i}"${a && i === 0 ? ' class="best"' : ""}>${a && i === 0 ? `<i class="sc-best">Best match</i>` : ""}<img src="${esc(c.image)}" alt="" loading="lazy"><b>${esc(c.name)}</b><span>${esc(c.set || "")} · ${esc(c.number)}${c.printedTotal ? "/" + esc(c.printedTotal) : ""}</span></button>`).join("")}</div>`
-      : S.err ? `<p><b>${esc(S.err)}</b> Tap Search to try again, or fix the name and number first.</p>` : `<p><b>No matching cards found.</b> Check the name and number below and search again.</p>`}
-      <form id="scsearch" class="cimp-c" style="margin-top:12px"><input name="q" value="${esc([r.name, r.n && (r.n + (r.d ? "/" + r.d : ""))].filter(Boolean).join(" "))}" placeholder="Name and number, e.g. Charizard 4/102" aria-label="Card name and number" style="letter-spacing:0;text-transform:none"><button type="submit" class="ppm-x">Search</button></form>`; }
-  ov.innerHTML = `<div class="ppm" role="dialog" aria-modal="true" aria-labelledby="sc-t"><h3 id="sc-t">Scan a card</h3>
-    ${S.preview && S.status !== "pick" ? `<img class="sc-photo" src="${S.preview}" alt="Your photo">` : ""}${body}
-    <div class="ppm-b"><button type="button" class="ppm-x" data-sc="again">Scan another card</button><button type="button" class="ppm-x plain" data-sc="close">Close</button></div></div>`;
+  if (sqView) return sqDetail(ov);
+  const pfs = sqPfs(), has = scanQ.length;
+  ov.innerHTML = `<div class="ppm sqm" role="dialog" aria-modal="true" aria-labelledby="sc-t">
+    <div class="sq-h"><h3 id="sc-t">Scan cards</h3><button type="button" class="ppm-x plain sq-close" data-qa="close">Close</button></div>
+    <div class="sq-go"><button type="button" class="ppm-x primary" data-qa="cam">📷 Take photos</button><button type="button" class="ppm-x" data-qa="lib">🖼 Choose photos</button></div>
+    ${has ? `<div class="sq-top"><span class="mu">${scanQ.length} card${scanQ.length === 1 ? "" : "s"}</span> <span class="mu" id="sq-n"></span><span style="flex:1"></span><button type="button" class="cs-back" data-qa="all">Select all</button></div>
+      <div class="sq-top sq-top2"><button type="button" class="cs-back" data-qa="rmsel">Remove from list</button><span style="flex:1"></span><button type="button" class="cs-back sq-dl" data-qa="clear">Clear list</button></div>
+      <div class="sq-list">${scanQ.map(sqRowHTML).join("")}</div>
+      <form id="sq-bar" class="sq-bar"><div class="pg">${pfField(sqDefaults.pf && (pfs.includes(sqDefaults.pf) || !pfs.length) ? sqDefaults.pf : pfs[0] || "", pfs)}
+        <label>Condition for selected<select data-qa="cond"><option value="">Keep each</option>${CONDS.map((x) => `<option>${x}</option>`).join("")}</select></label></div>
+        <button type="submit" class="ppm-x primary sq-add" data-qa="add">Add to portfolio</button></form>`
+    : `<p class="mu" style="margin:10px 0 4px">Take a photo of each card, one after another. You don't have to wait: each card is read while you take the next, and they all collect here for you to check and add together.</p>
+      <p class="mu" style="margin:0">Or choose photos you've already taken. You can pick several at once.</p>`}
+  </div>`;
+  sqBar();
 }
-async function scanFind(read) {
-  scan.read = read; scan.status = "searching"; scan.cards = []; scan.err = "";
-  try { const j = await getJSON("/api/scan-match?" + new URLSearchParams({ name: read.name || "", n: read.n || "", d: read.d || "" })); scan.cards = j.cards || []; scan.status = "list"; }
-  catch (e) { scan.status = "list"; scan.cards = []; scan.err = e.message; }
-  scanOverlay();
+function sqDetail(ov) {
+  const it = sqItem(sqView); if (!it) { sqView = null; return sqRender(); }
+  const r = it.read || {}, a = it.ai, c = it.pick >= 0 ? it.cards[it.pick] : null;
+  const saw = a && a.found !== false ? [a.name_english && a.name && a.name_english !== a.name ? `${a.name} (${a.name_english})` : a.name || a.name_english, a.number && (a.number + (a.set_total ? "/" + a.set_total : "")), a.set_name, a.language && a.language !== "English" ? a.language : "", a.edition && a.edition !== "Unlimited" ? a.edition : "", a.finish && a.finish !== "unknown" ? a.finish : "", a.stamp, it.grade].filter(Boolean).map(esc).join(" · ") : "";
+  ov.innerHTML = `<div class="ppm sqm" role="dialog" aria-modal="true" aria-labelledby="sc-t">
+    <div class="sq-h"><button type="button" class="cs-back" data-qa="list">‹ Back to list</button></div>
+    ${it.thumb ? `<img class="sc-photo" src="${it.thumb}" alt="Your photo">` : ""}
+    ${saw ? `<p class="sc-saw"><span class="mu">Read:</span> ${saw}${a._by ? ` <span class="mu">(${esc(String(a._by).split(" ")[0])}${a._secs ? ", " + (+a._secs).toFixed(1) + "s" : ""})</span>` : ""}</p>` : it.aiErr ? `<p class="sc-saw" style="color:var(--dn)">${esc(it.aiErr)}. Used basic text reading instead, which can't tell printings apart.</p>` : ""}
+    ${c ? `<div class="ppm-b" style="margin:0 0 12px"><button type="button" class="ppm-x" data-qa="comps">See comps for ${esc(c.name)}</button></div>` : ""}
+    ${it.cards.length ? `<p class="mu">Tap your card:</p><div class="sc-grid">${it.cards.map((x, i) => `<button type="button" data-qp="${i}"${i === it.pick ? ' class="best"' : ""}>${i === it.pick ? `<i class="sc-best">${a && i === 0 ? "Best match" : "Chosen"}</i>` : ""}<img src="${esc(x.image)}" alt="" loading="lazy"><b>${esc(x.name)}</b><span>${esc(x.set || "")} · ${esc(sqNum(x))}</span></button>`).join("")}</div>`
+      : `<p><b>${esc(it.err || "No matching cards found.")}</b></p>`}
+    <form id="sq-search" class="cimp-c" style="margin-top:12px"><input name="q" value="${esc([r.name, r.n && (r.n + (r.d ? "/" + r.d : ""))].filter(Boolean).join(" "))}" placeholder="Name and number, e.g. Charizard 4/102" aria-label="Card name and number" style="letter-spacing:0;text-transform:none"><button type="submit" class="ppm-x">Search</button></form>
+    <div class="ppm-b"><button type="button" class="ppm-x plain" data-qa="list">Back to list</button></div>
+  </div>`;
 }
-async function scanFile(file) {
-  scan = { status: "reading", cards: [], pf: scan && scan.pf, cond: scan && scan.cond, aiErr: "" }; scanOverlay();
-  try { const im = await prepImage(file); scan.preview = im.preview; scanOverlay();
-    // the AI reads the whole card (edition, holo, language, stamps); text reading is the fallback when it isn't set up
-    try {
-      // a bare 502/503/504 (no message from Price Plot) means the server is restarting or waking up: wait and try again
-      let r, j;
-      for (let t = 0; t < 4; t++) {
-        r = await fetch("/api/scan-ai", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: im.photo }) }).catch(() => null);
-        j = r ? await r.json().catch(() => null) : null;
-        if (r && (r.ok || j) || t === 3) break;
-        scan.note = "Price Plot is starting up, trying again…"; scanOverlay(); await new Promise((ok) => setTimeout(ok, 5000));
-      }
-      scan.note = ""; j = j || {};
-      if (!r) throw new Error("no connection");
-      if (!r.ok && !j.error && r.status >= 502) j.error = "Price Plot's server was restarting. Tap Scan another card to try again in a moment.";
-      if (r.ok) { const a = j.read || {};
-        scan.ai = a; scan.aiPrint = j.print || ""; scan.aiGrade = j.grade || "";
-        scan.read = { name: a.name_english || a.name || "", n: a.number || "", d: a.set_total || "" };
-        scan.cards = j.cards || []; scan.status = "list"; scan.err = a.found === false ? "Couldn't find a card in that photo. Try again closer, with less glare." : ""; scanOverlay(); return; }
-      scan.aiErr = j.error || "AI scan failed (" + r.status + ")";
-    } catch (e) { scan.aiErr = "AI scan failed: " + e.message; }
-    scan.ai = null; scan.aiPrint = ""; scan.aiGrade = "";
-    const w = await loadOcr(); const { data } = await w.recognize(im.canvas);
-    await scanFind(parseCardText(data.text));
-  } catch (e) { scan.status = "error"; scan.msg = "Couldn't read the card: " + e.message; scanOverlay(); }
+function sqToItem(it, pf) {
+  const c = it.cards[it.pick];
+  return { id: uid(), pf, cat: "Pokemon", set: c.set || "", name: c.name, num: /^\d+$/.test(c.number) && c.printedTotal ? `${c.number}/${c.printedTotal}` : c.number, rarity: c.rarity || "",
+    var: it.print || "", grade: (it.grade || "").trim() || "Ungraded", cond: it.cond || "Near Mint", qty: Math.max(1, Math.round(+it.qty || 1)), cost: 0, mkt: null, ovr: 0, watch: false, added: today(), notes: "",
+    img: c.image, big: c.big, imgT: Date.now(), tcgId: c.tcgId || undefined };
 }
-function scanAdd(fm) {
-  const d = Object.fromEntries(new FormData(fm)), c = scan.cards[scan.pick];
-  if (d.pf === "__new") { d.pf = String(d.pfNew || "").trim(); if (!d.pf) { toast("Type a name for the new portfolio"); const i = fm.querySelector('[name="pfNew"]'); if (i) i.focus(); return; } } delete d.pfNew;
-  const x = { id: uid(), pf: d.pf.trim(), cat: "Pokemon", set: c.set || "", name: c.name, num: /^\d+$/.test(c.number) && c.printedTotal ? `${c.number}/${c.printedTotal}` : c.number, rarity: c.rarity || "",
-    var: d.var || "", grade: d.grade.trim() || "Ungraded", cond: d.cond, qty: Math.max(1, Math.round(num(d.qty) || 1)), cost: num(d.cost) || 0, mkt: null, ovr: 0, watch: false, added: today(), notes: "", img: c.image, big: c.big, imgT: Date.now(), tcgId: c.tcgId || undefined };
-  const same = P.items.find((y) => y.qty > 0 && keyOf(y) === keyOf(x));
-  if (same) same.qty += x.qty; else P.items.push(x);
-  scan.pf = x.pf; scan.cond = x.cond; store(); snap(); render(); fillPrices();
-  toast(same ? `Added ${x.qty} more ${x.name} to ${x.pf || "your portfolio"} (now ${same.qty})` : `Added ${x.name} to ${x.pf || "your portfolio"}`);
-  scan.status = "done"; const ov = $("ppscan"); if (ov) ov.querySelector(".ppm").innerHTML = `<h3>Added ✓</h3><p>${esc(x.name)} · ${esc(x.set)} · ${esc(x.cond)} × ${x.qty} → <b>${esc(x.pf || "your portfolio")}</b></p><div class="ppm-b"><button type="button" class="ppm-x primary" data-sc="again">Scan another card</button><button type="button" class="ppm-x plain" data-sc="close">Done</button></div>`;
+function sqAddSelected(fm) {
+  const d = Object.fromEntries(new FormData(fm));
+  if (d.pf === "__new") { d.pf = String(d.pfNew || "").trim(); if (!d.pf) { toast("Type a name for the new portfolio"); const i = fm.querySelector('[name="pfNew"]'); if (i) i.focus(); return; } }
+  const pf = String(d.pf || "").trim(), pick = scanQ.filter((x) => x.sel && x.pick >= 0); if (!pick.length) return;
+  let cards = 0;
+  for (const it of pick) { const x = sqToItem(it, pf), same = P.items.find((y) => y.qty > 0 && keyOf(y) === keyOf(x)); if (same) same.qty += x.qty; else P.items.push(x); cards += x.qty; }
+  scanQ = scanQ.filter((x) => !pick.includes(x)); sqDefaults.pf = pf; sqSave(); store(); snap(); render(); fillPrices();
+  toast(`Added ${cards} card${cards === 1 ? "" : "s"} to ${pf || "your portfolio"}`); sqRender();
 }
-document.addEventListener("click", (e) => { if (e.target.closest && e.target.closest("#camb")) scanCamera(); });
-function scanCamera() { let i = $("pfcam"); if (!i) { i = document.createElement("input"); i.type = "file"; i.accept = "image/*"; i.setAttribute("capture", "environment"); i.id = "pfcam"; i.hidden = true; document.body.appendChild(i);
-  i.addEventListener("change", () => { if (i.files[0]) scanFile(i.files[0]); i.value = ""; }); } i.click(); }
+
+// --- live camera: keeps the camera open so you can shoot card after card ---
+let sqStream = null;
+async function sqCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return sqPicker(true);
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }); }
+  catch (e) { if (e && e.name === "NotAllowedError") toast("Camera access was blocked, so the regular camera opens instead. Allow camera access for this site in Settings to shoot cards back to back."); return sqPicker(true); }
+  sqStream = stream;
+  const cv = document.createElement("div"); cv.id = "ppcam"; cv.className = "sq-cam";
+  cv.innerHTML = `<video playsinline muted autoplay></video><div class="sq-guide" aria-hidden="true"></div><div class="sq-flash"></div>
+    <div class="sq-camtop"><span id="sq-camn">Line up a card and tap the button</span></div>
+    <div class="sq-cambar"><button type="button" class="sq-camdone" data-qc="done">Done</button><button type="button" class="sq-shut" data-qc="shot" aria-label="Take photo"></button><button type="button" class="sq-camlast" data-qc="done" aria-label="See list"><img alt=""><i></i></button></div>`;
+  document.body.appendChild(cv);
+  const v = cv.querySelector("video"); v.srcObject = stream; v.play().catch(() => {});
+  sqCamInfo();
+}
+function sqCamInfo() {
+  const cv = $("ppcam"); if (!cv) return;
+  const n = scanQ.filter((x) => x.st === "wait" || x.st === "reading").length, last = scanQ[scanQ.length - 1];
+  cv.querySelector("#sq-camn").textContent = scanQ.length ? `${scanQ.length} in list${n ? ` · ${n} reading` : ""}` : "Line up a card and tap the button";
+  const b = cv.querySelector(".sq-camlast"); if (last && last.thumb) { b.querySelector("img").src = last.thumb; b.querySelector("i").textContent = scanQ.length; b.classList.add("on"); }
+}
+function sqShot() {
+  const cv = $("ppcam"), v = cv && cv.querySelector("video"); if (!v || !v.videoWidth) return;
+  const c = document.createElement("canvas"); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext("2d").drawImage(v, 0, 0);
+  const fl = cv.querySelector(".sq-flash"); fl.classList.remove("go"); void fl.offsetWidth; fl.classList.add("go");
+  if (navigator.vibrate) navigator.vibrate(30);
+  c.toBlob((b) => { if (b) sqAdd([b]).then(sqCamInfo); }, "image/jpeg", 0.92);
+}
+function sqCamClose() { if (sqStream) { sqStream.getTracks().forEach((t) => t.stop()); sqStream = null; } const cv = $("ppcam"); if (cv) cv.remove(); sqRender(); }
+// the phone's own camera or photo library (several photos at once)
+function sqPicker(camera) {
+  const id = camera ? "pfcam" : "pflib"; let i = $(id);
+  if (!i) { i = document.createElement("input"); i.type = "file"; i.accept = "image/*"; i.id = id; i.hidden = true; if (camera) i.setAttribute("capture", "environment"); else i.multiple = true; document.body.appendChild(i);
+    i.addEventListener("change", () => { const f = [...i.files]; i.value = ""; if (f.length) { sqAdd(f); if (camera) setTimeout(() => toast("Tap Take photos again for the next card"), 400); } }); }
+  i.click();
+}
+
 document.addEventListener("click", (e) => {
+  if (e.target.closest && e.target.closest("#camb")) { sqOpen(); return; }
+  const cam = $("ppcam");
+  if (cam && cam.contains(e.target)) { const q = e.target.closest("[data-qc]")?.dataset.qc; if (q === "shot") sqShot(); else if (q === "done") sqCamClose(); return; }
   const ov = $("ppscan"); if (!ov || !ov.contains(e.target)) return;
   if (e.target === ov) { ov.remove(); return; }
   const b = e.target.closest("button"); if (!b) return; const d = b.dataset;
-  if (d.sc === "close") ov.remove();
-  else if (d.sc === "again") scanCamera();
-  else if (d.sc === "back") { scan.status = "list"; scanOverlay(); }
-  else if (d.sc === "comps") { const c = scan.cards[scan.pick]; ov.remove();
+  if (d.qa === "close") ov.remove();
+  else if (d.qa === "cam") sqCamera();
+  else if (d.qa === "lib") sqPicker(false);
+  else if (d.qa === "list") { sqView = null; sqRender(); }
+  else if (d.qa === "all") { const ready = scanQ.filter((x) => x.pick >= 0), on = !(ready.length && ready.every((x) => x.sel)); ready.forEach((x) => (x.sel = on)); ov.querySelectorAll("[data-qk]").forEach((k) => { if (!k.disabled) k.checked = on; }); sqSave(); sqBar(); }
+  else if (d.qa === "rmsel") { const n = scanQ.filter((x) => x.sel && x.pick >= 0).length; if (!n) return;
+    modal({ title: `Remove ${n} card${n === 1 ? "" : "s"} from the list?`, text: "They won't be added to your portfolio.", buttons: [{ label: "Remove", kind: "danger", value: 1 }, { label: "Cancel", kind: "plain" }] })
+      .then((v) => { if (v) { scanQ = scanQ.filter((x) => !(x.sel && x.pick >= 0)); sqSave(); sqRender(); } }); }
+  else if (d.qa === "clear") modal({ title: "Clear the whole list?", text: "Cards you haven't added to your portfolio will be removed from this list.", buttons: [{ label: "Clear list", kind: "danger", value: 1 }, { label: "Cancel", kind: "plain" }] })
+    .then((v) => { if (v) { scanQ = scanQ.filter((x) => x.st === "wait" || x.st === "reading"); sqSave(); sqRender(); } });
+  else if (d.qo) { sqView = d.qo; sqRender(); ov.querySelector(".ppm").scrollTop = 0; }
+  else if (d.qx) { scanQ = scanQ.filter((x) => x.id !== d.qx); sqPhotos.delete(d.qx); sqSave(); const el = $("sq-" + d.qx); if (el) el.remove(); if (!scanQ.length) sqRender(); else sqBar(); }
+  else if (d.qp != null) { const it = sqItem(sqView); if (it) { it.pick = +d.qp; it.unsure = false; it.err = ""; it.sel = true; sqSave(); } sqView = null; sqRender(); }
+  else if (d.qa === "comps") { const it = sqItem(sqView), c = it && it.cards[it.pick]; if (!c) return; ov.remove();
     $("q").value = `${c.name} ${/^\d+$/.test(c.number) && c.printedTotal ? c.number + "/" + c.printedTotal : c.number}`;
     const t = $("tb").querySelector('[data-t="ebay"]'); if (t && tab !== "ebay") t.click(); tcgQ = ""; load(); scrollTo({ top: 0, behavior: "smooth" }); }
-  else if (d.sp != null) { scan.pick = +d.sp; scan.status = "pick"; scanOverlay(); }
 });
+document.addEventListener("change", (e) => {
+  const t = e.target; if (!t.closest || !t.closest("#ppscan")) return;
+  if (t.dataset.qk) { const it = sqItem(t.dataset.qk); if (it) it.sel = t.checked; sqSave(); sqBar(); }
+  else if (t.dataset.qf) { const it = sqItem(t.dataset.qid); if (!it) return; if (t.dataset.qf === "qty") it.qty = Math.max(1, Math.round(+t.value || 1)); else it[t.dataset.qf] = t.value; if (t.dataset.qf === "cond") sqDefaults.cond = t.value; sqSave(); }
+  else if (t.dataset.qa === "cond" && t.value) { for (const it of scanQ) if (it.sel && it.pick >= 0) it.cond = t.value; sqDefaults.cond = t.value; sqSave();
+    document.querySelectorAll("#ppscan select[data-qf=cond]").forEach((s) => { const it = sqItem(s.dataset.qid); if (it && it.sel) s.value = it.cond; }); toast(`Set ${t.value} for the selected cards`); t.value = ""; }
+});
+// a row that changed while you were typing in it is redrawn once you leave it
+document.addEventListener("focusout", (e) => { const r = e.target.closest && e.target.closest(".sq-r[data-stale]"); if (r) setTimeout(() => { if (!r.contains(document.activeElement)) { const it = sqItem(r.id.slice(3)); if (it) { delete r.dataset.stale; sqRow(it); } } }, 0); });
 document.addEventListener("submit", (e) => {
-  if (e.target.id === "scsearch") { e.preventDefault(); const q = new FormData(e.target).get("q") || "", r = parseCardText(q);
+  if (e.target.id === "sq-search") { e.preventDefault(); const it = sqItem(sqView); if (!it) return;
+    const q = new FormData(e.target).get("q") || "", r = parseCardText(q);
     if (!r.n) { const m = /\b([A-Z]{0,4}\d{1,3}[a-z]?)\b\s*$/.exec(q.trim()); if (m) r.n = m[1]; }
     r.name = q.replace(/\b[A-Z]{0,4}\d{1,3}[a-z]?\s*\/\s*[A-Z]{0,4}\d{1,3}\b/, "").replace(/\b[A-Z]{0,4}\d{1,3}[a-z]?\b\s*$/, "").trim() || r.name;
-    scan.status = "reading"; scanOverlay(); scanFind(r); }
-  else if (e.target.id === "scform") { e.preventDefault(); scanAdd(e.target); }
+    const btn = e.target.querySelector("button"); btn.textContent = "Searching…"; btn.disabled = true;
+    it.ai = it.ai ? { ...it.ai, _by: "" } : null;
+    sqFind(it, r).then(() => { it.unsure = false; sqSave(); if (sqView === it.id) sqRender(); }); }
+  else if (e.target.id === "sq-bar") { e.preventDefault(); sqAddSelected(e.target); }
 });
 
 /* ---------- actions ---------- */

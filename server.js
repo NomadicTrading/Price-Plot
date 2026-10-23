@@ -589,7 +589,7 @@ async function gemini(model, parts, json, ms) {
   if (!out.r.ok) throw Object.assign(new Error(out.j.error?.message || "Gemini returned " + out.r.status), { status: out.r.status });
   return { text: ((out.j.candidates || [])[0]?.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || "").join(""), secs: out.secs };
 }
-const AI_DAILY = Number(process.env.SCAN_DAILY_LIMIT) || 500, AI_PER_IP_HOUR = Number(process.env.SCAN_PER_IP_HOUR) || 60;
+const AI_DAILY = Number(process.env.SCAN_DAILY_LIMIT) || 500, AI_PER_IP_HOUR = Number(process.env.SCAN_PER_IP_HOUR) || 200;
 const aiUse = { day: "", n: 0, ip: new Map() };
 const AI_PROMPT = `You identify collectible trading cards from a phone photo. Look closely at the card, including small print.
 Reply with ONLY a JSON object, no other text:
