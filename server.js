@@ -513,8 +513,45 @@ app.get("/api/scan-match", async (req, res) => {
 // tier). Claude is used when both are set. SCAN_MODEL picks the model for whichever is used.
 const AI_KEY = process.env.ANTHROPIC_API_KEY, GEM_KEY = process.env.GEMINI_API_KEY;
 // Gemini: Flash-Lite first (about a second per scan); 3.8 Flash as the backup (it is often overloaded on the free tier)
-const AI_MODEL = process.env.SCAN_MODEL || (AI_KEY ? "claude-haiku-5-5" : "gemini-3.5-flash-lite");
-const GEM_FALLBACK = process.env.SCAN_FALLBACK_MODEL || "gemini-3.8-flash";
+const GEM_LITE = process.env.GEMINI_SCAN_MODEL || "gemini-3.5-flash-lite", GEM_BIG = process.env.GEMINI_BACKUP_MODEL || "gemini-3.8-flash";
+const AI_MODEL = AI_KEY ? process.env.SCAN_MODEL || "claude-haiku-5-5" : GEM_LITE, GEM_FALLBACK = GEM_BIG;
+// The scan tries each service that has a key, in this order, moving on if one is busy, slow or failing:
+// Claude (paid, if set) → Groq (free, fast) → Gemini Flash-Lite → OpenRouter (free) → Gemini 3.8 Flash.
+const GROQ_KEY = process.env.GROQ_API_KEY, GROQ_MODEL = process.env.GROQ_SCAN_MODEL || "qwen/qwen3.8-27b";
+const OR_KEY = process.env.OPENROUTER_API_KEY, OR_MODEL = process.env.OPENROUTER_SCAN_MODEL || "google/gemma-4-31b-it:free";
+async function openaiStyle(url, key, model, img, prompt, ms, extraHeaders) {
+  const t0 = Date.now();
+  const r = await fetch(url, { method: "POST", signal: AbortSignal.timeout(ms), headers: { Authorization: "Bearer " + key, "content-type": "application/json", ...(extraHeaders || {}) },
+    body: JSON.stringify({ model, max_tokens: 1500, temperature: 0, messages: [{ role: "user", content: [
+      { type: "image_url", image_url: { url: "data:image/jpeg;base64," + img } }, { type: "text", text: prompt }] }] }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error?.message || (typeof j.error === "string" ? j.error : "") || model + " returned " + r.status);
+  const c = j.choices?.[0]?.message?.content; return { text: Array.isArray(c) ? c.map((p) => p.text || "").join("") : String(c || ""), secs: (Date.now() - t0) / 1000 };
+}
+function aiChain() {
+  const steps = [];
+  if (AI_KEY) steps.push({ name: "Claude " + (process.env.SCAN_MODEL || "claude-haiku-5-5"), run: async (img, mime) => {
+    const t0 = Date.now(), r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: AbortSignal.timeout(30000),
+      headers: { "x-api-key": AI_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({ model: process.env.SCAN_MODEL || "claude-haiku-5-5", max_tokens: 1500, messages: [{ role: "user", content: [
+        { type: "image", source: { type: "base64", media_type: mime, data: img } }, { type: "text", text: AI_PROMPT }] }] }) });
+    const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error?.message || "Claude returned " + r.status);
+    return { text: (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join(""), secs: (Date.now() - t0) / 1000 }; } });
+  if (GROQ_KEY) steps.push({ name: "Groq " + GROQ_MODEL, run: (img) => openaiStyle("https://api.groq.com/openai/v1/chat/completions", GROQ_KEY, GROQ_MODEL, img, AI_PROMPT, 20000) });
+  if (GEM_KEY) steps.push({ name: "Gemini " + GEM_LITE, run: (img, mime) => gemini(GEM_LITE, [{ inline_data: { mime_type: mime, data: img } }, { text: AI_PROMPT }], true, 25000) });
+  if (OR_KEY) steps.push({ name: "OpenRouter " + OR_MODEL, run: (img) => openaiStyle("https://openrouter.ai/api/v1/chat/completions", OR_KEY, OR_MODEL, img, AI_PROMPT, 25000, { "HTTP-Referer": "https://price-plot.onrender.com", "X-Title": "Price Plot" }) });
+  if (GEM_KEY && GEM_BIG !== GEM_LITE) steps.push({ name: "Gemini " + GEM_BIG, run: (img, mime) => gemini(GEM_BIG, [{ inline_data: { mime_type: mime, data: img } }, { text: AI_PROMPT }], true, 20000) });
+  return steps;
+}
+async function aiRead(img, mime) {
+  const errs = [];
+  for (const st of aiChain()) {
+    try { const out = await st.run(img, mime); const m = /\{[\s\S]*\}/.exec(out.text); if (!m) throw new Error("answer couldn't be read");
+      return { read: JSON.parse(m[0]), by: st.name, secs: out.secs, skipped: errs }; }
+    catch (e) { errs.push(st.name + ": " + e.message); }
+  }
+  throw new Error(errs.join("; ") || "no AI service is set up");
+}
 // One Gemini request: thinking turned down to "low" for speed (retried without it if the model refuses that setting)
 async function gemini(model, parts, json, ms) {
   const go = async (cfg) => {
@@ -531,11 +568,6 @@ async function gemini(model, parts, json, ms) {
   if (!out.r.ok) throw Object.assign(new Error(out.j.error?.message || "Gemini returned " + out.r.status), { status: out.r.status });
   return { text: ((out.j.candidates || [])[0]?.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || "").join(""), secs: out.secs };
 }
-// tries the main model, then the lighter one if the first is too slow or unavailable
-async function geminiAny(parts, json) {
-  try { return { ...(await gemini(AI_MODEL, parts, json, 12000)), model: AI_MODEL }; }
-  catch (e) { if (GEM_FALLBACK === AI_MODEL) throw e; const r = await gemini(GEM_FALLBACK, parts, json, 40000).catch((e2) => { throw new Error(`${AI_MODEL}: ${e.message}; ${GEM_FALLBACK}: ${e2.message}`); }); return { ...r, model: GEM_FALLBACK, note: `${AI_MODEL}: ${e.message}` }; }
-}
 const AI_DAILY = Number(process.env.SCAN_DAILY_LIMIT) || 500, AI_PER_IP_HOUR = Number(process.env.SCAN_PER_IP_HOUR) || 60;
 const aiUse = { day: "", n: 0, ip: new Map() };
 const AI_PROMPT = `You identify collectible trading cards from a phone photo. Look closely at the card, including small print.
@@ -551,29 +583,26 @@ Reply with ONLY a JSON object, no other text:
 "confidence":0.0 to 1.0,"notes":"short note on anything uncertain"}
 Be literal: report only what is visible in the photo. If something is too small, blurry or covered by glare to read, use null rather than guessing.`;
 // Open /api/scan-ai/check once to see which AI service is set up and whether a tiny test request works.
+// Open /api/scan-ai/check to see which AI services are set up; add ?image=1 to run a real card photo through them
+// (?only=Groq or ?only=Gemini etc. to test one).
 app.get("/api/scan-ai/check", async (req, res) => {
-  const out = { claudeKey: !!AI_KEY, geminiKey: !!GEM_KEY, using: AI_KEY ? "Claude" : GEM_KEY ? "Gemini" : "none", model: AI_KEY || GEM_KEY ? AI_MODEL : null, scansToday: aiUse.n, dailyLimit: AI_DAILY };
-  if (!AI_KEY && !GEM_KEY) return res.json({ ...out, ok: false, error: "No key found. Add GEMINI_API_KEY (or ANTHROPIC_API_KEY) in Render's Environment and redeploy." });
-  if (AI_KEY) try {
-    const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", signal: AbortSignal.timeout(30000), headers: { "x-api-key": AI_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" }, body: JSON.stringify({ model: AI_MODEL, max_tokens: 20, messages: [{ role: "user", content: "Reply with the word ok." }] }) });
-    const j = await r.json().catch(() => ({}));
-    return res.json({ ...out, ok: r.ok, status: r.status, error: r.ok ? null : (j.error?.message || JSON.stringify(j).slice(0, 400)) });
-  } catch (e) { return res.json({ ...out, ok: false, error: e.message }); }
-  const tests = {};
+  const steps = aiChain(), only = String(req.query.only || "").toLowerCase();
+  const out = { order: steps.map((s) => s.name), keys: { claude: !!AI_KEY, groq: !!GROQ_KEY, gemini: !!GEM_KEY, openrouter: !!OR_KEY }, scansToday: aiUse.n, dailyLimit: AI_DAILY };
+  if (!steps.length) return res.json({ ...out, ok: false, error: "No key found. Add GROQ_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY or ANTHROPIC_API_KEY in Render's Environment." });
   let photo = null;
-  if (req.query.image) try { const ir = await fetch("https://images.pokemontcg.io/base5/49.png", { signal: AbortSignal.timeout(15000) }); photo = Buffer.from(await ir.arrayBuffer()).toString("base64"); } catch (e) { tests.photo = "couldn't load the sample card: " + e.message; }
-  // ?model=… tests just that one model (a photo test of both can outlast the browser's patience)
-  const models = req.query.model ? [String(req.query.model).replace(/[^a-z0-9.\-]/gi, "").slice(0, 60)] : [...new Set([AI_MODEL, GEM_FALLBACK])];
-  for (const m of models) {
-    if (!photo) try { const g = await gemini(m, [{ text: "Reply with the word ok." }], false, 25000); tests[m] = { ok: true, seconds: g.secs, said: g.text.slice(0, 20) }; }
-    catch (e) { tests[m] = { ok: false, error: e.message }; }
-    if (photo) try { const g = await gemini(m, [{ inline_data: { mime_type: "image/png", data: photo } }, { text: AI_PROMPT }], true, 50000); tests[m + " with a card photo"] = { ok: true, seconds: g.secs, read: g.text.slice(0, 600) }; }
-    catch (e) { tests[m + " with a card photo"] = { ok: false, error: e.message }; }
+  if (req.query.image) try { const ir = await fetch("https://images.pokemontcg.io/base5/49.png", { signal: AbortSignal.timeout(15000) }); photo = Buffer.from(await ir.arrayBuffer()).toString("base64"); } catch (e) { return res.json({ ...out, error: "couldn't load the sample card: " + e.message }); }
+  const tests = {};
+  for (const st of steps.filter((s) => !only || s.name.toLowerCase().includes(only))) {
+    if (!photo) { tests[st.name] = "set up (add ?image=1 to test it with a card photo)"; continue; }
+    try { const o = await st.run(photo, "image/png"); tests[st.name] = { ok: true, seconds: o.secs, read: o.text.slice(0, 500) }; }
+    catch (e) { tests[st.name] = { ok: false, error: e.message }; }
+    if (!only && Object.keys(tests).length >= 2) { tests.note = "stopped after two to keep this page quick; use ?only= to test the others"; break; }
   }
-  res.json({ ...out, ok: Object.values(tests).some((t) => t.ok), tests });
+  res.json({ ...out, tests });
 });
+
 app.post("/api/scan-ai", express.json({ limit: "4mb" }), async (req, res) => {
-  if (!AI_KEY && !GEM_KEY) return res.status(503).json({ error: "AI scanning isn't set up (no ANTHROPIC_API_KEY or GEMINI_API_KEY)", off: true });
+  if (!aiChain().length) return res.status(503).json({ error: "AI scanning isn't set up (add GROQ_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY or ANTHROPIC_API_KEY)", off: true });
   const img = String(req.body?.image || "").replace(/^data:image\/\w+;base64,/, "");
   if (!img || img.length > 5.5e6) return res.status(400).json({ error: "Missing or too large photo" });
   const today = new Date().toISOString().slice(0, 10), ip = String(req.headers["x-forwarded-for"] || req.ip || "").split(",")[0].trim(), hour = Math.floor(Date.now() / 3600e3);
@@ -584,23 +613,8 @@ app.post("/api/scan-ai", express.json({ limit: "4mb" }), async (req, res) => {
   aiUse.n++; aiUse.ip.set(ip, { h: hour, n: cnt + 1 });
   let read;
   try {
-    let text = "";
-    if (AI_KEY) {
-      const r = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST", signal: AbortSignal.timeout(45000),
-        headers: { "x-api-key": AI_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-        body: JSON.stringify({ model: AI_MODEL, max_tokens: 1500, messages: [{ role: "user", content: [
-          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: img } }, { type: "text", text: AI_PROMPT }] }] }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error?.message || "AI service returned " + r.status);
-      text = (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
-    } else {
-      const g = await geminiAny([{ inline_data: { mime_type: "image/jpeg", data: img } }, { text: AI_PROMPT }], true);
-      text = g.text; if (g.note) console.log("scan-ai fell back to", g.model, "-", g.note);
-    }
-    const m = /\{[\s\S]*\}/.exec(text); if (!m) throw new Error("the AI answer couldn't be read");
-    read = JSON.parse(m[0]);
+    const out = await aiRead(img, "image/jpeg"); read = out.read; read._by = out.by; read._secs = out.secs;
+    if (out.skipped.length) console.log("scan-ai used", out.by, "after:", out.skipped.join(" | "));
   } catch (e) {
     console.error("scan-ai:", e.message);
     return res.status(502).json({ error: "AI scan failed: " + e.message, off: true });
