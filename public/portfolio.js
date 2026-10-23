@@ -660,6 +660,7 @@ function scanOverlay() {
   else if (S.status === "searching") body = `<p><b>Looking up the card…</b></p>`;
   else if (S.status === "pick") { const c = S.cards[S.pick];
     body = `<div class="sc-sel"><img src="${esc(c.image)}" alt=""><div><b>${esc(c.name)}</b><div class="mu">${esc(c.set || "")} · ${esc(c.number)}${c.printedTotal ? "/" + esc(c.printedTotal) : ""}${c.year ? " · " + c.year : ""}</div><button type="button" class="cs-back" data-sc="back">‹ Pick a different card</button></div></div>
+    <div class="ppm-b" style="margin:0 0 12px"><button type="button" class="ppm-x primary" data-sc="comps">See comps for this card</button></div><p class="mu" style="margin:0 0 6px"><b>Or add it to your portfolio:</b></p>
     <form id="scform"><div class="pg">
       <label>Portfolio<input name="pf" list="scpfl" value="${esc(S.pf || pfs[0] || "")}" placeholder="Portfolio name"><datalist id="scpfl">${pfs.map((p) => `<option value="${esc(p)}">`).join("")}</datalist></label>
       <label>Condition<select name="cond">${CONDS.map((x) => `<option ${x === (S.cond || "Near Mint") ? "selected" : ""}>${x}</option>`).join("")}</select></label>
@@ -667,7 +668,7 @@ function scanOverlay() {
       <label>Grade (blank if raw)<input name="grade" placeholder="e.g. PSA 10"></label>
       <label>Quantity<input name="qty" type="number" min="1" step="1" value="1" inputmode="numeric"></label>
       <label>Paid each ($)<input name="cost" type="number" min="0" step="0.01" inputmode="decimal"></label></div>
-      <div class="ppm-b"><button type="submit" class="ppm-x primary">Add to portfolio</button></div></form>`; }
+      <div class="ppm-b"><button type="submit" class="ppm-x">Add to portfolio</button></div></form>`; }
   else { const r = S.read || {};
     body = `${S.cards.length ? `<p class="mu">Tap your card:</p><div class="sc-grid">${S.cards.map((c, i) => `<button type="button" data-sp="${i}"><img src="${esc(c.image)}" alt="" loading="lazy"><b>${esc(c.name)}</b><span>${esc(c.set || "")} · ${esc(c.number)}${c.printedTotal ? "/" + esc(c.printedTotal) : ""}</span></button>`).join("")}</div>`
       : `<p><b>No matching cards found.</b> Check the name and number below and search again.</p>`}
@@ -709,6 +710,9 @@ document.addEventListener("click", (e) => {
   if (d.sc === "close") ov.remove();
   else if (d.sc === "again") scanCamera();
   else if (d.sc === "back") { scan.status = "list"; scanOverlay(); }
+  else if (d.sc === "comps") { const c = scan.cards[scan.pick]; ov.remove();
+    $("q").value = `${c.name} ${/^\d+$/.test(c.number) && c.printedTotal ? c.number + "/" + c.printedTotal : c.number}`;
+    const t = $("tb").querySelector('[data-t="ebay"]'); if (t && tab !== "ebay") t.click(); tcgQ = ""; load(); scrollTo({ top: 0, behavior: "smooth" }); }
   else if (d.sp != null) { scan.pick = +d.sp; scan.status = "pick"; scanOverlay(); }
 });
 document.addEventListener("submit", (e) => {
