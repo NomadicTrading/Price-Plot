@@ -24,7 +24,7 @@ header{border-bottom:1px solid var(--line)}
 .brand{display:inline-flex;align-items:center;gap:10px;color:var(--fg);text-decoration:none;font:700 24px/1 "Space Grotesk","Helvetica Neue",Helvetica,Arial,sans-serif;letter-spacing:-.6px}
 .brand img{width:36px;height:36px;flex:none}.brand .pp-dot{color:#F59E0B}
 #f{flex:1;min-width:240px;display:flex;border:1px solid var(--fg);border-radius:999px;overflow:hidden;background:var(--bg)}
-#q{flex:1;min-width:0;border:0;background:transparent;color:var(--fg);font:inherit;font-size:15px;padding:11px 16px;outline:none}
+#q{flex:1;min-width:0;border:0;background:transparent;color:var(--fg);font:inherit;font-size:15px;padding:11px 16px 11px 10px;outline:none}
 .go{background:var(--blue);color:#fff;border:0;border-radius:999px;margin:3px;padding:0 24px;font:inherit;font-weight:700;cursor:pointer}
 .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding-top:12px}
 .pill,select{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:999px;padding:6px 14px;cursor:pointer}
@@ -148,10 +148,10 @@ label.pill{display:inline-block}
 .sc-grid button{font:inherit;color:var(--fg);background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:8px;display:flex;flex-direction:column;gap:4px;align-items:center;text-align:center;cursor:pointer}
 .sc-grid img{width:100%;max-width:140px;aspect-ratio:63/88;object-fit:contain}.sc-grid b{font-size:14px}.sc-grid span{font-size:12px;color:var(--mut)}
 .sc-sel{display:flex;gap:12px;align-items:flex-start;margin-bottom:10px}.sc-sel img{width:96px;border-radius:6px;flex:none}.sc-sel .mu{font-size:13px;margin-top:2px}
-.cam{flex:none;width:40px;height:40px;margin:3px 4px 3px 0;align-self:center;border-radius:50%;border:1px solid var(--bd);background:var(--bg);color:var(--fg);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}.cam:hover{background:var(--soft)}
+.cam{flex:none;width:40px;height:40px;margin:3px 0 3px 4px;align-self:center;border-radius:50%;border:1px solid var(--bd);background:var(--bg);color:var(--fg);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}.cam:hover{background:var(--soft)}
 </style></head><body>
 <header><div class="wrap hd"><a class="brand" href="/" aria-label="Price Plot home"><img src="/brand/icon-small.svg" width="36" height="36" alt=""><span>Price<span class="pp-dot">·</span>Plot</span></a>
-<form id="f"><input id="q" type="search" placeholder="Search a card, e.g. charizard 4/102 base set" aria-label="Search listings" autocomplete="off" enterkeyhint="search" autofocus><button class="cam" id="camb" type="button" aria-label="Search with your camera" title="Search with your camera"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg></button><button class="go" type="submit">Search</button></form></div></header>
+<form id="f"><button class="cam" id="camb" type="button" aria-label="Search with your camera" title="Search with your camera"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg></button><input id="q" type="search" placeholder="Search a card, e.g. charizard 4/102 base set" aria-label="Search listings" autocomplete="off" enterkeyhint="search" autofocus><button class="go" type="submit">Search</button></form></div></header>
 <main class="wrap">
 <div class="seg tabs" id="tb" role="group" aria-label="Data source"><button type="button" data-t="ebay" aria-pressed="true">eBay</button><button type="button" data-t="tcg" aria-pressed="false">TCGplayer</button><button type="button" data-t="pf" aria-pressed="false">Portfolio</button></div>
 <div class="bar" id="sv"></div>
