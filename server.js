@@ -431,14 +431,31 @@ app.get("/api/tcg", async (req, res) => {
 // pokemontcg.io. The number with its set size (e.g. 199/165) usually pins the card down by itself.
 const scanCache = new Map();
 async function ptcg(q, size) {
-  for (let tries = 0; tries < 3; tries++) {
+  for (let tries = 0; tries < 2; tries++) {
     const r = await fetch("https://api.pokemontcg.io/v2/cards?" + new URLSearchParams({ q, pageSize: String(size), orderBy: "-set.releaseDate", select: "id,name,number,set,images,tcgplayer,rarity" }), {
-      headers: PTCG_KEY ? { "X-Api-Key": PTCG_KEY } : {}, signal: AbortSignal.timeout(15000) }).catch(() => null);
+      headers: PTCG_KEY ? { "X-Api-Key": PTCG_KEY } : {}, signal: AbortSignal.timeout(12000) }).catch(() => null);
     if (r && r.ok) return (await r.json()).data || [];
     if (r && r.status < 500) throw new Error("card lookup returned " + r.status);
     await new Promise((ok) => setTimeout(ok, 700 * (tries + 1)));
   }
   throw new Error("the card lookup service didn't answer, try again in a minute");
+}
+// Second source for the scanner: TCGplayer's own search, which finds "49/82"-style numbers directly and covers more
+// cards (Japanese included). Matches carry their TCGplayer product id, so prices are exact.
+async function tcgScan(q) {
+  const j = await tpPost("https://mp-search-api.tcgplayer.com/v1/search/request?" + new URLSearchParams({ q: q.slice(0, 120), isList: "false" }), {
+    algorithm: "sales_synonym_v2", from: 0, size: 24,
+    filters: { term: { productLineName: ["pokemon", "pokemon-japan"] }, range: {}, match: {} },
+    listingSearch: { context: { cart: {} }, filters: { term: { sellerStatus: "Live", channelId: 0 }, range: { quantity: { gte: 1 } }, exclude: { channelExclusion: 0 } } },
+    context: { cart: {}, shippingCountry: "US", userProfile: {} }, settings: { useFuzzySearch: true, didYouMean: {} }, sort: {},
+  });
+  return (((j.results || [])[0] || {}).results || []).filter((r) => r.productId && !/code card|booster|box|bundle|tin|deck|pack/i.test(r.productName || "")).map((r) => {
+    const id = String(Math.round(Number(r.productId))), raw = String(r.customAttributes?.number || (/\s-\s([\w/]+)$/.exec(r.productName || "") || [])[1] || "");
+    const [num, tot] = raw.split("/");
+    return { id: "tcg-" + id, tcgId: id, name: String(r.productName || "").replace(/\s-\s[\w/]+$/, "").trim(), number: num || "", set: r.setName || "", printedTotal: tot ? +tot || tot : null, year: null,
+      image: `https://tcgplayer-cdn.tcgplayer.com/product/${id}_200w.jpg`, big: `https://tcgplayer-cdn.tcgplayer.com/product/${id}_400w.jpg`, rarity: r.rarity || r.customAttributes?.rarityDbName || "",
+      prints: ["Normal", "Holofoil", "Reverse Holofoil", "1st Edition", "1st Edition Holofoil", "Unlimited", "Unlimited Holofoil"] };
+  });
 }
 app.get("/api/scan-match", async (req, res) => {
   const name = String(req.query.name || "").replace(/["\\*:()]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
@@ -446,26 +463,35 @@ app.get("/api/scan-match", async (req, res) => {
   if (!name && !n) return res.status(400).json({ error: "Nothing to look up" });
   const key = [name.toLowerCase(), n, d].join("|"), hit = scanCache.get(key);
   if (hit && hit.exp > Date.now()) return res.json(hit.data);
+  const nn = /^\d+$/.test(n) ? String(+n) : n, words = norm(name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length > 1);
+  const errors = [];
+  let cards = [];
   try {
-    const nn = /^\d+$/.test(n) ? String(+n) : n, words = norm(name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length > 1);
-    let cards = [];
     if (nn && d) cards = await ptcg(`number:${nn} set.printedTotal:${d}`, 30);
     if (!cards.length && nn && words.length) cards = await ptcg(`number:${nn} name:"${words[0]}*"`, 30);
-    if (!cards.length && words.length) cards = await ptcg(`name:"${words.slice(0, 3).join(" ")}*"`, 40);
+    if (!cards.length && !(nn && d) && words.length) cards = await ptcg(`name:"${words.slice(0, 3).join(" ")}*"`, 40);
     if (!cards.length && nn && /[a-z]/i.test(nn)) cards = await ptcg(`number:${nn}`, 30);
-    const score = (c) => { const cw = norm(c.name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/); let sc = words.filter((w) => cw.includes(w)).length * 2;
-      if (nn && String(c.number).toLowerCase() === nn.toLowerCase()) sc += 3; if (d && String(c.set?.printedTotal) === d) sc += 3; return sc; };
-    const list = cards.map((c) => ({ c, s: score(c) })).sort((a, b) => b.s - a.s).slice(0, 8).map(({ c }) => ({
-      id: c.id, name: c.name, number: c.number, set: c.set?.name, printedTotal: c.set?.printedTotal, year: Number(String(c.set?.releaseDate || "").slice(0, 4)) || null,
-      image: c.images?.small, big: c.images?.large, rarity: c.rarity || "",
-      prints: Object.keys(c.tcgplayer?.prices || {}).map((k) => ({ normal: "Normal", holofoil: "Holofoil", reverseHolofoil: "Reverse Holofoil", "1stEditionHolofoil": "1st Edition Holofoil", "1stEditionNormal": "1st Edition", unlimitedHolofoil: "Unlimited Holofoil" }[k] || k)),
-    }));
-    const data = { cards: list };
-    scanCache.set(key, { exp: Date.now() + 864e5, data }); if (scanCache.size > 2000) scanCache.delete(scanCache.keys().next().value);
-    res.json(data);
-  } catch (e) {
-    res.status(502).json({ error: e.message });
+  } catch (e) { errors.push("pokemontcg.io: " + e.message); }
+  let list = cards.map((c) => ({
+    id: c.id, name: c.name, number: c.number, set: c.set?.name, printedTotal: c.set?.printedTotal, year: Number(String(c.set?.releaseDate || "").slice(0, 4)) || null,
+    image: c.images?.small, big: c.images?.large, rarity: c.rarity || "", tcgId: null,
+    prints: Object.keys(c.tcgplayer?.prices || {}).map((k) => ({ normal: "Normal", holofoil: "Holofoil", reverseHolofoil: "Reverse Holofoil", "1stEditionHolofoil": "1st Edition Holofoil", "1stEditionNormal": "1st Edition", unlimitedHolofoil: "Unlimited Holofoil" }[k] || k)),
+  }));
+  // nothing (or the first source failed): ask TCGplayer, by number first since names are often misread
+  if (!list.length) {
+    try {
+      if (nn && d) list = await tcgScan(`${nn}/${d}`);
+      if (!list.length && words.length) list = await tcgScan(words.slice(0, 3).join(" ") + (nn ? " " + nn : ""));
+    } catch (e) { errors.push("TCGplayer: " + e.message); }
   }
+  // the number and set size outweigh the name, which the camera often misreads
+  const score = (c) => { const cw = norm(c.name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/); let sc = words.filter((w) => cw.includes(w)).length;
+    const cn = String(c.number || "").toLowerCase().replace(/^0+(?=\d)/, ""); if (nn && cn === nn.toLowerCase()) sc += 5; if (d && String(c.printedTotal) === d) sc += 5; return sc; };
+  list = list.map((c) => ({ c, s: score(c) })).sort((a, b) => b.s - a.s).slice(0, 8).map(({ c }) => c);
+  if (!list.length && errors.length) return res.status(502).json({ error: "The card lookup didn't answer. Try again in a moment.", detail: errors });
+  const data = { cards: list };
+  if (list.length) { scanCache.set(key, { exp: Date.now() + 864e5, data }); if (scanCache.size > 2000) scanCache.delete(scanCache.keys().next().value); }
+  res.json(data);
 });
 
 // TCGplayer market prices by condition and printing, with up to 1 year of daily history, via JustTCG

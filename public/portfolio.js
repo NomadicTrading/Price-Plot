@@ -671,16 +671,16 @@ function scanOverlay() {
       <div class="ppm-b"><button type="submit" class="ppm-x">Add to portfolio</button></div></form>`; }
   else { const r = S.read || {};
     body = `${S.cards.length ? `<p class="mu">Tap your card:</p><div class="sc-grid">${S.cards.map((c, i) => `<button type="button" data-sp="${i}"><img src="${esc(c.image)}" alt="" loading="lazy"><b>${esc(c.name)}</b><span>${esc(c.set || "")} · ${esc(c.number)}${c.printedTotal ? "/" + esc(c.printedTotal) : ""}</span></button>`).join("")}</div>`
-      : `<p><b>No matching cards found.</b> Check the name and number below and search again.</p>`}
+      : S.err ? `<p><b>${esc(S.err)}</b> Tap Search to try again, or fix the name and number first.</p>` : `<p><b>No matching cards found.</b> Check the name and number below and search again.</p>`}
       <form id="scsearch" class="cimp-c" style="margin-top:12px"><input name="q" value="${esc([r.name, r.n && (r.n + (r.d ? "/" + r.d : ""))].filter(Boolean).join(" "))}" placeholder="Name and number, e.g. Charizard 4/102" aria-label="Card name and number" style="letter-spacing:0;text-transform:none"><button type="submit" class="ppm-x">Search</button></form>`; }
   ov.innerHTML = `<div class="ppm" role="dialog" aria-modal="true" aria-labelledby="sc-t"><h3 id="sc-t">Scan a card</h3>
     ${S.preview && S.status !== "pick" ? `<img class="sc-photo" src="${S.preview}" alt="Your photo">` : ""}${body}
     <div class="ppm-b"><button type="button" class="ppm-x" data-sc="again">Scan another card</button><button type="button" class="ppm-x plain" data-sc="close">Close</button></div></div>`;
 }
 async function scanFind(read) {
-  scan.read = read; scan.status = "searching"; scan.cards = [];
+  scan.read = read; scan.status = "searching"; scan.cards = []; scan.err = "";
   try { const j = await getJSON("/api/scan-match?" + new URLSearchParams({ name: read.name || "", n: read.n || "", d: read.d || "" })); scan.cards = j.cards || []; scan.status = "list"; }
-  catch (e) { scan.status = "list"; scan.cards = []; toast("Card lookup failed: " + e.message); }
+  catch (e) { scan.status = "list"; scan.cards = []; scan.err = e.message; }
   scanOverlay();
 }
 async function scanFile(file) {
@@ -693,7 +693,7 @@ async function scanFile(file) {
 function scanAdd(fm) {
   const d = Object.fromEntries(new FormData(fm)), c = scan.cards[scan.pick];
   const x = { id: uid(), pf: d.pf.trim(), cat: "Pokemon", set: c.set || "", name: c.name, num: /^\d+$/.test(c.number) && c.printedTotal ? `${c.number}/${c.printedTotal}` : c.number, rarity: c.rarity || "",
-    var: d.var || "", grade: d.grade.trim() || "Ungraded", cond: d.cond, qty: Math.max(1, Math.round(num(d.qty) || 1)), cost: num(d.cost) || 0, mkt: null, ovr: 0, watch: false, added: today(), notes: "", img: c.image, big: c.big, imgT: Date.now() };
+    var: d.var || "", grade: d.grade.trim() || "Ungraded", cond: d.cond, qty: Math.max(1, Math.round(num(d.qty) || 1)), cost: num(d.cost) || 0, mkt: null, ovr: 0, watch: false, added: today(), notes: "", img: c.image, big: c.big, imgT: Date.now(), tcgId: c.tcgId || undefined };
   const same = P.items.find((y) => y.qty > 0 && keyOf(y) === keyOf(x));
   if (same) same.qty += x.qty; else P.items.push(x);
   scan.pf = x.pf; scan.cond = x.cond; store(); snap(); render(); fillPrices();
