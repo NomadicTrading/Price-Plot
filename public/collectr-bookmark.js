@@ -48,9 +48,12 @@
     for (const k in extra || {}) U.searchParams.set(k, extra[k]);
     for (let page = 0; page < (maxPages || 200); page++) {
       U.searchParams.set("offset", String(off)); U.searchParams.set("limit", String(lim));
-      const r = await F0(U.toString(), { credentials: "include", headers: h });
+      let r, j;
+      try { r = await F0(U.toString(), { credentials: "include", headers: h }); }
+      catch (e) { const why = "blocked (" + e.message + ")" + (Object.keys(extra || {}).length ? " with " + JSON.stringify(extra) : ""); if (!got.length) return { status: why }; log.push("stopped at " + off + ": " + why); break; }
       if (!r.ok) { if (!got.length) return { status: r.status }; log.push("stopped at " + off + ": status " + r.status); break; }
-      const j = await r.json(); if (!first) first = j;
+      try { j = await r.json(); } catch (e) { log.push("bad answer at " + off); break; }
+      if (!first) first = j;
       const arr = (j && Array.isArray(j.products)) ? j.products : findArr(j); if (!arr || !arr.length) break;
       got.push(...arr); off += arr.length; if (arr.length < lim) break;
     }
@@ -111,8 +114,8 @@
     for (const c of cols) {
       const note = () => say("reading " + (c ? c.name : "your cards") + "…");
       say("reading " + (c ? c.name : "your cards") + "…");
-      const r = await readCollection(base, h, c, sorts, note);
-      if (r.items) all.push(...r.items); else log.push((c ? c.name : "default") + ": status " + r.status);
+      let r; try { r = await readCollection(base, h, c, sorts, note); } catch (e) { r = { status: "error " + e.message }; }
+      if (r.items) all.push(...r.items); else log.push((c ? c.name : "default") + ": " + r.status);
     }
     for (const x of all) if (x.grade_company && x.grade_id != null) x.grade_label = grades[String(x.grade_id)] || null;
     items = all; used = base.replace(/[?].*/, "");
