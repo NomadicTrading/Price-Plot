@@ -43,14 +43,19 @@
   };
   /* Reads one list (one portfolio, one sort order) page by page. Collectr stops answering after about 500 entries,
      so a long list is read again in other sort orders and the results are merged. */
+  let slowDown = false, lastAt = 0;
+  const pace = async () => { const gap = 1200 - (Date.now() - lastAt); if (gap > 0) await wait(gap); lastAt = Date.now(); };
   const readAll = async (base, h, extra, maxPages) => {
+    if (slowDown) return { status: "skipped (Collectr asked to slow down)" };
     const U = new URL(base), lim = +(U.searchParams.get("limit") || 30), got = []; let off = 0, first = null;
     for (const k in extra || {}) U.searchParams.set(k, extra[k]);
     for (let page = 0; page < (maxPages || 200); page++) {
       U.searchParams.set("offset", String(off)); U.searchParams.set("limit", String(lim));
       let r, j;
+      await pace();
       try { r = await F0(U.toString(), { credentials: "include", headers: h }); }
-      catch (e) { const why = "blocked (" + e.message + ")" + (Object.keys(extra || {}).length ? " with " + JSON.stringify(extra) : ""); if (!got.length) return { status: why }; log.push("stopped at " + off + ": " + why); break; }
+      catch (e) { slowDown = true; const why = "refused (" + e.message + ")" + (Object.keys(extra || {}).length ? " with " + JSON.stringify(extra) : ""); log.push("stopped at " + off + ": " + why); if (!got.length) return { status: why }; break; }
+      if (r.status === 429 || r.status === 403 || r.status === 202) { slowDown = true; log.push("stopped at " + off + ": Collectr asked to slow down (" + r.status + ")"); if (!got.length) return { status: r.status }; break; }
       if (!r.ok) { if (!got.length) return { status: r.status }; log.push("stopped at " + off + ": status " + r.status); break; }
       try { j = await r.json(); } catch (e) { log.push("bad answer at " + off); break; }
       if (!first) first = j;
@@ -68,7 +73,7 @@
     add(r.items); note();
     const f = r.first || {}, target = (+f.total_cards || 0) + (+f.total_sealed || 0);
     log.push((c ? c.name : "default") + ": " + r.items.length + " entries, " + qtyOf([...seen.values()]) + " of " + (target || "?") + " cards");
-    if (r.items.length >= 450) for (const so of sorts) {
+    if (r.items.length >= 450) for (const so of sorts.slice(0, 2)) {
       if (target && qtyOf([...seen.values()]) >= target) break;
       const r2 = await readAll(base, h, { ...extra, ...so }); if (r2.items) { add(r2.items); note(); }
       log.push("  sort " + JSON.stringify(so) + ": now " + seen.size + " entries, " + qtyOf([...seen.values()]) + " cards");
@@ -100,13 +105,13 @@
     sample = JSON.stringify(probe.first).slice(0, 2500);
     /* sort orders Collectr offers, used to reach past its 500-entry limit */
     let sorts = [];
-    try { const r = await F0("https://api-v2.getcollectr.com/data/sort-filters", { credentials: "include", headers: h }); if (r.ok) { const j = await r.json(), arr = findArr(j) || [];
+    try { await pace(); const r = await F0("https://api-v2.getcollectr.com/data/sort-filters", { credentials: "include", headers: h }); if (r.ok) { const j = await r.json(), arr = findArr(j) || [];
       log.push("sorts: " + JSON.stringify(arr).slice(0, 300));
       sorts = arr.map((o) => { const p = {}; for (const k in o) if (/^sort/i.test(k) && o[k] != null && typeof o[k] !== "object") p[k] = String(o[k]); return p; }).filter((p) => Object.keys(p).length); } } catch (e) {}
     if (!sorts.length) sorts = [{ sortType: "price", sortOrder: "desc" }, { sortType: "price", sortOrder: "asc" }, { sortType: "name", sortOrder: "desc" }, { sortType: "name", sortOrder: "asc" }];
     /* grade names, so a graded card comes in as e.g. "PSA 10" */
     let grades = {};
-    try { const r = await F0("https://api-v2.getcollectr.com/data/grading-scales", { credentials: "include", headers: h }); if (r.ok) { const q = [await r.json()], seen = new Set();
+    try { await pace(); const r = await F0("https://api-v2.getcollectr.com/data/grading-scales", { credentials: "include", headers: h }); if (r.ok) { const q = [await r.json()], seen = new Set();
       while (q.length) { const v = q.shift(); if (!v || typeof v !== "object" || seen.has(v)) continue; seen.add(v); if (!Array.isArray(v) && v.id != null && (v.name || v.grade || v.label)) grades[String(v.id)] = String(v.name || v.grade || v.label); Object.values(v).forEach((x) => q.push(x)); } } } catch (e) {}
     /* every portfolio on the showcase, not just the one it opens on */
     const cols = (probe.first && Array.isArray(probe.first.collections) && probe.first.collections.length) ? probe.first.collections : [null];
@@ -119,6 +124,7 @@
     }
     for (const x of all) if (x.grade_company && x.grade_id != null) x.grade_label = grades[String(x.grade_id)] || null;
     items = all; used = base.replace(/[?].*/, "");
+    if (slowDown) log.push("PARTIAL: Collectr asked to slow down, so this import may be missing cards. Wait an hour and run it again, then use Add to fill in the rest.");
     return { type: "collectr-import", v: 4, page: location.href, used, count: items.length, items: items.map((x) => slim(x, 0)), log, sample };
   };
   run().then((data) => {
