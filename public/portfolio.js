@@ -662,6 +662,8 @@ function parseCardText(text) {
 const SQ_KEY = "pp_scanq", SQ_MAX = 80, SQ_PARALLEL = 2;
 let scanQ = (() => { try { const q = JSON.parse(localStorage.getItem(SQ_KEY) || "[]"); return Array.isArray(q) ? q : []; } catch { return []; } })();
 // a card that was still being read when the page closed lost its photo
+// a price lookup cut off when the page closed starts again
+for (const it of scanQ) if (it.px === undefined) it.pxK = null;
 for (const it of scanQ) if (it.st === "wait" || it.st === "reading") { it.st = "error"; it.err = "The photo was lost when the page closed. Scan this card again."; }
 const sqPhotos = new Map(); // id -> { photo, canvas }, kept only until the card is read
 let sqView = null, sqBusy = 0, sqDefaults = (() => { try { return JSON.parse(localStorage.getItem(SQ_KEY + "_d") || "{}"); } catch { return {}; } })();
@@ -736,7 +738,43 @@ async function sqFind(it, read) {
   try { const j = await getJSON("/api/scan-match?" + new URLSearchParams({ name: read.name || "", n: read.n || "", d: read.d || "" })); it.cards = j.cards || []; }
   catch (e) { it.cards = []; it.err = e.message; }
   it.pick = it.cards.length ? 0 : -1; if (!it.cards.length && !it.err) it.err = "No matching cards found. Tap Fix to search.";
-  it.st = "ready";
+  it.st = "ready"; it.pxK = null;
+  if (it.pick >= 0) setTimeout(() => sqPrice(it), 0);
+}
+
+// --- TCGplayer market price for each scanned card, for its chosen condition and printing ---
+const sqJp = (it, c) => /japan/i.test(c.set || "") || !!(it.ai && /japan/i.test(it.ai.language || ""));
+const sqPxKey = (it) => [it.pick, it.cond || "Near Mint", it.print || ""].join("|");
+async function sqPrice(it) {
+  const c = it.pick >= 0 ? it.cards[it.pick] : null; if (!c) return;
+  const k = sqPxKey(it); if (it.pxK === k) return;
+  it.pxK = k; it.px = undefined; it.pxEst = false; it.pxCond = "";
+  let px = null, est = false, cond = "";
+  try {
+    // cards matched through pokemontcg.io don't carry a TCGplayer product id yet: find it the same way card pictures are found
+    let fb = null;
+    if (!c.tcgId) { const j = await getJSON("/api/cardimg?" + new URLSearchParams({ name: c.name, set: c.set || "", num: sqNum(c), cat: "Pokemon" })); if (j.tcgId) c.tcgId = j.tcgId; else if (j.market > 0) fb = j.market; }
+    if (c.tcgId) { const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: c.tcgId, cond: it.cond || "Near Mint", print: it.print || "", jp: sqJp(it, c) ? "1" : "" })); px = j.market ?? null; est = !!j.est; cond = j.cond || ""; }
+    else if (fb) { px = fb; est = true; }
+  } catch {}
+  if (it.pxK !== k) return; // the condition, printing or match changed while this was loading
+  it.px = px; it.pxEst = est; it.pxCond = cond; sqSave();
+  if (!sqView) sqRow(it); else sqBar();
+}
+// price every card that has a match, two at a time
+function sqPriceAll() {
+  const todo = scanQ.filter((it) => it.pick >= 0 && it.pxK !== sqPxKey(it)); let i = 0;
+  const next = () => { const it = todo[i++]; if (it) sqPrice(it).finally(next); };
+  next(); next();
+}
+const sqVal = (it) => (it.px > 0 ? it.px * Math.max(1, Math.round(+it.qty || 1)) : 0);
+function sqPriceHTML(it, c) {
+  if (!c) return "";
+  if (it.pxK !== sqPxKey(it) || it.px === undefined) return `<div class="sq-p mu">TCGplayer: looking up price…</div>`;
+  if (!(it.px > 0)) return `<div class="sq-p mu">TCGplayer: no price found</div>`;
+  const q = Math.max(1, Math.round(+it.qty || 1));
+  const tip = it.pxEst ? ` <span class="mu" title="No recent sales in this condition on TCGplayer, so this is the Near Mint price with the usual discount">(est.)</span>` : "";
+  return `<div class="sq-p">TCGplayer <span class="sq-pv">${money(it.px)}</span>${q > 1 ? ` <span class="mu">× ${q} =</span> <span class="sq-pv">${money(it.px * q)}</span>` : ""}${tip}${it.grade ? ` <span class="mu">(raw price, not graded)</span>` : ""}</div>`;
 }
 
 // --- the list window ---
@@ -755,6 +793,7 @@ function sqRowHTML(it) {
       ${c ? `<b>${esc(c.name)}</b><div class="mu">${esc(c.set || "")} · ${esc(sqNum(c))}${a && a.language && a.language !== "English" ? " · " + esc(a.language) : ""}</div>` : `<b>${busy ? "Scanning…" : "No match yet"}</b>`}
       ${status ? `<div class="sq-st${it.st === "error" || it.err || it.unsure ? " warn" : ""}">${esc(status)}</div>` : ""}
       ${c && it.grade ? `<div class="mu sq-g">Graded: ${esc(it.grade)}</div>` : ""}
+      ${sqPriceHTML(it, c)}
     </div>
     <div class="sq-a">${busy ? "" : `<button type="button" class="sq-b" data-qo="${it.id}">${c ? "Change" : "Fix"}</button>`}<button type="button" class="sq-x" data-qx="${it.id}" aria-label="Remove from list">✕</button></div>
       ${c ? `<div class="sq-f">
@@ -774,7 +813,15 @@ function sqCount() { const n = scanQ.filter((x) => x.st === "wait" || x.st === "
 function sqBar() {
   const el = $("sq-bar"); if (!el) return;
   const ready = scanQ.filter((x) => x.pick >= 0), sel = ready.filter((x) => x.sel);
-  el.querySelector("[data-qa=add]").textContent = sel.length ? `Add ${sel.length} card${sel.length === 1 ? "" : "s"} to portfolio` : "Add to portfolio";
+  const selV = sel.reduce((a, x) => a + sqVal(x), 0);
+  el.querySelector("[data-qa=add]").textContent = sel.length ? `Add ${sel.length} card${sel.length === 1 ? "" : "s"} to portfolio${selV ? " · " + money(selV) : ""}` : "Add to portfolio";
+  // the whole list's TCGplayer market value, counting quantities
+  const tv = $("sq-v");
+  if (tv) {
+    const total = ready.reduce((a, x) => a + sqVal(x), 0), cards = ready.reduce((a, x) => a + Math.max(1, Math.round(+x.qty || 1)), 0);
+    const wait = ready.filter((x) => x.pxK !== sqPxKey(x) || x.px === undefined).length, none = ready.filter((x) => x.pxK === sqPxKey(x) && x.px !== undefined && !(x.px > 0)).length;
+    tv.innerHTML = ready.length ? `<span class="mu">TCGplayer market value</span> <b>${money(total)}</b> <span class="mu">for ${cards} card${cards === 1 ? "" : "s"}${sel.length && sel.length < ready.length ? ` · selected ${money(selV)}` : ""}${wait ? ` · ${wait} still pricing` : ""}${none ? ` · ${none} without a price` : ""}</span>` : "";
+  }
   el.querySelector("[data-qa=add]").disabled = !sel.length;
   const all = el.querySelector("[data-qa=all]"); if (all) all.textContent = ready.length && sel.length === ready.length ? "Select none" : "Select all";
   const rm = document.querySelector("#ppscan [data-qa=rmsel]"); if (rm) rm.textContent = sel.length ? `Remove ${sel.length} from list` : "Remove from list", rm.disabled = !sel.length;
@@ -789,6 +836,7 @@ function sqRender() {
     <div class="sq-go"><button type="button" class="ppm-x primary" data-qa="cam">📷 Take photos</button><button type="button" class="ppm-x" data-qa="lib">🖼 Choose photos</button></div>
     ${has ? `<div class="sq-top"><span class="mu">${scanQ.length} card${scanQ.length === 1 ? "" : "s"}</span> <span class="mu" id="sq-n"></span><span style="flex:1"></span><button type="button" class="cs-back" data-qa="all">Select all</button></div>
       <div class="sq-top sq-top2"><button type="button" class="cs-back" data-qa="rmsel">Remove from list</button><span style="flex:1"></span><button type="button" class="cs-back sq-dl" data-qa="clear">Clear list</button></div>
+      <div class="sq-v" id="sq-v"></div>
       <div class="sq-list">${scanQ.map(sqRowHTML).join("")}</div>
       <form id="sq-bar" class="sq-bar"><div class="pg">${pfField(sqDefaults.pf && (pfs.includes(sqDefaults.pf) || !pfs.length) ? sqDefaults.pf : pfs[0] || "", pfs)}
         <label>Condition for selected<select data-qa="cond"><option value="">Keep each</option>${CONDS.map((x) => `<option>${x}</option>`).join("")}</select></label></div>
@@ -796,7 +844,7 @@ function sqRender() {
     : `<p class="mu" style="margin:10px 0 4px">Take a photo of each card, one after another. You don't have to wait: each card is read while you take the next, and they all collect here for you to check and add together.</p>
       <p class="mu" style="margin:0">Or choose photos you've already taken. You can pick several at once.</p>`}
   </div>`;
-  sqBar();
+  sqBar(); sqPriceAll();
 }
 function sqDetail(ov) {
   const it = sqItem(sqView); if (!it) { sqView = null; return sqRender(); }
@@ -817,7 +865,9 @@ function sqToItem(it, pf) {
   const c = it.cards[it.pick];
   return { id: uid(), pf, cat: "Pokemon", set: c.set || "", name: c.name, num: /^\d+$/.test(c.number) && c.printedTotal ? `${c.number}/${c.printedTotal}` : c.number, rarity: c.rarity || "",
     var: it.print || "", grade: (it.grade || "").trim() || "Ungraded", cond: it.cond || "Near Mint", qty: Math.max(1, Math.round(+it.qty || 1)), cost: 0, mkt: null, ovr: 0, watch: false, added: today(), notes: "",
-    img: c.image, big: c.big, imgT: Date.now(), tcgId: c.tcgId || undefined };
+    img: c.image, big: c.big, imgT: Date.now(), tcgId: c.tcgId || undefined,
+    // the TCGplayer price already looked up while scanning, so the portfolio shows it right away
+    ...(!it.grade && c.tcgId && it.pxK === sqPxKey(it) && it.px > 0 ? { mkt: it.px, mktEst: !!it.pxEst, mktV: 2, pT: Date.now() } : {}) };
 }
 function sqAddSelected(fm) {
   const d = Object.fromEntries(new FormData(fm));
@@ -894,9 +944,10 @@ document.addEventListener("click", (e) => {
 document.addEventListener("change", (e) => {
   const t = e.target; if (!t.closest || !t.closest("#ppscan")) return;
   if (t.dataset.qk) { const it = sqItem(t.dataset.qk); if (it) it.sel = t.checked; sqSave(); sqBar(); }
-  else if (t.dataset.qf) { const it = sqItem(t.dataset.qid); if (!it) return; if (t.dataset.qf === "qty") it.qty = Math.max(1, Math.round(+t.value || 1)); else it[t.dataset.qf] = t.value; if (t.dataset.qf === "cond") sqDefaults.cond = t.value; sqSave(); }
+  else if (t.dataset.qf) { const it = sqItem(t.dataset.qid); if (!it) return; if (t.dataset.qf === "qty") it.qty = Math.max(1, Math.round(+t.value || 1)); else it[t.dataset.qf] = t.value; if (t.dataset.qf === "cond") sqDefaults.cond = t.value; sqSave();
+    if (t.dataset.qf !== "qty") sqPrice(it); sqRow(it); }
   else if (t.dataset.qa === "cond" && t.value) { for (const it of scanQ) if (it.sel && it.pick >= 0) it.cond = t.value; sqDefaults.cond = t.value; sqSave();
-    document.querySelectorAll("#ppscan select[data-qf=cond]").forEach((s) => { const it = sqItem(s.dataset.qid); if (it && it.sel) s.value = it.cond; }); toast(`Set ${t.value} for the selected cards`); t.value = ""; }
+    document.querySelectorAll("#ppscan select[data-qf=cond]").forEach((s) => { const it = sqItem(s.dataset.qid); if (it && it.sel) s.value = it.cond; }); toast(`Set ${t.value} for the selected cards`); t.value = ""; sqPriceAll(); for (const it of scanQ) if (it.sel && it.pick >= 0) sqRow(it); sqBar(); }
 });
 // a row that changed while you were typing in it is redrawn once you leave it
 document.addEventListener("focusout", (e) => { const r = e.target.closest && e.target.closest(".sq-r[data-stale]"); if (r) setTimeout(() => { if (!r.contains(document.activeElement)) { const it = sqItem(r.id.slice(3)); if (it) { delete r.dataset.stale; sqRow(it); } } }, 0); });

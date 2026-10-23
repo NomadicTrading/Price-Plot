@@ -165,7 +165,7 @@ label.pill{display:inline-block}
 .sq-spin{position:relative}.sq-spin::after{content:"";position:absolute;left:11px;top:19px;width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--blue);border-radius:50%;animation:sqs 0.8s linear infinite}
 @keyframes sqs{to{transform:rotate(360deg)}}
 .sq-t{min-width:0;font-size:14px;line-height:1.3}.sq-t b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sq-t .mu{font-size:12.5px}
-.sq-st{font-size:12.5px;color:var(--mut);margin-top:2px}.sq-st.warn{color:var(--dn);font-weight:600}
+.sq-st{font-size:12.5px;color:var(--mut);margin-top:2px}.sq-p{font-size:13.5px;margin-top:3px}.sq-pv{font-weight:700;white-space:nowrap}.sq-v{margin:6px 0 8px;padding:10px 12px;border-radius:12px;background:var(--soft,rgba(127,127,127,.1));font-size:14px}.sq-v:empty{display:none}.sq-v b{font-size:17px}.sq-st.warn{color:var(--dn);font-weight:600}
 .sq-f{grid-column:2/-1;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) 58px;gap:6px;margin-top:-2px}
 .sq-f select,.sq-f input{font:inherit;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:6px 6px;min-height:36px;width:100%;min-width:0}
 .sq-g{font-size:12px;margin-top:3px}
@@ -792,5 +792,5 @@ $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
-<script src="/portfolio.js?v=42"></script>
+<script src="/portfolio.js?v=43"></script>
 </body></html>
