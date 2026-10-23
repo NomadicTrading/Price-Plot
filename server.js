@@ -539,8 +539,9 @@ function aiChain() {
         { type: "image", source: { type: "base64", media_type: mime, data: img } }, { type: "text", text: AI_PROMPT }] }] }) });
     const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error?.message || "Claude returned " + r.status);
     return { text: (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join(""), secs: (Date.now() - t0) / 1000 }; } });
+  // Gemini Flash-Lite reads small print (set totals, set symbols) more reliably; Groq is the fast backup when Gemini is busy
+  if (GEM_KEY) steps.push({ name: "Gemini " + GEM_LITE, run: (img, mime) => gemini(GEM_LITE, [{ inline_data: { mime_type: mime, data: img } }, { text: AI_PROMPT }], true, 12000) });
   if (GROQ_KEY) steps.push({ name: "Groq " + GROQ_MODEL, run: (img) => openaiStyle("https://api.groq.com/openai/v1/chat/completions", GROQ_KEY, GROQ_MODEL, img, AI_PROMPT, 20000, null, { max_tokens: 450, reasoning_effort: "none" }) });
-  if (GEM_KEY) steps.push({ name: "Gemini " + GEM_LITE, run: (img, mime) => gemini(GEM_LITE, [{ inline_data: { mime_type: mime, data: img } }, { text: AI_PROMPT }], true, 25000) });
   if (OR_KEY) steps.push({ name: "OpenRouter " + OR_MODEL, run: (img) => openaiStyle("https://openrouter.ai/api/v1/chat/completions", OR_KEY, OR_MODEL, img, AI_PROMPT, 25000, { "HTTP-Referer": "https://price-plot.onrender.com", "X-Title": "Price Plot" }) });
   if (GEM_KEY && GEM_BIG !== GEM_LITE) steps.push({ name: "Gemini " + GEM_BIG, run: (img, mime) => gemini(GEM_BIG, [{ inline_data: { mime_type: mime, data: img } }, { text: AI_PROMPT }], true, 20000) });
   return steps;
