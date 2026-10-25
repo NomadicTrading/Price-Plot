@@ -793,39 +793,53 @@ function sqPriceHTML(it, c) {
   return `<div class="sq-p">TCGplayer <span class="sq-pv">${money(it.px)}</span>${q > 1 ? ` <span class="mu">× ${q} =</span> <span class="sq-pv">${money(it.px * q)}</span>` : ""}${tip}${it.grade ? ` <span class="mu">(raw price, not graded)</span>` : ""}</div>`;
 }
 
-// --- offer: a percentage of the TCGplayer market price, per card ---
+// --- offer: a percentage of the TCGplayer market price, per card, or a dollar amount you type ---
 const SQ_PRESETS = [60, 70, 75, 80, 85];
 const sqPctOf = (it) => { const v = it.pct ?? sqDefaults.pct ?? 70; return Number.isFinite(+v) ? Math.min(200, Math.max(0, +v)) : 70; };
 const sqPctTxt = (v) => String(Math.round(v * 10) / 10);
-const sqOffer = (it) => (it.px > 0 ? Math.round(it.px * sqPctOf(it)) / 100 : 0); // each, rounded to the cent
+// a typed dollar offer is kept exactly (its % is worked out from it) until the % is changed or the market price changes
+const sqTyped = (it) => it.offAmt != null && it.offK === sqPxKey(it);
+const sqOffer = (it) => (!(it.px > 0) ? 0 : sqTyped(it) ? it.offAmt : Math.round(it.px * sqPctOf(it)) / 100); // each, to the cent
 const sqOfferVal = (it) => sqOffer(it) * Math.max(1, Math.round(+it.qty || 1));
-function sqOfferTxt(it) {
+const sqOffTxt = (v) => (Math.round(v * 100) / 100).toFixed(2);
+function sqOfferRest(it) {
   const q = Math.max(1, Math.round(+it.qty || 1));
-  return `Offer <span class="sq-pv">${money(sqOffer(it))}</span>${q > 1 ? ` <span class="mu">× ${q} =</span> <span class="sq-pv">${money(sqOfferVal(it))}</span>` : ""} <span class="mu">at ${sqPctTxt(sqPctOf(it))}%</span>`;
+  return `${q > 1 ? `<span class="mu">each × ${q} =</span> <span class="sq-pv">${money(sqOfferVal(it))}</span>` : `<span class="mu">each</span>`}`;
 }
 function sqOfferHTML(it, c) {
   if (!c || !(it.px > 0) || it.pxK !== sqPxKey(it)) return "";
   if (it.pct == null) it.pct = sqPctOf(it); // each card keeps its own %; the last one used is only where new cards start
   const v = sqPctOf(it);
   return `<div class="sq-o" data-qo2="${it.id}">
-    <div class="sq-or"><div class="sq-ot">${sqOfferTxt(it)}</div>
+    <div class="sq-or"><div class="sq-ot"><label class="sq-od">Offer $<input type="number" data-qoff="${it.id}" min="0" step="0.01" inputmode="decimal" value="${sqOffTxt(sqOffer(it))}" aria-label="Offer price each, in dollars"></label> <span class="sq-ox">${sqOfferRest(it)}</span></div>
       <label class="sq-pn"><input type="number" data-qpct="${it.id}" min="0" max="200" step="0.5" inputmode="decimal" value="${sqPctTxt(v)}" aria-label="Offer percent of TCGplayer market">%</label></div>
     <input type="range" class="sq-rg" data-qpct="${it.id}" min="0" max="100" step="1" value="${Math.min(100, Math.round(v))}" aria-label="Offer percent of TCGplayer market">
-    <div class="sq-pp">${SQ_PRESETS.map((x) => `<button type="button" class="sq-pb" data-qpp="${x}" data-qid="${it.id}" aria-pressed="${v === x}">${x}%</button>`).join("")}</div>
+    <div class="sq-pp">${SQ_PRESETS.map((x) => `<button type="button" class="sq-pb" data-qpp="${x}" data-qid="${it.id}" aria-pressed="${!sqTyped(it) && v === x}">${x}%</button>`).join("")}</div>
   </div>`;
+}
+// redraw the offer box in place (not the whole row), skipping the box being typed or dragged in
+function sqOfferSync(it, from) {
+  const box = document.querySelector(`#ppscan [data-qo2="${it.id}"]`);
+  if (box) {
+    const v = sqPctOf(it), n = box.querySelector("input[data-qpct][type=number]"), r = box.querySelector("input[type=range]"), o = box.querySelector("input[data-qoff]");
+    box.querySelector(".sq-ox").innerHTML = sqOfferRest(it);
+    if (n && n !== from) n.value = sqPctTxt(v);
+    if (r && r !== from) r.value = Math.min(100, Math.round(v));
+    if (o && o !== from) o.value = sqOffTxt(sqOffer(it));
+    box.querySelectorAll("[data-qpp]").forEach((b) => b.setAttribute("aria-pressed", String(!sqTyped(it) && +b.dataset.qpp === v)));
+  }
+  sqBar();
 }
 function sqSetPct(it, v, from) {
   v = Math.min(200, Math.max(0, Math.round(+v * 10) / 10)); if (!Number.isFinite(v)) return;
-  it.pct = v; sqDefaults.pct = v; // the next cards you scan start at the % you used last
-  const box = document.querySelector(`#ppscan [data-qo2="${it.id}"]`);
-  if (box) {
-    box.querySelector(".sq-ot").innerHTML = sqOfferTxt(it);
-    const n = box.querySelector('input[type="number"]'), r = box.querySelector('input[type="range"]');
-    if (n && n !== from) n.value = sqPctTxt(v);
-    if (r && r !== from) r.value = Math.min(100, Math.round(v));
-    box.querySelectorAll("[data-qpp]").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.qpp === v)));
-  }
-  sqBar();
+  it.pct = v; it.offAmt = null; sqDefaults.pct = v; // the next cards you scan start at the % you used last
+  sqOfferSync(it, from);
+}
+function sqSetOffer(it, amt, from) {
+  amt = Math.round(Math.max(0, +amt) * 100) / 100; if (!Number.isFinite(amt) || !(it.px > 0)) return;
+  amt = Math.min(amt, Math.round(it.px * 200) / 100); // no more than 200% of market, like the % box
+  it.offAmt = amt; it.offK = sqPxKey(it); it.pct = Math.round((amt / it.px) * 1000) / 10;
+  sqOfferSync(it, from);
 }
 
 // --- the list window ---
@@ -1095,6 +1109,17 @@ document.addEventListener("click", (e) => {
 document.addEventListener("change", (e) => {
   if (e.target.id === "pff" && e.target.files[0]) onFile(e.target.files[0]);
   else if (e.target.id === "pfo") { sortBy = e.target.value; shown = PAGE; render(); }
+});
+document.addEventListener("input", (e) => {
+  const t = e.target; if (!t.dataset || !t.dataset.qoff || !t.closest("#ppscan")) return;
+  const it = sqItem(t.dataset.qoff); if (!it || t.value === "") return;
+  sqSetOffer(it, t.value, t);
+});
+document.addEventListener("change", (e) => {
+  const t = e.target; if (!t.dataset || !t.dataset.qoff || !t.closest("#ppscan")) return;
+  const it = sqItem(t.dataset.qoff); if (!it) return;
+  if (t.value !== "" && Number.isFinite(+t.value)) sqSetOffer(it, t.value);
+  t.value = sqOffTxt(sqOffer(it)); sqSave();
 });
 document.addEventListener("input", (e) => {
   const t = e.target; if (!t.dataset || !t.dataset.qpct || !t.closest("#ppscan")) return;

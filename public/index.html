@@ -169,6 +169,7 @@ label.pill{display:inline-block}
 .sq-f{grid-column:2/-1;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) 58px;gap:6px;margin-top:-2px}
 .sq-o{grid-column:2/-1;display:grid;gap:6px;padding:8px 10px;border-radius:10px;background:var(--soft)}
 .sq-or{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:14px}.sq-ot{min-width:0}
+.sq-od{display:inline-flex;align-items:center;gap:2px;font-weight:600}.sq-od input{font:inherit;font-size:16px;font-weight:700;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:4px 6px;width:84px;min-height:34px}.sq-ox{white-space:nowrap}
 .sq-pn{display:flex;align-items:center;gap:3px;font-weight:600;flex:none}
 .sq-pn input{font:inherit;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:4px 6px;width:64px;min-height:34px;text-align:right}
 .sq-rg{width:100%;margin:2px 0;accent-color:var(--blue);min-height:28px}
@@ -800,5 +801,5 @@ $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
-<script src="/portfolio.js?v=47"></script>
+<script src="/portfolio.js?v=48"></script>
 </body></html>
