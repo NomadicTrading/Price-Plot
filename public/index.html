@@ -20,7 +20,16 @@
 body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 "Helvetica Neue",Helvetica,Arial,sans-serif}
 .wrap{max-width:1000px;margin:0 auto;padding:0 14px}
 header{border-bottom:1px solid var(--line)}
-.hd{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding-top:12px;padding-bottom:12px}
+.hd{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding-top:12px;padding-bottom:12px;position:relative}
+.sug{position:absolute;z-index:40;background:var(--bg);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.18);max-height:min(70vh,520px);overflow:auto;overscroll-behavior:contain;padding:4px}
+.sug-r{display:flex;gap:10px;align-items:center;width:100%;text-align:left;font:inherit;color:var(--fg);background:none;border:0;border-radius:10px;padding:6px 8px;cursor:pointer}
+.sug-r:hover,.sug-r[aria-selected="true"]{background:var(--soft)}
+.sug-r img,.sug-r .ph{flex:none;width:40px;height:56px;border-radius:4px;object-fit:contain;background:var(--soft)}
+.sug-m{flex:1;min-width:0;line-height:1.25}.sug-m b{display:block;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sug-m span{display:block;font-size:12.5px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sug-p{display:inline-block;font-style:normal;margin-top:2px;font-size:11.5px;font-weight:700;border:1px solid var(--line);border-radius:999px;padding:1px 7px;color:var(--fg)}
+.sug-v{flex:none;text-align:right;font-size:14.5px;font-weight:700}.sug-v small{display:block;font-size:11px;font-weight:600;color:var(--mut)}
+.sug-n{padding:10px;font-size:13.5px;color:var(--mut)}
 .brand{display:inline-flex;align-items:center;gap:10px;color:var(--fg);text-decoration:none;font:700 24px/1 "Space Grotesk","Helvetica Neue",Helvetica,Arial,sans-serif;letter-spacing:-.6px}
 .brand img{width:36px;height:36px;flex:none}.brand .pp-dot{color:#F59E0B}
 #f{flex:1;min-width:240px;display:flex;border:1px solid var(--fg);border-radius:999px;overflow:hidden;background:var(--bg)}
@@ -212,7 +221,7 @@ label.pill{display:inline-block}
 .sq-camlast img{width:100%;height:100%;object-fit:cover;border-radius:6px}.sq-camlast i{position:absolute;top:-8px;right:-8px;font-style:normal;font-size:12px;font-weight:700;background:var(--blue);color:#fff;border-radius:999px;min-width:22px;height:22px;line-height:22px;text-align:center;padding:0 4px}
 </style></head><body>
 <header><div class="wrap hd"><a class="brand" href="/" aria-label="Price Plot home"><img src="/brand/icon-small.svg" width="36" height="36" alt=""><span>Price<span class="pp-dot">·</span>Plot</span></a>
-<form id="f"><button class="cam" id="camb" type="button" aria-label="Search with your camera" title="Search with your camera"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg></button><input id="q" type="search" placeholder="Search a card, e.g. charizard 4/102 base set" aria-label="Search listings" autocomplete="off" enterkeyhint="search" autofocus><button class="go" type="submit">Search</button></form></div></header>
+<form id="f"><button class="cam" id="camb" type="button" aria-label="Search with your camera" title="Search with your camera"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg></button><input id="q" type="search" placeholder="Search a card, e.g. charizard 4/102 base set" aria-label="Search listings" autocomplete="off" enterkeyhint="search" autofocus><button class="go" type="submit">Search</button></form><div id="sug" class="sug" role="listbox" aria-label="Cards on TCGplayer" hidden></div></div></header>
 <main class="wrap">
 <div class="seg tabs" id="tb" role="group" aria-label="Data source"><button type="button" data-t="pf" aria-pressed="false">Portfolio</button><button type="button" data-t="tcg" aria-pressed="false">TCGplayer</button><button type="button" data-t="ebay" aria-pressed="true">eBay</button></div>
 <div class="bar" id="sv"></div>
@@ -546,7 +555,42 @@ ch.addEventListener("wheel",e=>{if(!full)return;e.preventDefault();const c=frac(
  setView({x0:cx-c.fx*w*f,x1:cx-c.fx*w*f+w*f,y0:cy-(1-c.fy)*hh*f,y1:cy-(1-c.fy)*hh*f+hh*f})},{passive:false});
 $("zr").onclick=()=>{view=null;draw()};
 
-$("f").onsubmit=e=>{e.preventDefault();tcgQ="";if(tab==="pf"){const b=$("tb").querySelector('[data-t="ebay"]');if(b)b.click()}load();if(tab==="tcg")loadTcg()};
+/* Search bar suggestions: TCGplayer's matches as you type, one row per printing with its Near Mint price.
+   Picking one fills in the card's name and number and searches; the TCGplayer tab opens on that printing. */
+let sugT=0,sugCtl=null,sugItems=[],sugAt=-1,sugQ="";
+const sugEl=$("sug");
+function sugHide(){sugEl.hidden=true;sugAt=-1;$("q").removeAttribute("aria-activedescendant")}
+function sugPlace(){const f=$("f");sugEl.style.left=f.offsetLeft+"px";sugEl.style.top=(f.offsetTop+f.offsetHeight+6)+"px";sugEl.style.width=f.offsetWidth+"px"}
+function sugShow(html){sugEl.innerHTML=html;sugPlace();sugEl.hidden=false}
+function sugRender(){
+ if(!sugItems.length)return sugShow('<div class="sug-n">No TCGplayer matches. Press Search to look on eBay anyway.</div>');
+ sugShow(sugItems.map((c,i)=>{const num=c.numberText||(c.number?c.number+(c.printedTotal&&/^\d+$/.test(c.number)?"/"+c.printedTotal:""):"");
+  return `<button type="button" class="sug-r" role="option" id="sug-${i}" data-si="${i}" aria-selected="${i===sugAt}">${c.image?`<img src="${esc(safeUrl(c.image)||"")}" alt="" loading="lazy">`:'<span class="ph"></span>'}
+  <span class="sug-m"><b>${esc(c.name)}</b><span>${esc([num?"#"+num:"",c.set].filter(Boolean).join(" · "))}</span>${c.print?`<i class="sug-p">${esc(c.print)}</i>`:c.rarity?`<i class="sug-p">${esc(c.rarity)}</i>`:""}</span>
+  <span class="sug-v">${c.nm!=null?pf(c.nm):"–"}<small>${c.overall?"market":"NM"}</small></span></button>`}).join(""))}
+function sugPick(i){const c=sugItems[i];if(!c)return;
+ const num=c.numberText||(c.number?c.number+(c.printedTotal&&/^\d+$/.test(c.number)?"/"+c.printedTotal:""):"");
+ $("q").value=[c.name,num].filter(Boolean).join(" ");sugQ=$("q").value;sugHide();
+ if(c.print)tprintWant=c.print; // the TCGplayer tab opens on this printing
+ $("f").requestSubmit()}
+$("q").addEventListener("input",()=>{const q=$("q").value.trim();clearTimeout(sugT);if(sugCtl)sugCtl.abort();
+ if(q.length<3||q===sugQ){sugHide();return}
+ sugT=setTimeout(async()=>{sugCtl=new AbortController();const ctl=sugCtl;
+  if(sugEl.hidden)sugShow('<div class="sug-n">Looking on TCGplayer…</div>');
+  try{const r=await fetch("/api/suggest?q="+encodeURIComponent(q),{signal:ctl.signal});const j=await r.json();
+   if(ctl.signal.aborted||$("q").value.trim()!==q)return;
+   if(!r.ok)return sugShow('<div class="sug-n">TCGplayer suggestions unavailable right now. Press Search to look on eBay.</div>');
+   sugItems=j.items||[];sugAt=-1;sugRender()}catch(e){if(e.name!=="AbortError")sugHide()}},350)});
+$("q").addEventListener("keydown",e=>{if(sugEl.hidden||!sugItems.length)return;
+ if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();const n=sugItems.length;sugAt=e.key==="ArrowDown"?(sugAt+1>=n?-1:sugAt+1):(sugAt-1<-1?n-1:sugAt-1);
+  sugEl.querySelectorAll(".sug-r").forEach((b,i)=>b.setAttribute("aria-selected",i===sugAt));if(sugAt>=0){$("q").setAttribute("aria-activedescendant","sug-"+sugAt);$("sug-"+sugAt).scrollIntoView({block:"nearest"})}}
+ else if(e.key==="Enter"&&sugAt>=0){e.preventDefault();sugPick(sugAt)}
+ else if(e.key==="Escape")sugHide()});
+sugEl.addEventListener("mousedown",e=>e.preventDefault()); // keep the keyboard up on phones while choosing
+sugEl.addEventListener("click",e=>{const b=e.target.closest("[data-si]");if(b)sugPick(+b.dataset.si)});
+document.addEventListener("click",e=>{if(!sugEl.hidden&&!sugEl.contains(e.target)&&e.target!==$("q"))sugHide()});
+addEventListener("resize",()=>{if(!sugEl.hidden)sugPlace()});
+$("f").onsubmit=e=>{e.preventDefault();sugHide();clearTimeout(sugT);if(sugCtl)sugCtl.abort();tcgQ="";if(tab==="pf"){const b=$("tb").querySelector('[data-t="ebay"]');if(b)b.click()}load();if(tab==="tcg")loadTcg()};
 $("tS").onclick=e=>{show.S=!show.S;e.target.setAttribute("aria-pressed",show.S);draw()};
 $("tA").onclick=e=>{show.A=!show.A;e.target.setAttribute("aria-pressed",show.A);draw()};
 $("tU").onclick=e=>{show.U=!show.U;e.target.setAttribute("aria-pressed",show.U);draw()};
@@ -827,5 +871,5 @@ $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
-<script src="/portfolio.js?v=61"></script>
+<script src="/portfolio.js?v=62"></script>
 </body></html>

@@ -523,7 +523,7 @@ async function tcgScan(q) {
   return (((j.results || [])[0] || {}).results || []).filter((r) => r.productId && !/\b(code card|booster|box|bundle|tin|deck|pack|blister)\b/i.test(r.productName || "")).map((r) => {
     const id = String(Math.round(Number(r.productId))), raw = String(r.customAttributes?.number || (/\s-\s([\w/]+)$/.exec(r.productName || "") || [])[1] || "");
     const [num, tot] = raw.split("/");
-    return { id: "tcg-" + id, tcgId: id, name: String(r.productName || "").replace(/\s-\s[\w/]+$/, "").trim(), number: num || "", set: r.setName || "", printedTotal: tot ? +tot || tot : null, year: null,
+    return { raw, market: Number(r.marketPrice) > 0 ? Number(r.marketPrice) : null, jp: /japan/i.test(r.productLineName || ""), id: "tcg-" + id, tcgId: id, name: String(r.productName || "").replace(/\s-\s[\w/]+$/, "").trim(), number: num || "", set: r.setName || "", printedTotal: tot ? +tot || tot : null, year: null,
       image: `https://tcgplayer-cdn.tcgplayer.com/product/${id}_200w.jpg`, big: `https://tcgplayer-cdn.tcgplayer.com/product/${id}_400w.jpg`, rarity: r.rarity || r.customAttributes?.rarityDbName || "",
       prints: ["Normal", "Holofoil", "Reverse Holofoil", "1st Edition", "1st Edition Holofoil", "Unlimited", "Unlimited Holofoil"] };
   });
@@ -571,6 +571,34 @@ const scoreCard = (c, nn, d, words, extra) => {
   const cn = String(c.number || "").toLowerCase().replace(/^0+(?=\d)/, ""); if (nn && cn === nn.toLowerCase()) sc += 5; if (d && String(c.printedTotal) === d) sc += 5;
   return sc + (extra ? extra(c) : 0);
 };
+// Search bar suggestions: TCGplayer's matches for what's typed, one row per printing with its Near Mint market price.
+// Printing prices come from each card's price history (remembered 24 hours), looked up for the top few cards only.
+const sugCache = new Map();
+app.get("/api/suggest", async (req, res) => {
+  const q = String(req.query.q || "").replace(/\s+/g, " ").trim().slice(0, 80);
+  if (q.length < 3) return res.json({ items: [] });
+  const key = q.toLowerCase(), hit = sugCache.get(key);
+  if (hit && hit.exp > Date.now()) return res.json(hit.data);
+  let prods;
+  try { prods = (await tcgScan(q)).slice(0, 8); } catch (e) { return res.status(502).json({ error: e.message }); }
+  const ORDER = ["normal", "holofoil", "reverse holofoil", "1st edition", "1st edition holofoil", "unlimited", "unlimited holofoil"];
+  const rank = (p) => { const i = ORDER.indexOf(p.toLowerCase()); return i < 0 ? 99 : i; };
+  // price histories for the first 6 cards, together, giving up after 6 seconds (the card's overall price is used instead)
+  const hist = await Promise.all(prods.map((c, i) => i < 6 ? Promise.race([tpLatest(c.tcgId).catch(() => null), new Promise((ok) => setTimeout(() => ok(null), 6000))]) : null));
+  const items = [];
+  prods.forEach((c, i) => {
+    const base = { tcgId: c.tcgId, name: c.name, numberText: c.raw || "", number: c.number, printedTotal: c.printedTotal, set: c.set, image: c.image, rarity: c.rarity, jp: c.jp };
+    const rows = (hist[i] || []).filter((r) => r.cond === "Near Mint" && (!r.lang || (c.jp ? /japan/i.test(r.lang) : /english/i.test(r.lang))));
+    const byPrint = new Map(); for (const r of rows) if (!byPrint.has(r.print) || r.t > byPrint.get(r.print).t) byPrint.set(r.print, r);
+    const prints = [...byPrint.values()].sort((a, b) => rank(a.print) - rank(b.print));
+    if (prints.length) for (const r of prints) items.push({ ...base, print: r.print, nm: r.m });
+    else items.push({ ...base, print: "", nm: c.market, overall: true });
+  });
+  const data = { items: items.slice(0, 14) };
+  if (items.length) { sugCache.set(key, { exp: Date.now() + 6 * 3600e3, data }); if (sugCache.size > 3000) sugCache.delete(sugCache.keys().next().value); }
+  res.json(data);
+});
+
 // The Shadowless (or regular Base Set) version of a Base Set card: TCGplayer lists them as separate products.
 const editionCache = new Map();
 app.get("/api/scan-edition", async (req, res) => {
@@ -935,22 +963,26 @@ async function tpHistory(id) {
 const tphCache = new Map();
 const tpCond = (c) => { c = String(c || "").toLowerCase(); return c.startsWith("near mint") ? "Near Mint" : c.startsWith("lightly") ? "Lightly Played" : c.startsWith("moderately") ? "Moderately Played" : c.startsWith("heavily") ? "Heavily Played" : c.startsWith("damaged") ? "Damaged" : ""; };
 const COND_STEP = { "Near Mint": 1, "Lightly Played": 0.85, "Moderately Played": 0.7, "Heavily Played": 0.55, "Damaged": 0.4 };
+async function tpLatest(id) {
+  let rows = tphCache.get(id);
+  if (!rows || rows.exp < Date.now()) {
+    const saved = await kv.get("tph:" + id);
+    if (saved) rows = { exp: Date.now() + 864e5, list: saved };
+    else {
+      const hist = await tpHistory(id);
+      const list = hist.map((s) => { const b = s.b.slice().sort((x, y) => x[0] - y[0]).filter((k) => k[5] > 0); const last = b[b.length - 1]; return last ? { cond: tpCond(s.cond), print: String(s.print || ""), lang: String(s.lang || ""), m: last[5], t: last[0] } : null; }).filter(Boolean);
+      rows = { exp: Date.now() + 864e5, list }; await kv.set("tph:" + id, list, 864e2);
+    }
+    tphCache.set(id, rows); if (tphCache.size > 5000) tphCache.delete(tphCache.keys().next().value);
+  }
+  return rows.list;
+}
 app.get("/api/tcgprice", async (req, res) => {
   const id = String(req.query.id || "").replace(/\D/g, "").slice(0, 12);
   if (!id) return res.status(400).json({ error: "Missing TCGplayer product id" });
   const cond = tpCond(req.query.cond) || "Near Mint", print = String(req.query.print || "").toLowerCase().trim(), jp = req.query.jp === "1";
   try {
-    let rows = tphCache.get(id);
-    if (!rows || rows.exp < Date.now()) {
-      const saved = await kv.get("tph:" + id);
-      if (saved) rows = { exp: Date.now() + 864e5, list: saved };
-      else {
-        const hist = await tpHistory(id);
-        const list = hist.map((s) => { const b = s.b.slice().sort((x, y) => x[0] - y[0]).filter((k) => k[5] > 0); const last = b[b.length - 1]; return last ? { cond: tpCond(s.cond), print: String(s.print || ""), lang: String(s.lang || ""), m: last[5], t: last[0] } : null; }).filter(Boolean);
-        rows = { exp: Date.now() + 864e5, list }; await kv.set("tph:" + id, list, 864e2);
-      }
-      tphCache.set(id, rows); if (tphCache.size > 5000) tphCache.delete(tphCache.keys().next().value);
-    }
+    const rows = { list: await tpLatest(id) };
     const langOk = (r) => !r.lang || (jp ? /japan/i.test(r.lang) : /english/i.test(r.lang));
     let pool = rows.list.filter(langOk); if (!pool.length) pool = rows.list;
     const prints = [...new Set(pool.map((r) => r.print.toLowerCase()))];
