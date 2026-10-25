@@ -194,6 +194,22 @@ async function useRequest() {
   return true;
 }
 const COMPS_DAYS = Math.min(1000, Number(process.env.COMPS_DAYS) || 1000);
+const compsLog = []; // the last 25 sold lookups: what was asked and what came back, shown on /api/usage
+function logComps(x) { compsLog.unshift({ at: new Date().toISOString(), ...x }); compsLog.length = Math.min(compsLog.length, 25); kv.set("compslog", compsLog, 14 * 864e2); }
+async function compsGet(params) {
+  const url = "https://api.compsapi.com/v1/sold?" + new URLSearchParams({ ...params, ...(CATEGORY ? { category: CATEGORY } : {}) });
+  const go = () => fetch(url, { headers: { "X-API-Key": COMPS_KEY, "User-Agent": "price-plot/0.1" }, signal: AbortSignal.timeout(30000) });
+  let r = await go();
+  // the free plan allows about 10 requests a minute: when it says to wait, wait (up to 20 seconds) and ask once more
+  if (r.status === 429) {
+    const wait = Math.min(20, Math.max(1, Number(r.headers.get("retry-after")) || 7));
+    await new Promise((ok) => setTimeout(ok, wait * 1000));
+    r = await go();
+  }
+  const text = await r.text();
+  let j = null; try { j = JSON.parse(text); } catch {}
+  return { r, j, text };
+}
 let compsNote = "";
 const pulled = {};
 async function collectComps(q) {
@@ -202,31 +218,31 @@ async function collectComps(q) {
   if (pulled[q] && Date.now() - pulled[q] < COMPS_REFRESH_MS) return Object.values(bucket);
   const pages = Object.keys(bucket).length ? 1 : COMPS_MAX_PAGES;
   let days = COMPS_DAYS;
+  let got = 0;
   for (let page = 1; page <= pages; page++) {
     if (!(await useRequest())) {
       if (page === 1) throw new Error("monthly sold-data request limit reached, showing saved sales");
       break;
     }
-    const get = (d) =>
-      fetch(
-        "https://api.compsapi.com/v1/sold?" +
-          new URLSearchParams({ q, days: d, size: 240, page, ...(CATEGORY ? { category: CATEGORY } : {}) }),
-        { headers: { "X-API-Key": COMPS_KEY, "User-Agent": "price-plot/0.1" } }
-      );
-    let r = await get(days);
+    let { r, j, text } = await compsGet({ q, days, size: 240, page });
     // the free plan is documented as 1 year of history; if it refuses a longer window, retry with 365 days
     if (!r.ok && days > 365 && [400, 402, 403, 422].includes(r.status)) {
       days = 365;
       compsNote = "Your sold-data plan seems to allow only 1 year of history, so sold sales are limited to that.";
-      r = await get(days);
+      ({ r, j, text } = await compsGet({ q, days, size: 240, page }));
     }
-    if (!r.ok) throw new Error(r.status === 429 ? "sold-data service is rate limiting, try again soon" : `sold-data service returned ${r.status}`);
-    const j = await r.json();
-    for (const i of j.items || []) {
-      const price = Number(i.price), date = new Date(i.last_sold);
+    if (!r.ok || !j) {
+      logComps({ q, page, days, status: r.status, error: (j && (j.error || j.message || j.detail)) || text.slice(0, 200) });
+      throw new Error(r.status === 429 ? "sold-data service is busy, try again in a minute" : r.status === 402 || /quota/i.test(text) ? "the sold-data plan's monthly limit is used up" : `sold-data service returned ${r.status}`);
+    }
+    const items = j.items || [];
+    for (const i of items) {
+      const price = Number(i.price), date = new Date(String(i.last_sold || "").replace(" ", "T") + (/Z|[+-]\d\d:?\d\d$/.test(i.last_sold || "") ? "" : "Z"));
       if (!(price > 0) || isNaN(date) || !i.url) continue;
       bucket[i.item_id || i.url] = { type: "Sold", price, date: date.toISOString(), title: i.title || "", url: i.url };
+      got++;
     }
+    logComps({ q, page, days, status: r.status, count: j.count ?? items.length, kept: got });
     if (!j.next_page) break;
   }
   pulled[q] = Date.now();
@@ -272,7 +288,7 @@ function parseQuery(raw) {
 
 // true when the listing looks like the card being searched for
 function relevant(title, pq, rawQuery) {
-  const t = norm(title);
+  const t = norm(String(title).replace(/(\p{L})-(\p{L})/gu, "$1 $2"));
   if (pq.ex.some((w) => new RegExp(`(^|[^a-z0-9])${w.replace(/[^a-z0-9]/g, "")}($|[^a-z0-9])`).test(t))) return false;
   if (!JUNK.test(norm(rawQuery)) && JUNK.test(t)) return false;
   for (const w of pq.words) if (!new RegExp(`(^|[^a-z0-9])${w}(s|es)?($|[^a-z0-9])`).test(t)) return false;
@@ -365,7 +381,7 @@ app.get("/api/listings", async (req, res) => {
       return { ...x, ...gi, cond: gi.grader ? null : parseCond(x.title, bc), fin: parseFinish(x.title), lang: parseLang(x.title), ed: parseEdition(x.title), rel: relevant(x.title, pq, base) };
     });
     const data = { listings, soldEnabled: SOLD_ON, warnings };
-    cache.set(key, { exp: Date.now() + LISTINGS_CACHE_MIN * 60000, data });
+    if (!warnings.some((w) => w.startsWith("Sold data unavailable"))) cache.set(key, { exp: Date.now() + LISTINGS_CACHE_MIN * 60000, data });
     res.json(data);
   } catch (e) {
     console.error(e);
@@ -1008,6 +1024,24 @@ app.post("/api/handoff", express.json({ limit: "8mb" }), async (req, res) => {
 // Hidden: sold-lookup usage this month (CompsAPI), not linked anywhere in the app. Open /api/usage to see it.
 app.get("/api/usage", async (req, res) => {
   if (kv.on && !usageLoaded) { usage = (await kv.get("usage")) || usage; usageLoaded = true; }
+  if (!compsLog.length) { const saved = await kv.get("compslog"); if (Array.isArray(saved)) compsLog.push(...saved); }
+  // CompsAPI's own count of this month's requests (doesn't use a request)
+  let service = null;
+  if (COMPS_KEY) try { const r = await fetch("https://api.compsapi.com/v1/usage", { headers: { "X-API-Key": COMPS_KEY }, signal: AbortSignal.timeout(10000) }); service = await r.json().catch(() => ({ status: r.status })); } catch (e) { service = { error: e.message }; }
+  // ?test=card search: one live lookup (uses 1 sold lookup), showing exactly what came back and what Price Plot keeps
+  let test;
+  const tq = String(req.query.test || "").trim().slice(0, 100);
+  if (tq && COMPS_KEY) {
+    if (!(await useRequest())) test = { error: "monthly limit reached" };
+    else try {
+      const pq = parseQuery(tq), { r, j, text } = await compsGet({ q: pq.search, days: COMPS_DAYS, size: 240, page: 1 });
+      const items = (j && j.items) || [];
+      test = { q: pq.search, status: r.status, count: j ? j.count ?? items.length : null, returned: items.length, matchCard: items.filter((i) => relevant(i.title || "", pq, tq)).length,
+        nextPage: j ? j.next_page ?? null : null, error: r.ok ? undefined : text.slice(0, 300),
+        first: items.slice(0, 8).map((i) => ({ title: i.title, price: i.price, sold: i.last_sold, kept: relevant(i.title || "", pq, tq) })) };
+      logComps({ q: pq.search, page: 1, days: COMPS_DAYS, status: r.status, count: test.count, test: true });
+    } catch (e) { test = { error: e.message }; }
+  }
   const month = new Date().toISOString().slice(0, 7), used = usage.month === month ? usage.n || 0 : 0;
   const next = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1));
   res.set("Cache-Control", "no-store").json({
@@ -1018,6 +1052,9 @@ app.get("/api/usage", async (req, res) => {
     resets: next.toISOString(),
     soldSource: COMPS_KEY ? "CompsAPI" : ENABLE_SOLD === "true" ? "eBay Marketplace Insights (no monthly counter)" : "none set up",
     counterSaved: kv.on ? "Upstash database (survives restarts)" : "local file (resets when Render restarts)",
+    ...(test ? { test } : {}),
+    compsApiSays: service,
+    recentLookups: compsLog.slice(0, 15),
     note: "Price Plot's own count of requests it sent; a request is used for each new search (up to " + COMPS_MAX_PAGES + " for a card's first search), and repeat searches within " + COMPS_REFRESH_MS / 3600e3 + " hours are free.",
   });
 });
