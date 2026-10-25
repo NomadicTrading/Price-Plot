@@ -1005,6 +1005,22 @@ app.post("/api/handoff", express.json({ limit: "8mb" }), async (req, res) => {
 });
 // The Collectr bookmark sends the cards here with an ordinary form submit (from the showcase tab itself), and the
 // browser is sent straight on to Price Plot with a code that picks them up.
+// Hidden: sold-lookup usage this month (CompsAPI), not linked anywhere in the app. Open /api/usage to see it.
+app.get("/api/usage", async (req, res) => {
+  if (kv.on && !usageLoaded) { usage = (await kv.get("usage")) || usage; usageLoaded = true; }
+  const month = new Date().toISOString().slice(0, 7), used = usage.month === month ? usage.n || 0 : 0;
+  const next = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1));
+  res.set("Cache-Control", "no-store").json({
+    soldLookupsLeft: COMPS_KEY ? Math.max(0, COMPS_LIMIT - used) : null,
+    soldLookupsUsed: used,
+    monthlyLimit: COMPS_LIMIT,
+    month,
+    resets: next.toISOString(),
+    soldSource: COMPS_KEY ? "CompsAPI" : ENABLE_SOLD === "true" ? "eBay Marketplace Insights (no monthly counter)" : "none set up",
+    counterSaved: kv.on ? "Upstash database (survives restarts)" : "local file (resets when Render restarts)",
+    note: "Price Plot's own count of requests it sent; a request is used for each new search (up to " + COMPS_MAX_PAGES + " for a card's first search), and repeat searches within " + COMPS_REFRESH_MS / 3600e3 + " hours are free.",
+  });
+});
 app.get("/api/ping", (req, res) => { res.set("Cache-Control", "no-store"); res.type("gif").send(Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64")); });
 // reloading the hand-off page can't resend the cards; send the person to Price Plot with a note instead
 app.get("/api/collectr-handoff", (req, res) => res.redirect(303, "/#ci=bad"));
