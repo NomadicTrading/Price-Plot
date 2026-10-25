@@ -80,6 +80,11 @@ svg{display:block;width:100%;height:auto;user-select:none;-webkit-user-select:no
 .tabs{margin-top:12px}
 .tc{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
 .tc img{width:84px;height:auto;border-radius:6px;align-self:flex-start}
+.tci-b{flex:none;align-self:flex-start;padding:0;border:0;background:none;cursor:zoom-in;border-radius:6px}.tci-b img{display:block}
+.tc-pr{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin:6px 0 2px}.tc-pv{font-size:24px;font-weight:700;letter-spacing:-.4px;white-space:nowrap}
+.tc-pv small{font-size:12px;font-weight:700;margin-right:5px;letter-spacing:0}.tc-pl{font-size:12px;flex-basis:100%}
+.ppm-ov.zoom{background:rgba(0,0,0,.85);cursor:zoom-out;touch-action:pinch-zoom pan-x pan-y}.ppm-ov.zoom img{width:min(100%,560px);height:auto;max-height:calc(100dvh - 48px);object-fit:contain;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.5)}
+.zoom-x{position:absolute;top:calc(env(safe-area-inset-top,0px) + 12px);right:14px;width:40px;height:40px;border-radius:50%;border:0;background:rgba(255,255,255,.2);color:#fff;font-size:18px;cursor:pointer}
 .tc table{border-collapse:collapse;width:100%;margin-top:8px}
 .tc th,.tc td{padding:7px 6px;text-align:right;border-bottom:1px solid var(--line);font-size:14px}
 .tc th{color:var(--mut);font-weight:600;font-size:12.5px}
@@ -637,8 +642,11 @@ function drawTcg(){
    .then(j=>TPD.set(tid,j),e=>TPD.set(tid,{error:e.message})).then(()=>{if(tab==="tcg"&&TM&&TM.cards[tci]===c)drawTcg()})}
  const tpd=tid?TPD.get(tid):null,tpOk=tpd&&!tpd.loading&&!tpd.error;
  if(tpOk)for(const x of [...tpd.sold,...tpd.listings])if(tpPrintOk(x)&&tpLangOk(x)){const n=tcN(x.cond);if(n&&!byC[n])byC[n]=null}
+ tZoom=tImgs;
+ const selP=TCOND.filter(([n])=>tconds.has(n)&&byC[n]&&byC[n].price!=null).map(([n,a,col])=>`<span class="tc-pv"><small style="color:${col}">${a}</small>${pf(byC[n].price)}</span>`).join("");
  $("tcg").innerHTML=pick+`<div class="tc"><div style="flex:1;min-width:0"><b>${esc(c.name)}</b> <span class="mu">${esc(c.set||"")} · ${esc(c.number||"")}${c.rarity?" · "+esc(c.rarity):""}</span>
-<div>${c.tcgUrl?`<a class="btn" href="${esc(safeUrl(c.tcgUrl))}" target="_blank" rel="noopener">Open on TCGplayer</a>`:""}<button class="btn o" type="button" data-addpf="1" style="font:inherit;font-weight:700;cursor:pointer">+ Add to portfolio</button></div></div>${tImgs.length?`<a href="${esc(safeUrl(c.tcgUrl)||tImgs[0])}" target="_blank" rel="noopener" aria-label="${esc(c.name)} on TCGplayer"><img class="tci" id="tci" src="${esc(tImgs[0])}" alt="${esc(c.name)} card" data-alt="${esc(tImgs.slice(1).join(" "))}"></a>`:""}</div>
+${selP?`<div class="tc-pr" aria-label="Market price for the selected condition">${selP}<span class="mu tc-pl">${esc(tprint)} market</span></div>`:""}
+<div>${c.tcgUrl?`<a class="btn" href="${esc(safeUrl(c.tcgUrl))}" target="_blank" rel="noopener">Open on TCGplayer</a>`:""}<button class="btn o" type="button" data-addpf="1" style="font:inherit;font-weight:700;cursor:pointer">+ Add to portfolio</button></div></div>${tImgs.length?`<button type="button" class="tci-b" data-zoom="1" aria-label="Enlarge the card picture"><img class="tci" id="tci" src="${esc(tImgs[0])}" alt="${esc(c.name)} card" data-alt="${esc(tImgs.slice(1).join(" "))}"></button>`:""}</div>
 <div class="bar fs" id="tpr" role="group" aria-label="Printing">${prints.map(p=>`<button class="pill" type="button" data-tp="${esc(p)}" aria-pressed="${p===tprint}">${esc(p)}</button>`).join("")}</div>
 <div class="bar fs" id="tcd" role="group" aria-label="Condition">${TCOND.filter(([n])=>n in byC).map(([n,a])=>`<button class="pill" type="button" data-tc="${n}" aria-pressed="${tconds.has(n)}">${a}</button>`).join("")}</div>
 <div class="ch-h"><div><h2>Market Price</h2><div class="mu" style="font-size:12.5px">TCGplayer market price by condition${tover&&tid?", with sold cards and live listings":""}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex:none">${tid?`<button class="pill" type="button" style="white-space:nowrap" data-tover="1" aria-pressed="${tover}">Sales &amp; listings</button>`:""}<button class="pill" type="button" style="white-space:nowrap" data-tboll="1" aria-pressed="${tboll}" title="20-day average of the market price, with a band 2 standard deviations either side">Bollinger bands</button></div></div>
@@ -655,6 +663,15 @@ ${tover&&tid?`<div class="lg"><span><i style="background:var(--mut)"></i>Sold</s
  if(tover&&tid)tpSlider(tpd);
  if(hasHist||(tover&&tid))drawTcgChart(vs2,tover&&tid?tpd:null);else readout(vs2,null);
  if(tsel!=null&&tpts[tsel])tpPick(tsel);else tsel=null}
+/* the card picture, enlarged over the page: the largest picture that loads; tap anywhere or Escape to close */
+let tZoom=[];
+function tcgZoom(){const shown=$("tci"),list=[...new Set([...tZoom,shown&&shown.currentSrc].filter(Boolean))];if(!list.length)return;
+ const ov=document.createElement("div");ov.className="ppm-ov zoom";ov.setAttribute("role","dialog");ov.setAttribute("aria-label","Card picture");
+ ov.innerHTML=`<img alt="${esc(TM&&TM.cards[tci]?TM.cards[tci].name:"Card")} card, enlarged"><button type="button" class="zoom-x" aria-label="Close">✕</button>`;
+ const im=ov.querySelector("img");let i=0;im.onerror=()=>{i++;if(i<list.length)im.src=list[i];else close()};im.src=list[0];
+ const key=e=>{if(e.key==="Escape")close()};
+ function close(){removeEventListener("keydown",key);ov.remove()}
+ ov.onclick=close;addEventListener("keydown",key);document.body.appendChild(ov);ov.querySelector(".zoom-x").focus()}
 /* ---- TCGplayer sold + listed scatter ---- */
 const TPD=new Map();
 let tover=true,tship=true,tsold=true,tboll=true,tpts=[],tsel=null;
@@ -803,6 +820,7 @@ function tGesture(pf,nf,f){const v=tview||TG.full,w=v.x1-v.x0,h=v.y1-v.y0,cx=v.x
  T.addEventListener("touchmove",e=>{if(inCh(e)&&e.cancelable)e.preventDefault()},{passive:false});}
 $("tcg").onclick=e=>{const dot=e.target.closest&&e.target.closest("[data-tpi]");if(dot){tpPick(+dot.dataset.tpi);return}
  const d=e.target.closest("button")?.dataset;if(!d||!TM)return;
+ if(d.zoom){tcgZoom();return}
  if(d.addpf){if(window.ppAddFromTcg)ppAddFromTcg(TM.cards[tci],tprint,[...tconds]);return}
  if(d.tzr){tview=null;if(TG)drawTcgChart(TG.vs,TG.tpd);return}
  tsel=null;tview=null;
