@@ -268,7 +268,7 @@ label.pill{display:inline-block}
 </div>
 <div id="tcg" hidden></div>
 <div id="pf" hidden></div>
-<p class="sm">Tip: add the card number, like 4/102, to cut out other cards, and put a minus sign in front of a word to leave it out, like -jumbo.</p>
+<p class="sm" id="tip">Tip: add the card number, like 4/102, to cut out other cards, and put a minus sign in front of a word to leave it out, like -jumbo.</p>
 </main>
 <footer><div class="wrap">Not affiliated with or endorsed by eBay Inc. Active listings come from eBay. Sold data, when shown, comes from an independent data service.</div></footer>
 <script>
@@ -663,7 +663,7 @@ ${hasHist||(tover&&tid)?`<div id="tch"></div><div class="seg" id="trg" role="gro
 ${tover&&tid?`<div class="lg"><span><i style="background:var(--mut)"></i>Sold</span><span><i style="border:2px solid var(--mut)"></i>Listed now (grouped beside today)</span><span>Solid lines are the market price; dashed lines and shading are the Bollinger bands (20-day average, 2 standard deviations). Prices include shipping. Colors match the condition buttons.</span></div>
 <div id="tdt">Tap a dot to see the sale or listing.</div>`:""}
 <a class="btn o" href="${esc(tcgSearch(tQ))}" target="_blank" rel="noopener">Search TCGplayer for this card</a>
-<p class="sm">Market prices are TCGplayer market prices, updated about daily, via JustTCG. Sold cards and live listings come straight from TCGplayer's product page and refresh every 30 minutes; TCGplayer doesn't link individual sales, so tapping one opens the card on TCGplayer filtered to that condition.${tpd&&tpd.warnings&&tpd.warnings.length?" "+esc(tpd.warnings.join(" ")):""}${TM.left!=null?` ${esc(TM.left)} price lookups left today.`:""}</p>`;
+<p class="sm">Market prices are TCGplayer market prices, updated daily. Sold cards and live listings come straight from TCGplayer's product page and refresh every 30 minutes; TCGplayer doesn't link individual sales, so tapping one opens the card on TCGplayer filtered to that condition.${tpd&&tpd.warnings&&tpd.warnings.length?" "+esc(tpd.warnings.join(" ")):""}${TM.left!=null?` ${esc(TM.left)} price lookups left today.`:""}</p>`;
  tcgTable(null);
  const ti=$("tci");if(ti)ti.onerror=()=>{const rest=(ti.dataset.alt||"").split(" ").filter(Boolean);if(rest.length){ti.dataset.alt=rest.slice(1).join(" ");ti.src=rest[0]}else ti.remove()};if(ti&&ti.complete&&!ti.naturalWidth)ti.onerror();
  tpts=[];
@@ -876,7 +876,7 @@ async function loadTcg(){
  catch(e){if(q!==$("q").value.trim())return;tcgQ=q;TM=null;renderTcgBasic(basic,q,"Condition prices unavailable ("+e.message+"). Showing TCGplayer's overall prices instead.")}}
 $("tb").onclick=e=>{const k=e.target.dataset.t;if(!k)return;tab=k;
  [...$("tb").children].forEach(b=>b.setAttribute("aria-pressed",b.dataset.t===k));
- $("ebay").hidden=k!=="ebay";$("tcg").hidden=k!=="tcg";$("pf").hidden=k!=="pf";$("sv").hidden=k==="pf";if(k==="pf")return;if(k==="tcg")loadTcg();else{const q=$("q").value.trim();if(q&&q!==ebayQ)load();else draw()}};
+ $("ebay").hidden=k!=="ebay";$("tcg").hidden=k!=="tcg";$("tip").hidden=k==="tcg";$("pf").hidden=k!=="pf";$("sv").hidden=k==="pf";if(k==="pf")return;if(k==="tcg")loadTcg();else{const q=$("q").value.trim();if(q&&q!==ebayQ)load();else draw()}};
 function pillBar(id,opts,cur,on){$(id).innerHTML=opts.map(([k,l])=>`<button class="pill" type="button" data-k="${k}" aria-pressed="${k===cur}">${l}</button>`).join("");
  $(id).onclick=e=>{const k=e.target.dataset.k;if(!k)return;$(id).querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.k===k));on(k);view=null;scrub=null;draw()}}
 pillBar("ln",[["any","Any language"],["en","English"],["jp","Japanese"],["kr","Korean"],["cn","Chinese"],["other","Other"]],lmode,k=>lmode=k);
