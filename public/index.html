@@ -72,7 +72,13 @@ svg{display:block;width:100%;height:auto;user-select:none;-webkit-user-select:no
 #detail{border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-height:48px;background:var(--soft);margin-top:12px}
 #detail a{color:var(--link);font-size:15px}#detail .p{font-size:20px;font-weight:700;margin:2px 0}#detail .m{color:var(--mut);font-size:12.5px}
 #tdt{border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-height:48px;background:var(--soft);margin-top:12px}#tdt .p{font-size:20px;font-weight:700;margin:2px 0}#tdt .m{color:var(--mut);font-size:12.5px}#tdt .btn{margin-top:8px}
-#tst .tc th,#tst .tc td{padding:7px 4px;font-size:13px}
+.ttw{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:8px 0 4px;border-bottom:1px solid var(--line)}
+.ttb{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+.ttb th{font-size:11.5px;font-weight:600;color:var(--mut);text-align:right;padding:6px 4px;line-height:1.15;vertical-align:bottom;border-bottom:1px solid var(--line);word-spacing:100vw}
+.ttb td{text-align:right;padding:9px 4px;border-bottom:1px solid var(--line);white-space:nowrap}
+@media (max-width:420px){.ttb{font-size:12.5px}.ttb td,.ttb th{padding-left:2px;padding-right:2px}}
+.ttb tr>*:first-child{text-align:left;position:sticky;left:0;background:var(--bg);padding-left:2px}
+.ttb tr:last-child td{border-bottom:0}
 #scrub{border-radius:8px;padding:8px 12px;margin:8px 0 2px;background:var(--soft);min-height:48px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;font-size:13.5px}#scrub b{font-size:18px}#scrub span{color:var(--mut);font-size:12.5px}
 .mf{margin-top:10px}.mf summary{cursor:pointer;font-weight:700;padding:8px 0}
 #qc{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;background:var(--soft);border-radius:10px;padding:10px 14px;margin-top:16px}#qc b{font-size:22px}#qc span{color:var(--mut);font-size:12.5px}
@@ -634,7 +640,6 @@ function drawTcg(){
  const tid=c.tcgId||(String(c.tcgUrl||"").match(/product\/(\d+)/)||[])[1]||"";
  const tImgs=[tid&&`https://tcgplayer-cdn.tcgplayer.com/product/${tid}_in_1000x1000.jpg`,tid&&`https://product-images.tcgplayer.com/fit-in/437x437/${tid}.jpg`,img].filter(Boolean);
  const pick=TM.cards.length>1?`<div class="tk" role="group" aria-label="Matching cards">${TM.cards.map((k,i)=>`<button class="pill" type="button" data-ci="${i}" aria-pressed="${i===tci}">${esc(k.name)} <span class="mu">· ${esc(k.set||"")} · ${esc(k.number||"")}</span></button>`).join("")}</div>`:"";
- const rows=TCOND.filter(([n])=>byC[n]).map(([n,a,col])=>{const v=byC[n];return `<tr><td><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${col};margin-right:6px"></i>${a}</td><td><b>${pf(v.price)}</b></td><td>${pct(v.ch7)}</td><td>${pct(v.ch30)}</td></tr>`}).join("");
  const hasHist=vs2.some(v=>v.hist&&v.hist.length>1);
  /* TCGplayer sold cards and live listings for this product (loaded once per product, then redrawn) */
  if(tid&&!TPD.has(tid)){TPD.set(tid,{loading:true});
@@ -642,7 +647,7 @@ function drawTcg(){
    .then(j=>TPD.set(tid,j),e=>TPD.set(tid,{error:e.message})).then(()=>{if(tab==="tcg"&&TM&&TM.cards[tci]===c)drawTcg()})}
  const tpd=tid?TPD.get(tid):null,tpOk=tpd&&!tpd.loading&&!tpd.error;
  if(tpOk)for(const x of [...tpd.sold,...tpd.listings])if(tpPrintOk(x)&&tpLangOk(x)){const n=tcN(x.cond);if(n&&!byC[n])byC[n]=null}
- tZoom=tImgs;
+ tZoom=tImgs;tMk=byC;tSales=!!(tover&&tid);
  const selP=TCOND.filter(([n])=>tconds.has(n)&&byC[n]&&byC[n].price!=null).map(([n,a,col])=>`<span class="tc-pv"><small style="color:${col}">${a}</small>${pf(byC[n].price)}</span>`).join("");
  $("tcg").innerHTML=pick+`<div class="tc"><div style="flex:1;min-width:0"><b>${esc(c.name)}</b> <span class="mu">${esc(c.set||"")} · ${esc(c.number||"")}${c.rarity?" · "+esc(c.rarity):""}</span>
 ${selP?`<div class="tc-pr" aria-label="Market price for the selected condition">${selP}<span class="mu tc-pl">${esc(tprint)} market</span></div>`:""}
@@ -653,11 +658,12 @@ ${selP?`<div class="tc-pr" aria-label="Market price for the selected condition">
 ${tover&&tid?`<div class="py fs" id="tpw" hidden><span class="pl">Price</span><div class="dr" id="tpdr" role="group" aria-label="Sold and listed price range"></div><b id="tpt"></b></div><div class="mu" style="font-size:12.5px;margin-top:6px" id="tsm"></div>`:""}
 <div id="trd"></div>
 ${hasHist||(tover&&tid)?`<div id="tch"></div><div class="seg" id="trg" role="group" aria-label="Time range" style="margin-top:8px">${TRNG.map(([k,l])=>`<button type="button" data-tr="${k}" aria-pressed="${k===trng}">${l}</button>`).join("")}</div>`:`<p class="sm">No price history came back for this card, so only today's prices are shown.</p>`}
-${rows?`<div class="tc" style="border:0"><table><tr><th>Condition</th><th>Market</th><th>7 days</th><th>30 days</th></tr>${rows}</table></div>`:`<p class="sm">No TCGplayer prices for this printing.</p>`}
+<div id="ttab"></div>
 ${tover&&tid?`<div class="lg"><span><i style="background:var(--mut)"></i>Sold</span><span><i style="border:2px solid var(--mut)"></i>Listed now (grouped beside today)</span><span>Solid lines are the market price; dashed lines and shading are the Bollinger bands (20-day average, 2 standard deviations). Prices include shipping. Colors match the condition buttons.</span></div>
-<div id="tst"></div><div id="tdt">Tap a dot to see the sale or listing.</div>`:""}
+<div id="tdt">Tap a dot to see the sale or listing.</div>`:""}
 <a class="btn o" href="${esc(tcgSearch(tQ))}" target="_blank" rel="noopener">Search TCGplayer for this card</a>
 <p class="sm">Market prices are TCGplayer market prices, updated about daily, via JustTCG. Sold cards and live listings come straight from TCGplayer's product page and refresh every 30 minutes; TCGplayer doesn't link individual sales, so tapping one opens the card on TCGplayer filtered to that condition.${tpd&&tpd.warnings&&tpd.warnings.length?" "+esc(tpd.warnings.join(" ")):""}${TM.left!=null?` ${esc(TM.left)} price lookups left today.`:""}</p>`;
+ tcgTable(null);
  const ti=$("tci");if(ti)ti.onerror=()=>{const rest=(ti.dataset.alt||"").split(" ").filter(Boolean);if(rest.length){ti.dataset.alt=rest.slice(1).join(" ");ti.src=rest[0]}else ti.remove()};if(ti&&ti.complete&&!ti.naturalWidth)ti.onerror();
  tpts=[];
  if(tover&&tid)tpSlider(tpd);
@@ -716,16 +722,29 @@ function tpPoints(d,t0){
   for(const [pr,f,role] of ps){if(sold.some(s=>s.c2===x.c2&&s.t>=x.t&&s.t<x.t+x.w&&Math.abs(s.v-pr)<.01))continue;
    const t=Math.min(now/1000,x.t+x.w*f);if(t<t0)continue;wpts.push({...x,type:"Week",t,v:pr,role})}}
  return{sold,act,weeks,wpts}}
-function tpStats(P,d){
- const sm=$("tsm"),st=$("tst");if(!st)return;
+/* one table per printing: market price and 30-day change, then TCGplayer sales and listings, for every condition */
+let tMk={},tSales=false;
+function tcgTable(PA){const box=$("ttab");if(!box)return;
+ const sm=v=>v==null?"–":v>=100?"$"+Math.round(v).toLocaleString():pf(v); // whole dollars from $100 up, so the table fits a phone
+ const ns=TCOND.filter(([n])=>tMk[n]||(PA&&(PA.sold.some(x=>x.c2===n)||PA.act.some(x=>x.c2===n)||PA.weeks.some(x=>x.c2===n))));
+ if(!ns.length){box.innerHTML='<p class="sm">No TCGplayer prices for this printing.</p>';return}
+ const sales=tSales,wait=sales&&!PA,dash=wait?"…":"–";
+ const rows=ns.map(([n,a,col])=>{const v=tMk[n];let cells="";
+  if(sales){let qn="",rng=dash,last=dash,low=dash,lq="";
+   if(PA){const s=PA.sold.filter(x=>x.c2===n),l=PA.act.filter(x=>x.c2===n),wk=PA.weeks.filter(x=>x.c2===n),ls=s.length?s.reduce((p,q)=>q.t>p.t?q:p):null;
+    qn=wk.length?wk.reduce((t,x)=>t+x.qty,0):s.reduce((t,x)=>t+x.qty,0);
+    const rl=wk.length?Math.min(...wk.map(x=>x.lo)):s.length?Math.min(...s.map(x=>x.v)):null,rh=wk.length?Math.max(...wk.map(x=>x.v)):s.length?Math.max(...s.map(x=>x.v)):null;
+    rng=rl==null?"–":"$"+Math.round(rl).toLocaleString()+(Math.round(rh)>Math.round(rl)?"–"+Math.round(rh).toLocaleString():"");last=ls?sm(ls.v):"–";low=l.length?sm(Math.min(...l.map(x=>x.v))):"–";lq=l.reduce((t,x)=>t+x.qty,0)}
+   else{qn=dash;lq=dash}
+   cells=`<td>${qn}</td><td>${rng}</td><td>${last}</td><td>${low}</td><td>${lq}</td>`}
+  return `<tr${tconds.has(n)?' class="on"':""}><td><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${col};margin-right:6px"></i>${a}</td><td><b>${v&&v.price!=null?sales?sm(v.price):pf(v.price):"–"}</b></td><td>${v?pct(v.ch30):"–"}</td>${cells}</tr>`}).join("");
+ box.innerHTML=`<div class="ttw"><table class="ttb"><tr><th>${sales?"":"Condition"}</th><th>Market</th><th>30 days</th>${sales?"<th>Sold</th><th>Sold range</th><th>Last sold</th><th>Lowest listed</th><th>Listed</th>":""}</tr>${rows}</table></div>`}
+function tpStats(P,d,t0){
+ const sm=$("tsm");
  if(sm)sm.textContent=!d||d.loading?"Loading TCGplayer sales and listings…":d.error?"Sales and listings unavailable right now ("+d.error+").":P&&!P.sold.length&&!P.act.length&&!P.weeks.length?"No sales or listings for these conditions in this range.":"";
- if(!P){st.innerHTML="";return}
- const med=a=>{if(!a.length)return null;const s=a.slice().sort((p,q)=>p-q),h=s.length>>1;return s.length%2?s[h]:(s[h-1]+s[h])/2};
- const rows=TCOND.filter(([n])=>tconds.has(n)).map(([n,a,col])=>{const s=P.sold.filter(x=>x.c2===n),l=P.act.filter(x=>x.c2===n),wk=P.weeks.filter(x=>x.c2===n),last=s.length?s.reduce((p,q)=>q.t>p.t?q:p):null;
-  if(!s.length&&!l.length&&!wk.length)return"";
-  const qn=wk.length?wk.reduce((t,x)=>t+x.qty,0):s.reduce((t,x)=>t+x.qty,0),rl=wk.length?Math.min(...wk.map(x=>x.lo)):s.length?Math.min(...s.map(x=>x.v)):null,rh=wk.length?Math.max(...wk.map(x=>x.v)):s.length?Math.max(...s.map(x=>x.v)):null;
-  return `<tr><td><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${col};margin-right:6px"></i>${a}</td><td>${qn}</td><td>${rl==null?"–":fmt(Math.round(rl))+"–"+fmt(Math.round(rh))}</td><td>${last?pf(last.v):"–"}</td><td><b>${l.length?pf(Math.min(...l.map(x=>x.v))):"–"}</b></td><td>${l.reduce((t,x)=>t+x.qty,0)}</td></tr>`}).join("");
- st.innerHTML=rows?`<div class="tc" style="border:0"><table><tr><th>Condition</th><th>Sold</th><th>Sold range</th><th>Last sold</th><th>Lowest listed</th><th>Listed</th></tr>${rows}</table></div>`:""}
+ // every condition's numbers, not only the selected ones
+ let PA=null;if(d&&!d.loading&&!d.error){const keep=tconds;tconds=new Set(TCOND.map(x=>x[0]));try{PA=tpPrice(tpPoints(d,t0||0))}finally{tconds=keep}}
+ tcgTable(PA);}
 function tpPick(i){const x=tpts[i];if(!x)return;tsel=i;
  if(x.type==="Week"){const CC=Object.fromEntries(TCOND.map(([n,a])=>[n,a])),f=t=>new Date(t*1000).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
   const who=x.role==="lowest"?`The lowest of ${x.n} sales that week (highest ${money(x.hi0)})`:x.role==="highest"?`The highest of ${x.n} sales that week (lowest ${money(x.lo)})`:x.role==="every"?`All ${x.n} sales that week were this price`:"The only sale that week";
@@ -742,7 +761,7 @@ function readout(vs,t){
  $("trd").innerHTML=(parts||"<span>Pick a condition</span>")+`<span>${t==null?"Latest":new Date(t*1000).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})}</span>`}
 function drawTcgChart(vs,tpd){
  const box=$("tch");if(!box)return;
- const now=Date.now()/1000,t0=now-(+trng)*86400,P=tpPrice(tpPoints(tpd,t0));tpStats(P,tpd);
+ const now=Date.now()/1000,t0=now-(+trng)*86400,P=tpPrice(tpPoints(tpd,t0));tpStats(P,tpd,t0);
  const sold=P&&tsold?P.sold:[],act=P?P.act:[],weeks=P&&tsold?P.weeks:[],wpts=P&&tsold?P.wpts||[]:[];
  const W=Math.max(300,box.clientWidth||600),H=Math.round(Math.min(P?380:320,W*(P?.7:.6))),m={l:8,r:58,t:12,b:26};
  const gut=act.length?Math.round(Math.min(Math.max(48,W*.24),18+9.2*Math.ceil(Math.sqrt(act.length)*1.2))):0,iw=W-m.l-m.r-gut,ih=H-m.t-m.b;
