@@ -363,9 +363,10 @@ function renderDetail(box, x) {
   }).catch((e) => { if (detail === x.id) box.innerHTML = head(`<div class="cdx-fair"><div class="cdx-fs">Couldn't load comps: ${esc(e.message)}</div></div>`); });
 }
 function openDetail(id) { if (!P.items.some((y) => y.id === id)) return; listY = scrollY; detail = id; cview = null; dsel = ownSel(P.items.find((y) => y.id === id)); editing = null; try { history.pushState({ ppd: id }, ""); } catch {} render(); scrollTo(0, 0); }
-function closeDetail(viaHistory) { if (!detail) return; const wasPreview = !!(preview && preview.id === detail); detail = null; preview = null; render(); scrollTo(0, listY); if (!viaHistory && history.state && history.state.ppd) try { history.back(); } catch {}
+// toTab: leaving for the eBay or TCGplayer tab, so a scanned card's page doesn't reopen the scan list on top of it
+function closeDetail(viaHistory, toTab) { if (!detail) return; const wasPreview = !!(preview && preview.id === detail); detail = null; preview = null; render(); scrollTo(0, listY); if (!viaHistory && history.state && history.state.ppd) try { history.back(); } catch {}
   // a scanned card's comps go back to the tab you were on, with the scan list open again
-  if (wasPreview) { const b = previewTab && previewTab !== "pf" && $("tb").querySelector(`[data-t="${previewTab}"]`); if (b) b.click(); sqOpen(); } }
+  if (wasPreview && !toTab) { const b = previewTab && previewTab !== "pf" && $("tb").querySelector(`[data-t="${previewTab}"]`); if (b) b.click(); sqOpen(); } }
 // comps for a card in the scan list, before it's added to the portfolio
 function sqComp(id) {
   const it = sqItem(id), c = it && it.pick >= 0 ? it.cards[it.pick] : null; if (!c) return;
@@ -1132,8 +1133,8 @@ document.addEventListener("click", (e) => {
   if (d.dc) { dsel = d.dc; cview = null; render(); return; }
   if (d.dx) { const x = detailItem();
     if (d.dx === "back") closeDetail();
-    else if (x && d.dx === "ebay") { const q = queryFor(x, dsel); closeDetail(); $("q").value = q; const b = $("tb").querySelector('[data-t="ebay"]'); if (b) b.click(); tcgQ = ""; load(); scrollTo({ top: 0, behavior: "smooth" }); }
-    else if (x && d.dx === "tcg") { closeDetail(); $("q").value = queryFor(x, dsel); tcgQ = ""; const b = $("tb").querySelector('[data-t="tcg"]'); if (b) b.click(); scrollTo({ top: 0, behavior: "smooth" }); }
+    else if (x && d.dx === "ebay") { const q = queryFor(x, dsel); closeDetail(false, true); $("q").value = q; const b = $("tb").querySelector('[data-t="ebay"]'); if (b) b.click(); tcgQ = ""; load(); scrollTo({ top: 0, behavior: "smooth" }); }
+    else if (x && d.dx === "tcg") { closeDetail(false, true); $("q").value = queryFor(x, dsel); tcgQ = ""; const b = $("tb").querySelector('[data-t="tcg"]'); if (b) b.click(); scrollTo({ top: 0, behavior: "smooth" }); }
     return; }
   if (d.ed && detail) { detail = null; }
   if (d.pv != null) { view = d.pv; shown = PAGE; editing = null; render(); }
