@@ -76,7 +76,7 @@ svg{display:block;width:100%;height:auto;user-select:none;-webkit-user-select:no
 .ttb{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
 .ttb th{font-size:11.5px;font-weight:600;color:var(--mut);text-align:right;padding:6px 4px;line-height:1.15;vertical-align:bottom;border-bottom:1px solid var(--line);word-spacing:100vw}
 .ttb td{text-align:right;padding:9px 4px;border-bottom:1px solid var(--line);white-space:nowrap}
-@media (max-width:420px){.ttb{font-size:12.5px}.ttb td,.ttb th{padding-left:2px;padding-right:2px}}
+@media (max-width:420px){.ttb{font-size:12.5px}.ttb.wide{font-size:11.5px}.ttb td,.ttb th{padding-left:2px;padding-right:2px}.ttb.wide th{font-size:11px}.ttb.wide td,.ttb.wide th{padding-left:1.5px;padding-right:1.5px}.ttb.wide td:first-child i{width:8px!important;height:8px!important;margin-right:4px!important}}
 .ttb tr>*:first-child{text-align:left;position:sticky;left:0;background:var(--bg);padding-left:2px}
 .ttb tr:last-child td{border-bottom:0}
 #scrub{border-radius:8px;padding:8px 12px;margin:8px 0 2px;background:var(--soft);min-height:48px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;font-size:13.5px}#scrub b{font-size:18px}#scrub span{color:var(--mut);font-size:12.5px}
@@ -726,7 +726,6 @@ function tpPoints(d,t0){
 /* one table per printing: market price and 30-day change, then TCGplayer sales and listings, for every condition */
 let tMk={},tSales=false;
 function tcgTable(PA){const box=$("ttab");if(!box)return;
- const sm=v=>v==null?"–":v>=100?"$"+Math.round(v).toLocaleString():pf(v); // whole dollars from $100 up, so the table fits a phone
  const ns=TCOND.filter(([n])=>tMk[n]||(PA&&(PA.sold.some(x=>x.c2===n)||PA.act.some(x=>x.c2===n)||PA.weeks.some(x=>x.c2===n))));
  if(!ns.length){box.innerHTML='<p class="sm">No TCGplayer prices for this printing.</p>';return}
  const sales=tSales,wait=sales&&!PA,dash=wait?"…":"–";
@@ -735,11 +734,11 @@ function tcgTable(PA){const box=$("ttab");if(!box)return;
    if(PA){const s=PA.sold.filter(x=>x.c2===n),l=PA.act.filter(x=>x.c2===n),wk=PA.weeks.filter(x=>x.c2===n),ls=s.length?s.reduce((p,q)=>q.t>p.t?q:p):null;
     qn=wk.length?wk.reduce((t,x)=>t+x.qty,0):s.reduce((t,x)=>t+x.qty,0);
     const rl=wk.length?Math.min(...wk.map(x=>x.lo)):s.length?Math.min(...s.map(x=>x.v)):null,rh=wk.length?Math.max(...wk.map(x=>x.v)):s.length?Math.max(...s.map(x=>x.v)):null;
-    rng=rl==null?"–":"$"+Math.round(rl).toLocaleString()+(Math.round(rh)>Math.round(rl)?"–"+Math.round(rh).toLocaleString():"");last=ls?sm(ls.v):"–";low=l.length?sm(Math.min(...l.map(x=>x.v))):"–";lq=l.reduce((t,x)=>t+x.qty,0)}
+    rng=rl==null?"–":"$"+Math.round(rl).toLocaleString()+(Math.round(rh)>Math.round(rl)?"–"+Math.round(rh).toLocaleString():"");last=ls?pf(ls.v):"–";low=l.length?pf(Math.min(...l.map(x=>x.v))):"–";lq=l.reduce((t,x)=>t+x.qty,0)}
    else{qn=dash;lq=dash}
    cells=`<td>${qn}</td><td>${rng}</td><td>${last}</td><td>${low}</td><td>${lq}</td>`}
-  return `<tr${tconds.has(n)?' class="on"':""}><td><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${col};margin-right:6px"></i>${a}</td><td><b>${v&&v.price!=null?sales?sm(v.price):pf(v.price):"–"}</b></td><td>${v?pct(v.ch30):"–"}</td>${cells}</tr>`}).join("");
- box.innerHTML=`<div class="ttw"><table class="ttb"><tr><th>${sales?"":"Condition"}</th><th>Market</th><th>30 days</th>${sales?"<th>Sold</th><th>Sold range</th><th>Last sold</th><th>Lowest listed</th><th>Listed</th>":""}</tr>${rows}</table></div>`}
+  return `<tr${tconds.has(n)?' class="on"':""}><td><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${col};margin-right:6px"></i>${a}</td><td><b>${v&&v.price!=null?pf(v.price):"–"}</b></td><td>${v?pct(v.ch30):"–"}</td>${cells}</tr>`}).join("");
+ box.innerHTML=`<div class="ttw"><table class="ttb${sales?" wide":""}"><tr><th>${sales?"":"Condition"}</th><th>Market</th><th>30 days</th>${sales?"<th>Sold</th><th>Sold range</th><th>Last sold</th><th>Lowest listed</th><th>Listed</th>":""}</tr>${rows}</table></div>`}
 function tpStats(P,d,t0){
  const sm=$("tsm");
  if(sm)sm.textContent=!d||d.loading?"Loading TCGplayer sales and listings…":d.error?"Sales and listings unavailable right now ("+d.error+").":P&&!P.sold.length&&!P.act.length&&!P.weeks.length?"No sales or listings for these conditions in this range.":"";
