@@ -697,7 +697,7 @@ function sqThumb(dataUrl) {
 async function sqAdd(files) {
   const list = [...files].filter(Boolean);
   for (const f of list) {
-    const it = { id: uid(), st: "wait", thumb: "", cards: [], pick: -1, cond: sqDefaults.cond || "Near Mint", qty: 1, sel: true, added: Date.now() };
+    const it = { id: uid(), st: "wait", thumb: "", cards: [], pick: -1, cond: "Near Mint", qty: 1, /* every new scan starts at Near Mint, whatever the last card was set to */ sel: true, added: Date.now() };
     scanQ.push(it);
     const lst = !sqView && document.querySelector("#ppscan .sq-list");
     if (lst) { lst.insertAdjacentHTML("beforeend", sqRowHTML(it)); const top = document.querySelector("#ppscan .sq-top .mu"); if (top) top.textContent = `${scanQ.length} card${scanQ.length === 1 ? "" : "s"}`; sqBar(); }
@@ -1027,9 +1027,9 @@ document.addEventListener("click", (e) => {
 document.addEventListener("change", (e) => {
   const t = e.target; if (!t.closest || !t.closest("#ppscan")) return;
   if (t.dataset.qk) { const it = sqItem(t.dataset.qk); if (it) it.sel = t.checked; sqSave(); sqBar(); }
-  else if (t.dataset.qf) { const it = sqItem(t.dataset.qid); if (!it) return; if (t.dataset.qf === "qty") it.qty = Math.max(1, Math.round(+t.value || 1)); else it[t.dataset.qf] = t.value; if (t.dataset.qf === "cond") sqDefaults.cond = t.value; sqSave();
+  else if (t.dataset.qf) { const it = sqItem(t.dataset.qid); if (!it) return; if (t.dataset.qf === "qty") it.qty = Math.max(1, Math.round(+t.value || 1)); else it[t.dataset.qf] = t.value; sqSave();
     if (t.dataset.qf !== "qty") sqPrice(it); sqRow(it); }
-  else if (t.dataset.qa === "cond" && t.value) { for (const it of scanQ) if (it.sel && it.pick >= 0) it.cond = t.value; sqDefaults.cond = t.value; sqSave();
+  else if (t.dataset.qa === "cond" && t.value) { for (const it of scanQ) if (it.sel && it.pick >= 0) it.cond = t.value; sqSave();
     document.querySelectorAll("#ppscan select[data-qf=cond]").forEach((s) => { const it = sqItem(s.dataset.qid); if (it && it.sel) s.value = it.cond; }); toast(`Set ${t.value} for the selected cards`); t.value = ""; sqPriceAll(); for (const it of scanQ) if (it.sel && it.pick >= 0) sqRow(it); sqBar(); }
 });
 // a row that changed while you were typing in it is redrawn once you leave it
