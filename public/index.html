@@ -101,7 +101,7 @@ label.pill{display:inline-block}
 .pbx{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:12px;background:var(--bg)}
 .pch{margin-top:12px}.pch svg{max-height:170px}
 #pfq{flex:1;min-width:160px;font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:999px;padding:7px 14px}
-.pr{position:relative;overflow:hidden;border-bottom:1px solid var(--line)}.prc{position:relative;z-index:1;display:flex;justify-content:space-between;gap:12px;padding:12px 2px;background:var(--bg);transition:transform .2s ease;touch-action:pan-y}.prc.drag{transition:none}.pr.open .prc{transform:translateX(-84px)}
+.pr{position:relative;overflow:hidden;border-bottom:1px solid var(--line)}.prc{position:relative;z-index:1;display:flex;justify-content:space-between;gap:12px;padding:12px 2px;background:var(--bg);transition:transform .2s ease;touch-action:pan-y pinch-zoom}.prc.drag{transition:none}.pr.open .prc{transform:translateX(-84px)}
 .prx{position:absolute;right:0;top:0;bottom:0;width:84px;border:0;background:#d92d20;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer}
 .pm{min-width:0;flex:1}.pm .mu{font-size:12.5px;margin-top:2px}.pv{text-align:right;flex:none}.pv b{font-size:16px;display:block;margin-bottom:6px}
 .cg{font-size:11.5px;font-weight:700;border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:var(--mut);white-space:nowrap}.cg.gr{border-color:#F59E0B;color:#b46d00}
@@ -873,5 +873,5 @@ $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
-<script src="/portfolio.js?v=62"></script>
+<script src="/portfolio.js?v=63"></script>
 </body></html>

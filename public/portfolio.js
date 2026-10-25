@@ -425,13 +425,20 @@ window.ppAddFromTcg = async (c, print, conds) => {
 
 /* ---------- swipe a card left to show the trash can ---------- */
 let sw = null, swJust = 0;
+// fingers on the screen: a second finger means a pinch (zoom), so any swipe in progress is dropped
+const swFingers = new Set();
+const swCancel = () => { if (!sw) return; const s = sw; sw = null; s.c.classList.remove("drag"); s.c.style.transform = ""; if (s.on) swJust = Date.now(); };
+document.addEventListener("pointerdown", (e) => { if (e.pointerType === "touch") { swFingers.add(e.pointerId); if (swFingers.size > 1) swCancel(); } }, true);
+const swLift = (e) => swFingers.delete(e.pointerId);
+document.addEventListener("pointerup", swLift, true); document.addEventListener("pointercancel", swLift, true);
+document.addEventListener("touchstart", (e) => { if (e.touches.length > 1) swCancel(); }, { passive: true, capture: true });
 const closeSwipes = (except) => document.querySelectorAll("#pf .pr.open").forEach((r) => r !== except && r.classList.remove("open"));
 document.addEventListener("pointerdown", (e) => {
-  const c = e.target.closest && e.target.closest("#pf .prc"); if (!c || e.button > 0 || e.target.closest("button,a,input,select,label")) return;
+  const c = e.target.closest && e.target.closest("#pf .prc"); if (!c || e.button > 0 || swFingers.size > 1 || e.target.closest("button,a,input,select,label")) return;
   const row = c.parentNode; sw = { id: e.pointerId, row, c, x: e.clientX, y: e.clientY, base: row.classList.contains("open") ? -84 : 0, on: false };
 });
 document.addEventListener("pointermove", (e) => {
-  if (!sw || e.pointerId !== sw.id) return; const dx = e.clientX - sw.x, dy = e.clientY - sw.y;
+  if (!sw || e.pointerId !== sw.id) return; if (swFingers.size > 1) return swCancel(); const dx = e.clientX - sw.x, dy = e.clientY - sw.y;
   if (!sw.on) { if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.2) { sw.on = true; sw.c.classList.add("drag"); closeSwipes(sw.row); try { sw.c.setPointerCapture(e.pointerId); } catch {} } else if (Math.abs(dy) > 10) { sw = null; return; } }
   if (sw.on) sw.c.style.transform = `translateX(${Math.min(0, Math.max(-130, sw.base + dx))}px)`;
 });
