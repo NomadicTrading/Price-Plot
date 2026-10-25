@@ -867,7 +867,8 @@ function sqBar() {
   const el = $("sq-bar"); if (!el) return;
   const ready = scanQ.filter((x) => x.pick >= 0), sel = ready.filter((x) => x.sel);
   const selV = sel.reduce((a, x) => a + sqVal(x), 0);
-  el.querySelector("[data-qa=add]").textContent = sel.length ? `Add ${sel.length} card${sel.length === 1 ? "" : "s"} to portfolio${selV ? " · " + money(selV) : ""}` : "Add to portfolio";
+  const selPay = sel.reduce((a, x) => a + (x.pxK === sqPxKey(x) ? sqOfferVal(x) : 0), 0);
+  el.querySelector("[data-qa=add]").textContent = sel.length ? `Add ${sel.length} card${sel.length === 1 ? "" : "s"} to portfolio${selPay ? " · paying " + money(selPay) : selV ? " · " + money(selV) : ""}` : "Add to portfolio";
   // the whole list's TCGplayer market value, counting quantities
   const tv = $("sq-v");
   if (tv) {
@@ -919,7 +920,7 @@ function sqDetail(ov) {
 function sqToItem(it, pf) {
   const c = it.cards[it.pick];
   return { id: uid(), pf, cat: "Pokemon", set: c.set || "", name: c.name, num: /^\d+$/.test(c.number) && c.printedTotal ? `${c.number}/${c.printedTotal}` : c.number, rarity: c.rarity || "",
-    var: it.print || "", grade: (it.grade || "").trim() || "Ungraded", cond: it.cond || "Near Mint", qty: Math.max(1, Math.round(+it.qty || 1)), cost: 0, mkt: null, ovr: 0, watch: false, added: today(), notes: "",
+    var: it.print || "", grade: (it.grade || "").trim() || "Ungraded", cond: it.cond || "Near Mint", qty: Math.max(1, Math.round(+it.qty || 1)), cost: it.pxK === sqPxKey(it) ? sqOffer(it) : 0, mkt: null, ovr: 0, watch: false, added: today(), notes: "",
     img: c.image, big: c.big, imgT: Date.now(), tcgId: c.tcgId || undefined,
     // the TCGplayer price already looked up while scanning, so the portfolio shows it right away
     ...(!it.grade && c.tcgId && it.pxK === sqPxKey(it) && it.px > 0 ? { mkt: it.px, mktEst: !!it.pxEst, mktV: 2, pT: Date.now() } : {}) };
@@ -929,9 +930,17 @@ function sqAddSelected(fm) {
   if (d.pf === "__new") { d.pf = String(d.pfNew || "").trim(); if (!d.pf) { toast("Type a name for the new portfolio"); const i = fm.querySelector('[name="pfNew"]'); if (i) i.focus(); return; } }
   const pf = String(d.pf || "").trim(), pick = scanQ.filter((x) => x.sel && x.pick >= 0); if (!pick.length) return;
   let cards = 0;
-  for (const it of pick) { const x = sqToItem(it, pf), same = P.items.find((y) => y.qty > 0 && keyOf(y) === keyOf(x)); if (same) same.qty += x.qty; else P.items.push(x); cards += x.qty; }
+  let paid = 0;
+  for (const it of pick) {
+    const x = sqToItem(it, pf); paid += x.cost * x.qty; cards += x.qty;
+    // the offer is what you paid each: copies already in the portfolio average with it by quantity. If those copies have
+    // no cost recorded (or these have none), they stay separate entries so neither gets a cost it didn't have.
+    const same = P.items.find((y) => y.qty > 0 && keyOf(y) === keyOf(x) && (y.cost > 0) === (x.cost > 0));
+    if (same) { if (x.cost > 0) same.cost = Math.round(((same.cost * same.qty + x.cost * x.qty) / (same.qty + x.qty)) * 100) / 100; same.qty += x.qty; }
+    else P.items.push(x);
+  }
   scanQ = scanQ.filter((x) => !pick.includes(x)); sqDefaults.pf = pf; sqSave(); store(); snap(); render(); fillPrices();
-  toast(`Added ${cards} card${cards === 1 ? "" : "s"} to ${pf || "your portfolio"}`); sqRender();
+  toast(`Added ${cards} card${cards === 1 ? "" : "s"} to ${pf || "your portfolio"}${paid > 0 ? `, ${money(paid)} paid` : ""}`); sqRender();
 }
 
 // --- live camera: keeps the camera open so you can shoot card after card ---
