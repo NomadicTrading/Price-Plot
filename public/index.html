@@ -346,8 +346,10 @@ function ppEbayFilter(sel){
  cset.clear();const c=m||other?null:CODE_OF[sel]||(Object.values(CODE_OF).includes(sel)?sel:"NM");if(c)cset.add(c);
  $("cd").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.c==="any"?!cset.size:cset.has(b.dataset.c)));view=null;scrub=null}
 /* ...and the TCGplayer tab's condition and printing (TCGplayer has no graded cards, so a grade keeps the card's own condition) */
-let tprintWant="";
-function ppTcgFilter(cond,print){tconds=new Set([CODE_OF[cond]?cond:"Near Mint"]);tprintWant=print||""}
+let tprintWant="",tWant={id:"",set:""};
+/* tid/set: the exact TCGplayer product (and its set) when the tab is opened for a specific card, so a Shadowless,
+   1st Edition or other version that shares the card's name and number isn't mixed up with the regular one */
+function ppTcgFilter(cond,print,tid,set){tconds=new Set([CODE_OF[cond]?cond:"Near Mint"]);tprintWant=print||"";tWant={id:/^\d+$/.test(String(tid||""))?String(tid):"",set:set||""}}
 const FIN=[["any","Any finish"],["holo","Holo"],["reverse","Reverse holo"],["nonholo","Non-holo"],["none","Unspecified"]];
 $("fn").innerHTML=FIN.map(([k,l])=>`<button class="pill" type="button" data-f="${k}" aria-pressed="${k===fmode}">${l}</button>`).join("");
 $("fn").onclick=e=>{const k=e.target.dataset.f;if(!k)return;fmode=k;
@@ -585,6 +587,7 @@ function sugPick(i){const c=sugItems[i];if(!c)return;
  const num=c.numberText||(c.number?c.number+(c.printedTotal&&/^\d+$/.test(c.number)?"/"+c.printedTotal:""):"");
  $("q").value=[c.name,num].filter(Boolean).join(" ");sugQ=$("q").value;sugHide();
  if(c.print)tprintWant=c.print; // the TCGplayer tab opens on this printing
+ tWant={id:String(c.tcgId||""),set:c.set||""};
  tcgQ="";const b=$("tb").querySelector('[data-t="tcg"]');if(tab!=="tcg")b.click();else loadTcg()}
 $("q").addEventListener("input",()=>{const q=$("q").value.trim();clearTimeout(sugT);if(sugCtl)sugCtl.abort();
  if(q.length<3||q===sugQ){sugHide();return}
@@ -603,7 +606,7 @@ sugEl.addEventListener("mousedown",e=>e.preventDefault()); // keep the keyboard 
 sugEl.addEventListener("click",e=>{const b=e.target.closest("[data-si]");if(b)sugPick(+b.dataset.si)});
 document.addEventListener("click",e=>{if(!sugEl.hidden&&!sugEl.contains(e.target)&&e.target!==$("q"))sugHide()});
 addEventListener("resize",()=>{if(!sugEl.hidden)sugPlace()});
-$("f").onsubmit=e=>{e.preventDefault();sugHide();clearTimeout(sugT);if(sugCtl)sugCtl.abort();tcgQ="";if(tab==="tcg"){loadTcg();return} // the eBay search waits until the eBay tab is opened
+$("f").onsubmit=e=>{e.preventDefault();sugHide();tWant={id:"",set:""};clearTimeout(sugT);if(sugCtl)sugCtl.abort();tcgQ="";if(tab==="tcg"){loadTcg();return} // the eBay search waits until the eBay tab is opened
  if(tab==="pf"){ebayQ="";const b=$("tb").querySelector('[data-t="ebay"]');if(b){ebayQ=$("q").value.trim();b.click()}}load()};
 $("tS").onclick=e=>{show.S=!show.S;e.target.setAttribute("aria-pressed",show.S);draw()};
 $("tA").onclick=e=>{show.A=!show.A;e.target.setAttribute("aria-pressed",show.A);draw()};
@@ -867,12 +870,14 @@ async function loadTcg(){
  if(q!==$("q").value.trim())return;
  const ex=basic&&(basic.cards||[]).find(c=>c.exact);
  const ps=new URLSearchParams({q});if(ex){ps.set("name",ex.name||"");ps.set("set",ex.set||"");ps.set("n",String(+String(ex.number).replace(/\D/g,"")||""));if(ex.printedTotal)ps.set("d",ex.printedTotal)}
+ const want=tWant;tWant={id:"",set:""};
+ if(want.id){ps.set("tid",want.id);if(want.set)ps.set("set",want.set)}
  try{const ck="pp:tm:"+ps,hit=tmGet(ck);let j;
   if(hit)j={...hit,left:null};else{const r=await fetch("/api/tcgmarket?"+ps);j=await r.json();if(!r.ok)throw new Error(j.error||r.status);if(j.cards&&j.cards.length)tmPut(ck,j)}
   if(q!==$("q").value.trim())return;
   tcgQ=q;tQ=q;tBasic=basic;
   if(!j.cards||!j.cards.length){TM=null;renderTcgBasic(basic,q,"No condition prices found for this search.");return}
-  TM=j;tci=0;tprint=tprintWant;tprintWant="";drawTcg()}
+  TM=j;tci=want.id?Math.max(0,j.cards.findIndex(c=>c.tcgId===want.id)):0;tprint=tprintWant;tprintWant="";drawTcg()}
  catch(e){if(q!==$("q").value.trim())return;tcgQ=q;TM=null;renderTcgBasic(basic,q,"Condition prices unavailable ("+e.message+"). Showing TCGplayer's overall prices instead.")}}
 $("tb").onclick=e=>{const k=e.target.dataset.t;if(!k)return;tab=k;
  [...$("tb").children].forEach(b=>b.setAttribute("aria-pressed",b.dataset.t===k));
@@ -910,5 +915,5 @@ $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
-<script src="/portfolio.js?v=65"></script>
+<script src="/portfolio.js?v=66"></script>
 </body></html>

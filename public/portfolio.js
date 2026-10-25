@@ -1199,7 +1199,7 @@ function comp(x) {
     $("q").value = [name, num, shortGrade(x.grade)].filter(Boolean).join(" "); ppEbayFilter(shortGrade(x.grade)); tcgQ = "";
     const b = $("tb").querySelector('[data-t="ebay"]'); if (b && tab !== "ebay") b.click(); else load(); // opening the tab runs the search
   } else {
-    $("q").value = [name, num].filter(Boolean).join(" "); ppTcgFilter(x.cond || "Near Mint", x.var); tcgQ = "";
+    $("q").value = [name, num].filter(Boolean).join(" "); ppTcgFilter(x.cond || "Near Mint", x.var, x.tcgId, x.set); tcgQ = "";
     const b = $("tb").querySelector('[data-t="tcg"]'); if (b && tab !== "tcg") b.click(); else loadTcg();
   }
   scrollTo({ top: 0, behavior: "smooth" });
@@ -1238,7 +1238,7 @@ document.addEventListener("click", (e) => {
   if (d.dx) { const x = detailItem();
     if (d.dx === "back") closeDetail();
     else if (x && d.dx === "ebay") { const q = queryFor(x, dsel), sel = dsel; closeDetail(false, true); ppEbayFilter(sel); $("q").value = q; const b = $("tb").querySelector('[data-t="ebay"]'); if (b) b.click(); tcgQ = ""; load(); scrollTo({ top: 0, behavior: "smooth" }); }
-    else if (x && d.dx === "tcg") { const sel = dsel; closeDetail(false, true); ppTcgFilter(selGrade(sel) ? x.cond : sel, x.var); $("q").value = queryFor(x, dsel); tcgQ = ""; const b = $("tb").querySelector('[data-t="tcg"]'); if (b) b.click(); scrollTo({ top: 0, behavior: "smooth" }); }
+    else if (x && d.dx === "tcg") { const sel = dsel; closeDetail(false, true); ppTcgFilter(selGrade(sel) ? x.cond : sel, x.var, x.tcgId, x.set); $("q").value = queryFor(x, dsel); tcgQ = ""; const b = $("tb").querySelector('[data-t="tcg"]'); if (b) b.click(); scrollTo({ top: 0, behavior: "smooth" }); }
     return; }
   if (d.ed && detail) { detail = null; }
   if (d.pv != null) { view = d.pv; shown = PAGE; editing = null; render(); }

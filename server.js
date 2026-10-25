@@ -815,7 +815,8 @@ app.get("/api/tcgmarket", async (req, res) => {
   const hintName = String(req.query.name || "").slice(0, 60).trim();
   const hintSet = norm(String(req.query.set || "").slice(0, 80));
   const num = req.query.n ? { n: String(+req.query.n), d: req.query.d ? String(+req.query.d) : null } : pq.num;
-  const key = [base, hintName, hintSet, num?.n, num?.d].join("|").toLowerCase();
+  const tid = String(req.query.tid || "").replace(/\D/g, "").slice(0, 12);
+  const key = [base, hintName, hintSet, num?.n, num?.d, tid].join("|").toLowerCase();
   const hit = jtCache.get(key);
   if (hit && hit.exp > Date.now()) return res.json({ ...hit.data, left: jtLeft });
   const saved = await kv.get("jt:" + key);
@@ -828,8 +829,14 @@ app.get("/api/tcgmarket", async (req, res) => {
     return !!c2 && c2.n === num.n && (!num.d || !c2.d || c2.d === num.d);
   };
   try {
-    let found = [];
-    for (const q of attempts) {
+    let found = [], exactId = null;
+    // the exact TCGplayer product when the page knows it (a portfolio card, a scanned card, a picked suggestion):
+    // the Shadowless, 1st Edition or regular printing of a card share a name and number, so a search can pick the wrong one
+    if (tid) {
+      try { const j = await jtCards({ tcgplayerId: tid, include_price_history: "true", priceHistoryDuration: "1y" }); found = (j.data || []).filter((c) => c && String(c.tcgplayerId || "").replace(/\D/g, "") === tid); } catch (e) { console.error("tcgmarket by id:", e.message); }
+      if (found.length) exactId = tid;
+    }
+    if (!exactId) for (const q of attempts) {
       found = [];
       for (let offset = 0; offset < (num ? 60 : 20); offset += 20) {
         const j = await jtCards({ q, game: "pokemon", include_price_history: "true", priceHistoryDuration: "1y", limit: "20", offset: String(offset) });
@@ -838,13 +845,13 @@ app.get("/api/tcgmarket", async (req, res) => {
       }
       if (found.length && (!num || found.some(numOk))) break;
     }
-    const words = new Set([...tokens, ...hintSet.split(/\s+/)].filter(Boolean));
+    const words = new Set([...tokens, ...hintSet.split(/[^a-z0-9]+/)].filter(Boolean)); // "Base Set (Shadowless)" -> base, set, shadowless
     const setScore = (c) => norm(c.set_name || c.set || "").split(/[^a-z0-9]+/).filter((w) => words.has(w)).length;
     const seen = new Set();
     const cards = found
       .filter((c) => c && c.id && !seen.has(c.id) && seen.add(c.id))
-      .map((c, i) => ({ c, i, exact: numOk(c), s: setScore(c) }))
-      .sort((a, b) => Number(b.exact) - Number(a.exact) || b.s - a.s || a.i - b.i)
+      .map((c, i) => ({ c, i, exact: numOk(c) || (!!tid && String(c.tcgplayerId || "").replace(/\D/g, "") === tid), same: !!tid && String(c.tcgplayerId || "").replace(/\D/g, "") === tid, s: setScore(c) }))
+      .sort((a, b) => Number(b.same) - Number(a.same) || Number(b.exact) - Number(a.exact) || b.s - a.s || a.i - b.i)
       .slice(0, 12)
       .map(({ c, exact }, k) => ({
         id: c.id,
