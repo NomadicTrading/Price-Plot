@@ -167,6 +167,14 @@ label.pill{display:inline-block}
 .sq-t{min-width:0;font-size:14px;line-height:1.3}.sq-t b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sq-t .mu{font-size:12.5px}
 .sq-st{font-size:12.5px;color:var(--mut);margin-top:2px}.sq-p{font-size:13.5px;margin-top:3px}.sq-pv{font-weight:700;white-space:nowrap}.sq-v{margin:6px 0 8px;padding:10px 12px;border-radius:12px;background:var(--soft,rgba(127,127,127,.1));font-size:14px}.sq-v:empty{display:none}.sq-v b{font-size:17px}.sq-st.warn{color:var(--dn);font-weight:600}
 .sq-f{grid-column:2/-1;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) 58px;gap:6px;margin-top:-2px}
+.sq-o{grid-column:2/-1;display:grid;gap:6px;padding:8px 10px;border-radius:10px;background:var(--soft)}
+.sq-or{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:14px}.sq-ot{min-width:0}
+.sq-pn{display:flex;align-items:center;gap:3px;font-weight:600;flex:none}
+.sq-pn input{font:inherit;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:4px 6px;width:64px;min-height:34px;text-align:right}
+.sq-rg{width:100%;margin:2px 0;accent-color:var(--blue);min-height:28px}
+.sq-pp{display:flex;gap:5px}.sq-pb{flex:1;font:inherit;font-size:13px;font-weight:600;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:5px 0;min-height:32px;cursor:pointer}
+.sq-pb[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.sq-vo{margin-top:4px}
 .sq-f select,.sq-f input{font:inherit;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:6px 6px;min-height:36px;width:100%;min-width:0}
 .sq-g{font-size:12px;margin-top:3px}
 .sq-a{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
@@ -792,5 +800,5 @@ $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
-<script src="/portfolio.js?v=45"></script>
+<script src="/portfolio.js?v=46"></script>
 </body></html>

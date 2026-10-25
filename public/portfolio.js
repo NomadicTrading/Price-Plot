@@ -793,6 +793,41 @@ function sqPriceHTML(it, c) {
   return `<div class="sq-p">TCGplayer <span class="sq-pv">${money(it.px)}</span>${q > 1 ? ` <span class="mu">× ${q} =</span> <span class="sq-pv">${money(it.px * q)}</span>` : ""}${tip}${it.grade ? ` <span class="mu">(raw price, not graded)</span>` : ""}</div>`;
 }
 
+// --- offer: a percentage of the TCGplayer market price, per card ---
+const SQ_PRESETS = [60, 70, 75, 80, 85];
+const sqPctOf = (it) => { const v = it.pct ?? sqDefaults.pct ?? 70; return Number.isFinite(+v) ? Math.min(200, Math.max(0, +v)) : 70; };
+const sqPctTxt = (v) => String(Math.round(v * 10) / 10);
+const sqOffer = (it) => (it.px > 0 ? Math.round(it.px * sqPctOf(it)) / 100 : 0); // each, rounded to the cent
+const sqOfferVal = (it) => sqOffer(it) * Math.max(1, Math.round(+it.qty || 1));
+function sqOfferTxt(it) {
+  const q = Math.max(1, Math.round(+it.qty || 1));
+  return `Offer <span class="sq-pv">${money(sqOffer(it))}</span>${q > 1 ? ` <span class="mu">× ${q} =</span> <span class="sq-pv">${money(sqOfferVal(it))}</span>` : ""} <span class="mu">at ${sqPctTxt(sqPctOf(it))}%</span>`;
+}
+function sqOfferHTML(it, c) {
+  if (!c || !(it.px > 0) || it.pxK !== sqPxKey(it)) return "";
+  if (it.pct == null) it.pct = sqPctOf(it); // each card keeps its own %; the last one used is only where new cards start
+  const v = sqPctOf(it);
+  return `<div class="sq-o" data-qo2="${it.id}">
+    <div class="sq-or"><div class="sq-ot">${sqOfferTxt(it)}</div>
+      <label class="sq-pn"><input type="number" data-qpct="${it.id}" min="0" max="200" step="0.5" inputmode="decimal" value="${sqPctTxt(v)}" aria-label="Offer percent of TCGplayer market">%</label></div>
+    <input type="range" class="sq-rg" data-qpct="${it.id}" min="0" max="100" step="1" value="${Math.min(100, Math.round(v))}" aria-label="Offer percent of TCGplayer market">
+    <div class="sq-pp">${SQ_PRESETS.map((x) => `<button type="button" class="sq-pb" data-qpp="${x}" data-qid="${it.id}" aria-pressed="${v === x}">${x}%</button>`).join("")}</div>
+  </div>`;
+}
+function sqSetPct(it, v, from) {
+  v = Math.min(200, Math.max(0, Math.round(+v * 10) / 10)); if (!Number.isFinite(v)) return;
+  it.pct = v; sqDefaults.pct = v; // the next cards you scan start at the % you used last
+  const box = document.querySelector(`#ppscan [data-qo2="${it.id}"]`);
+  if (box) {
+    box.querySelector(".sq-ot").innerHTML = sqOfferTxt(it);
+    const n = box.querySelector('input[type="number"]'), r = box.querySelector('input[type="range"]');
+    if (n && n !== from) n.value = sqPctTxt(v);
+    if (r && r !== from) r.value = Math.min(100, Math.round(v));
+    box.querySelectorAll("[data-qpp]").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.qpp === v)));
+  }
+  sqBar();
+}
+
 // --- the list window ---
 function sqOpen() { sqView = null; sqRender(); }
 function sqPfs() { return [...new Set(P.items.filter((x) => x.qty > 0 && x.pf).map((x) => x.pf))].sort(); }
@@ -817,6 +852,7 @@ function sqRowHTML(it) {
         <select data-qf="cond" data-qid="${it.id}" aria-label="Condition">${CONDS.map((x) => `<option value="${x}" ${x === it.cond ? "selected" : ""}>${{ "Near Mint": "NM", "Lightly Played": "LP", "Moderately Played": "MP", "Heavily Played": "HP", Damaged: "DMG" }[x] || x}</option>`).join("")}</select>
         <input data-qf="qty" data-qid="${it.id}" type="number" min="1" step="1" inputmode="numeric" value="${it.qty || 1}" aria-label="Quantity">
       </div>` : ""}
+      ${sqOfferHTML(it, c)}
   </div>`;
 }
 // replace just one row, so typing in another box isn't interrupted
@@ -837,7 +873,9 @@ function sqBar() {
   if (tv) {
     const total = ready.reduce((a, x) => a + sqVal(x), 0), cards = ready.reduce((a, x) => a + Math.max(1, Math.round(+x.qty || 1)), 0);
     const wait = ready.filter((x) => x.pxK !== sqPxKey(x) || x.px === undefined).length, none = ready.filter((x) => x.pxK === sqPxKey(x) && x.px !== undefined && !(x.px > 0)).length;
-    tv.innerHTML = ready.length ? `<span class="mu">TCGplayer market value</span> <b>${money(total)}</b> <span class="mu">for ${cards} card${cards === 1 ? "" : "s"}${sel.length && sel.length < ready.length ? ` · selected ${money(selV)}` : ""}${wait ? ` · ${wait} still pricing` : ""}${none ? ` · ${none} without a price` : ""}</span>` : "";
+    const offer = ready.reduce((a, x) => a + sqOfferVal(x), 0), selO = sel.reduce((a, x) => a + sqOfferVal(x), 0);
+    tv.innerHTML = ready.length ? `<span class="mu">TCGplayer market value</span> <b>${money(total)}</b> <span class="mu">for ${cards} card${cards === 1 ? "" : "s"}${sel.length && sel.length < ready.length ? ` · selected ${money(selV)}` : ""}${wait ? ` · ${wait} still pricing` : ""}${none ? ` · ${none} without a price` : ""}</span>`
+      + (offer ? `<div class="sq-vo"><span class="mu">Offer total</span> <b>${money(offer)}</b>${total ? ` <span class="mu">(${sqPctTxt((offer / total) * 100)}% of market)${sel.length && sel.length < ready.length ? ` · selected ${money(selO)}` : ""}</span>` : ""}</div>` : "") : "";
   }
   el.querySelector("[data-qa=add]").disabled = !sel.length;
   const all = el.querySelector("[data-qa=all]"); if (all) all.textContent = ready.length && sel.length === ready.length ? "Select none" : "Select all";
@@ -953,6 +991,7 @@ document.addEventListener("click", (e) => {
     .then((v) => { if (v) { scanQ = scanQ.filter((x) => x.st === "wait" || x.st === "reading"); sqSave(); sqRender(); } });
   else if (d.qo) { sqView = d.qo; sqRender(); ov.querySelector(".ppm").scrollTop = 0; }
   else if (d.qc) sqComp(d.qc);
+  else if (d.qpp) { const it = sqItem(d.qid); if (it) { sqSetPct(it, +d.qpp); sqSave(); } }
   else if (d.qx) { scanQ = scanQ.filter((x) => x.id !== d.qx); sqPhotos.delete(d.qx); sqSave(); const el = $("sq-" + d.qx); if (el) el.remove(); if (!scanQ.length) sqRender(); else sqBar(); }
   else if (d.qp != null) { const it = sqItem(sqView); if (it) { it.pick = +d.qp; it.unsure = false; it.err = ""; it.sel = true; sqSave(); } sqView = null; sqRender(); }
   else if (d.qa === "comps") { const it = sqItem(sqView), c = it && it.cards[it.pick]; if (!c) return; ov.remove();
@@ -1047,6 +1086,17 @@ document.addEventListener("click", (e) => {
 document.addEventListener("change", (e) => {
   if (e.target.id === "pff" && e.target.files[0]) onFile(e.target.files[0]);
   else if (e.target.id === "pfo") { sortBy = e.target.value; shown = PAGE; render(); }
+});
+document.addEventListener("input", (e) => {
+  const t = e.target; if (!t.dataset || !t.dataset.qpct || !t.closest("#ppscan")) return;
+  const it = sqItem(t.dataset.qpct); if (!it || t.value === "") return;
+  sqSetPct(it, t.value, t);
+});
+document.addEventListener("change", (e) => {
+  const t = e.target; if (!t.dataset || !t.dataset.qpct || !t.closest("#ppscan")) return;
+  const it = sqItem(t.dataset.qpct); if (!it) return;
+  if (t.value === "" || !Number.isFinite(+t.value)) t.value = sqPctTxt(sqPctOf(it)); else sqSetPct(it, t.value);
+  t.value = t.type === "range" ? Math.min(100, Math.round(sqPctOf(it))) : sqPctTxt(sqPctOf(it)); sqSave();
 });
 let qt; document.addEventListener("input", (e) => { if (e.target.id !== "pfq") return; clearTimeout(qt);
   qt = setTimeout(() => { findTxt = e.target.value.trim(); shown = PAGE; render(); const q = $("pfq"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }, 200); });
