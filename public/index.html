@@ -340,9 +340,10 @@ $("cd").onclick=e=>{const k=e.target.dataset.c;if(!k)return;
 const CODE_OF={"Near Mint":"NM","Lightly Played":"LP","Moderately Played":"MP","Heavily Played":"HP","Damaged":"DMG"};
 function ppEbayFilter(sel){
  const m=/^(PSA|BGS|CGC|TAG)\s+(\d+(?:\.5)?)$/.exec(sel||"");
- mode=m?m[1]:"raw";$("gr").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.m===mode));grades();
+ const other=!m&&/^[A-Z]{2,6}\s+\d/.test(sel||""); // a grader with no button of its own (SGC, ACE...): show every listing
+ mode=m?m[1]:other?"all":"raw";$("gr").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.m===mode));grades();
  if(m){const s=$("gs");if(![...s.options].some(o=>o.value===m[2]))s.insertAdjacentHTML("beforeend",`<option value="${m[2]}">${esc(m[1]==="BGS"?"Beckett":m[1])} ${m[2]}</option>`);s.value=m[2];gsel=m[2];}
- cset.clear();const c=m?null:CODE_OF[sel]||(Object.values(CODE_OF).includes(sel)?sel:"NM");if(c)cset.add(c);
+ cset.clear();const c=m||other?null:CODE_OF[sel]||(Object.values(CODE_OF).includes(sel)?sel:"NM");if(c)cset.add(c);
  $("cd").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.c==="any"?!cset.size:cset.has(b.dataset.c)));view=null;scrub=null}
 /* ...and the TCGplayer tab's condition and printing (TCGplayer has no graded cards, so a grade keeps the card's own condition) */
 let tprintWant="";
@@ -910,5 +911,5 @@ $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
-<script src="/portfolio.js?v=63"></script>
+<script src="/portfolio.js?v=64"></script>
 </body></html>

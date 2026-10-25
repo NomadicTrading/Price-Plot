@@ -1191,9 +1191,18 @@ function exportCSV() {
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([rows.map((r) => r.map(c).join(",")).join("\n")], { type: "text/csv" }));
   a.download = "price-plot-portfolio-" + today() + ".csv"; document.body.appendChild(a); a.click(); a.remove();
 }
+// The Comp button: TCGplayer is the market standard, so raw cards open the TCGplayer tab on their condition and printing
+// (the eBay search waits until the eBay tab is opened). Graded cards open eBay on their grade, since TCGplayer has no graded sales.
 function comp(x) {
-  const q = [x.name.replace(/\s*\((?:\d+|jp|japanese)\)\s*$/i, ""), x.num, isGraded(x) ? shortGrade(x.grade) : ""].filter(Boolean).join(" ");
-  $("q").value = q; const b = $("tb").querySelector('[data-t="ebay"]'); if (b) b.click(); tcgQ = ""; load(); scrollTo({ top: 0, behavior: "smooth" });
+  const name = ebName(x.name), num = ebNum(x.num), gi = gradeOf(x);
+  if (gi) {
+    $("q").value = [name, num, shortGrade(x.grade)].filter(Boolean).join(" "); ppEbayFilter(shortGrade(x.grade)); tcgQ = "";
+    const b = $("tb").querySelector('[data-t="ebay"]'); if (b && tab !== "ebay") b.click(); else load(); // opening the tab runs the search
+  } else {
+    $("q").value = [name, num].filter(Boolean).join(" "); ppTcgFilter(x.cond || "Near Mint", x.var); tcgQ = "";
+    const b = $("tb").querySelector('[data-t="tcg"]'); if (b && tab !== "tcg") b.click(); else loadTcg();
+  }
+  scrollTo({ top: 0, behavior: "smooth" });
 }
 function saveForm(fm) {
   const d = Object.fromEntries(new FormData(fm)), id = fm.dataset.fid, old = P.items.find((x) => x.id === id);
