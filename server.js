@@ -183,7 +183,24 @@ const COMPS_REFRESH_MS = (Number(process.env.COMPS_REFRESH_HOURS) || 24) * 3600e
 const USAGE = "data/usage.json";
 let usage = {}, usageLoaded = false;
 try { usage = JSON.parse(fs.readFileSync(USAGE, "utf8")); } catch {}
+// CompsAPI's own count of this month's requests: asking doesn't use one. Remembered for 5 minutes.
+let quota = null;
+async function compsQuota(fresh) {
+  if (!COMPS_KEY) return null;
+  if (!fresh && quota && Date.now() - quota.at < 5 * 60e3) return quota;
+  try {
+    const r = await fetch("https://api.compsapi.com/v1/usage", { headers: { "X-API-Key": COMPS_KEY }, signal: AbortSignal.timeout(10000) });
+    const j = await r.json();
+    if (r.ok && j && j.monthly_quota != null) quota = { at: Date.now(), used: +j.monthly_used || 0, limit: +j.monthly_quota, plan: j.plan || "", raw: j };
+  } catch {}
+  return quota;
+}
+const resetDay = () => new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+const QUOTA_MSG = () => `this month's sold lookups are used up (resets ${resetDay()}), showing saved sales`;
 async function useRequest() {
+  const qt = await compsQuota();
+  if (qt && qt.used >= qt.limit) return false;
+  if (qt) qt.used++; // counted here too, so a burst of searches doesn't run past the limit between checks
   if (kv.on && !usageLoaded) { usage = (await kv.get("usage")) || usage; usageLoaded = true; }
   const month = new Date().toISOString().slice(0, 7);
   if (usage.month !== month) usage = { month, n: 0 };
@@ -199,16 +216,18 @@ function logComps(x) { compsLog.unshift({ at: new Date().toISOString(), ...x });
 async function compsGet(params) {
   const url = "https://api.compsapi.com/v1/sold?" + new URLSearchParams({ ...params, ...(CATEGORY ? { category: CATEGORY } : {}) });
   const go = () => fetch(url, { headers: { "X-API-Key": COMPS_KEY, "User-Agent": "price-plot/0.1" }, signal: AbortSignal.timeout(30000) });
-  let r = await go();
+  const once = async () => { const r = await go(), text = await r.text(); let j = null; try { j = JSON.parse(text); } catch {} return { r, j, text }; };
+  let out = await once();
+  const used = (o) => o.r.status === 429 && /quota/i.test(o.text);
   // the free plan allows about 10 requests a minute: when it says to wait, wait (up to 20 seconds) and ask once more
-  if (r.status === 429) {
-    const wait = Math.min(20, Math.max(1, Number(r.headers.get("retry-after")) || 7));
+  if (out.r.status === 429 && !used(out)) {
+    const wait = Math.min(20, Math.max(1, Number(out.r.headers.get("retry-after")) || 7));
     await new Promise((ok) => setTimeout(ok, wait * 1000));
-    r = await go();
+    out = await once();
   }
-  const text = await r.text();
-  let j = null; try { j = JSON.parse(text); } catch {}
-  return { r, j, text };
+  if (used(out) && quota) quota.used = Math.max(quota.used, quota.limit); // remember it, so no more lookups are tried this month
+  out.quotaUsedUp = used(out);
+  return out;
 }
 let compsNote = "";
 const pulled = {};
@@ -221,19 +240,19 @@ async function collectComps(q) {
   let got = 0;
   for (let page = 1; page <= pages; page++) {
     if (!(await useRequest())) {
-      if (page === 1) throw new Error("monthly sold-data request limit reached, showing saved sales");
+      if (page === 1) throw new Error(QUOTA_MSG());
       break;
     }
-    let { r, j, text } = await compsGet({ q, days, size: 240, page });
+    let { r, j, text, quotaUsedUp } = await compsGet({ q, days, size: 240, page });
     // the free plan is documented as 1 year of history; if it refuses a longer window, retry with 365 days
     if (!r.ok && days > 365 && [400, 402, 403, 422].includes(r.status)) {
       days = 365;
       compsNote = "Your sold-data plan seems to allow only 1 year of history, so sold sales are limited to that.";
-      ({ r, j, text } = await compsGet({ q, days, size: 240, page }));
+      ({ r, j, text, quotaUsedUp } = await compsGet({ q, days, size: 240, page }));
     }
     if (!r.ok || !j) {
       logComps({ q, page, days, status: r.status, error: (j && (j.error || j.message || j.detail)) || text.slice(0, 200) });
-      throw new Error(r.status === 429 ? "sold-data service is busy, try again in a minute" : r.status === 402 || /quota/i.test(text) ? "the sold-data plan's monthly limit is used up" : `sold-data service returned ${r.status}`);
+      throw new Error(quotaUsedUp || r.status === 402 ? QUOTA_MSG() : r.status === 429 ? "sold-data service is busy, try again in a minute" : `sold-data service returned ${r.status}`);
     }
     const items = j.items || [];
     for (const i of items) {
@@ -1026,8 +1045,7 @@ app.get("/api/usage", async (req, res) => {
   if (kv.on && !usageLoaded) { usage = (await kv.get("usage")) || usage; usageLoaded = true; }
   if (!compsLog.length) { const saved = await kv.get("compslog"); if (Array.isArray(saved)) compsLog.push(...saved); }
   // CompsAPI's own count of this month's requests (doesn't use a request)
-  let service = null;
-  if (COMPS_KEY) try { const r = await fetch("https://api.compsapi.com/v1/usage", { headers: { "X-API-Key": COMPS_KEY }, signal: AbortSignal.timeout(10000) }); service = await r.json().catch(() => ({ status: r.status })); } catch (e) { service = { error: e.message }; }
+  const qt0 = await compsQuota(true), service = qt0 ? qt0.raw : COMPS_KEY ? { error: "CompsAPI didn't answer" } : null;
   // ?test=card search: one live lookup (uses 1 sold lookup), showing exactly what came back and what Price Plot keeps
   let test;
   const tq = String(req.query.test || "").trim().slice(0, 100);
@@ -1042,12 +1060,16 @@ app.get("/api/usage", async (req, res) => {
       logComps({ q: pq.search, page: 1, days: COMPS_DAYS, status: r.status, count: test.count, test: true });
     } catch (e) { test = { error: e.message }; }
   }
-  const month = new Date().toISOString().slice(0, 7), used = usage.month === month ? usage.n || 0 : 0;
+  const month = new Date().toISOString().slice(0, 7), own = usage.month === month ? usage.n || 0 : 0;
+  const qt = await compsQuota(), used = qt ? qt.used : own, limit = qt ? qt.limit : COMPS_LIMIT;
   const next = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1));
   res.set("Cache-Control", "no-store").json({
-    soldLookupsLeft: COMPS_KEY ? Math.max(0, COMPS_LIMIT - used) : null,
+    soldLookupsLeft: COMPS_KEY ? Math.max(0, limit - used) : null,
     soldLookupsUsed: used,
-    monthlyLimit: COMPS_LIMIT,
+    monthlyLimit: limit,
+    plan: qt ? qt.plan : undefined,
+    countFrom: qt ? "CompsAPI" : "Price Plot's own counter (CompsAPI didn't answer)",
+    priceplotCounted: own,
     month,
     resets: next.toISOString(),
     soldSource: COMPS_KEY ? "CompsAPI" : ENABLE_SOLD === "true" ? "eBay Marketplace Insights (no monthly counter)" : "none set up",
