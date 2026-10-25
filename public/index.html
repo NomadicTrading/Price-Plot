@@ -546,7 +546,7 @@ ch.addEventListener("wheel",e=>{if(!full)return;e.preventDefault();const c=frac(
  setView({x0:cx-c.fx*w*f,x1:cx-c.fx*w*f+w*f,y0:cy-(1-c.fy)*hh*f,y1:cy-(1-c.fy)*hh*f+hh*f})},{passive:false});
 $("zr").onclick=()=>{view=null;draw()};
 
-$("f").onsubmit=e=>{e.preventDefault();tcgQ="";load();if(tab==="tcg")loadTcg()};
+$("f").onsubmit=e=>{e.preventDefault();tcgQ="";if(tab==="pf"){const b=$("tb").querySelector('[data-t="ebay"]');if(b)b.click()}load();if(tab==="tcg")loadTcg()};
 $("tS").onclick=e=>{show.S=!show.S;e.target.setAttribute("aria-pressed",show.S);draw()};
 $("tA").onclick=e=>{show.A=!show.A;e.target.setAttribute("aria-pressed",show.A);draw()};
 $("tU").onclick=e=>{show.U=!show.U;e.target.setAttribute("aria-pressed",show.U);draw()};
@@ -827,5 +827,5 @@ $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
-<script src="/portfolio.js?v=60"></script>
+<script src="/portfolio.js?v=61"></script>
 </body></html>

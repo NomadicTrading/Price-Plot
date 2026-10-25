@@ -1317,3 +1317,6 @@ function syncScrollLock() {
 }
 new MutationObserver(syncScrollLock).observe(document.body, { childList: true });
 syncScrollLock();
+
+// Price Plot opens on the Portfolio tab (the first one)
+{ const b = $("tb").querySelector('[data-t="pf"]'); if (b && tab !== "pf") b.click(); }
