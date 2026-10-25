@@ -902,6 +902,61 @@ function sqOfferSync(it, from) {
   }
   sqBar();
 }
+// --- offer for the whole list: the same controls as one card, acting on every priced card at once ---
+let sqGoOpen = false;
+const sqPriced = () => scanQ.filter((it) => it.pick >= 0 && it.px > 0 && it.pxK === sqPxKey(it));
+function sqGroupStats() {
+  const L = sqPriced(), market = L.reduce((a, it) => a + it.px * Math.max(1, Math.round(+it.qty || 1)), 0), offer = L.reduce((a, it) => a + sqOfferVal(it), 0);
+  const pcts = new Set(L.map((it) => (sqTyped(it) ? "t" : sqPctOf(it))));
+  // one shared % (when every card uses the same one), otherwise the overall % of market
+  const same = pcts.size === 1 && !pcts.has("t") ? sqPctOf(L[0]) : null;
+  return { L, market, offer, pct: same ?? (market ? Math.round((offer / market) * 1000) / 10 : sqDefaults.pct ?? 70), same, cards: L.reduce((a, it) => a + Math.max(1, Math.round(+it.qty || 1)), 0) };
+}
+function sqGroupSum(g) {
+  return `<span class="sq-osl">Offer for all</span> <span class="sq-pv">${money(g.offer)}</span> <span class="mu">· ${sqPctTxt(g.pct)}%${g.same == null ? " overall" : ""} · ${g.cards} card${g.cards === 1 ? "" : "s"}</span><i class="sq-chev" aria-hidden="true"></i>`;
+}
+function sqGroupHTML() {
+  const g = sqGroupStats();
+  return `<details class="sq-o sq-go" id="sq-go"${sqGoOpen ? " open" : ""}${g.L.length ? "" : " hidden"}>
+    <summary class="sq-os">${sqGroupSum(g)}</summary>
+    <div class="sq-oc"><div class="sq-or"><div class="sq-ot"><label class="sq-od">Total $<input type="number" data-qgoff="1" min="0" step="0.01" inputmode="decimal" value="${sqOffTxt(g.offer)}" aria-label="Offer total for the whole list, in dollars"></label></div>
+      <label class="sq-pn"><input type="number" data-qgpct="1" min="0" max="200" step="0.5" inputmode="decimal" value="${sqPctTxt(g.pct)}" aria-label="Offer percent of TCGplayer market for every card">%</label></div>
+    <input type="range" class="sq-rg" data-qgpct="1" min="0" max="100" step="1" value="${Math.min(100, Math.round(g.pct))}" aria-label="Offer percent of TCGplayer market for every card">
+    <div class="sq-pp">${SQ_PRESETS.map((x) => `<button type="button" class="sq-pb" data-qgpp="${x}" aria-pressed="${g.same === x}">${x}%</button>`).join("")}</div>
+    <div class="mu sq-gn">Sets every priced card; you can still change any card on its own.</div></div>
+  </details>`;
+}
+// update the list-wide box in place, leaving alone whatever is being typed in or dragged
+function sqGroupSync() {
+  const box = $("sq-go"); if (!box) return;
+  const g = sqGroupStats(), act = document.activeElement;
+  box.hidden = !g.L.length;
+  box.querySelector(".sq-os").innerHTML = sqGroupSum(g);
+  const o = box.querySelector("input[data-qgoff]"), n = box.querySelector("input[data-qgpct][type=number]"), r = box.querySelector("input[type=range]");
+  if (o && o !== act) o.value = sqOffTxt(g.offer);
+  if (n && n !== act) n.value = sqPctTxt(g.pct);
+  if (r && r !== act) r.value = Math.min(100, Math.round(g.pct));
+  box.querySelectorAll("[data-qgpp]").forEach((b) => b.setAttribute("aria-pressed", String(g.same === +b.dataset.qgpp)));
+}
+function sqGroupSetPct(v) {
+  v = Math.min(200, Math.max(0, Math.round(+v * 10) / 10)); if (!Number.isFinite(v)) return;
+  sqDefaults.pct = v;
+  for (const it of sqPriced()) { it.pct = v; it.offAmt = null; sqOfferSync(it); }
+  sqGroupSync();
+}
+// a typed total is shared out in proportion to each card's market price, to the cent, adding up exactly
+function sqGroupSetTotal(amt) {
+  const L = sqPriced(); if (!L.length) return;
+  const q = (it) => Math.max(1, Math.round(+it.qty || 1)), market = L.reduce((a, it) => a + it.px * q(it), 0); if (!(market > 0)) return;
+  amt = Math.min(Math.max(0, Math.round(+amt * 100) / 100), Math.round(market * 200) / 100); if (!Number.isFinite(amt)) return;
+  const ratio = amt / market;
+  for (const it of L) { it.offAmt = Math.round(it.px * ratio * 100) / 100; it.offK = sqPxKey(it); }
+  // put the leftover cents on a single-copy card (or the largest one) so the total is exact
+  let diff = Math.round((amt - L.reduce((a, it) => a + it.offAmt * q(it), 0)) * 100) / 100;
+  if (diff) { const one = L.filter((it) => q(it) === 1).sort((a, b) => b.px - a.px)[0]; if (one) one.offAmt = Math.max(0, Math.round((one.offAmt + diff) * 100) / 100); }
+  for (const it of L) { it.pct = Math.round((it.offAmt / it.px) * 1000) / 10; sqOfferSync(it); }
+  sqGroupSync();
+}
 function sqSetPct(it, v, from) {
   v = Math.min(200, Math.max(0, Math.round(+v * 10) / 10)); if (!Number.isFinite(v)) return;
   it.pct = v; it.offAmt = null; sqDefaults.pct = v; // the next cards you scan start at the % you used last
@@ -965,11 +1020,11 @@ function sqBar() {
   if (tv) {
     const total = ready.reduce((a, x) => a + sqVal(x), 0), cards = ready.reduce((a, x) => a + Math.max(1, Math.round(+x.qty || 1)), 0);
     const wait = ready.filter((x) => x.pxK !== sqPxKey(x) || x.px === undefined).length, none = ready.filter((x) => x.pxK === sqPxKey(x) && x.px !== undefined && !(x.px > 0)).length;
-    const offer = ready.reduce((a, x) => a + sqOfferVal(x), 0), selO = sel.reduce((a, x) => a + sqOfferVal(x), 0);
     tv.innerHTML = ready.length ? `<span class="mu">TCGplayer market value</span> <b>${money(total)}</b> <span class="mu">for ${cards} card${cards === 1 ? "" : "s"}${sel.length && sel.length < ready.length ? ` · selected ${money(selV)}` : ""}${wait ? ` · ${wait} still pricing` : ""}${none ? ` · ${none} without a price` : ""}</span>`
-      + (offer ? `<div class="sq-vo"><span class="mu">Offer total</span> <b>${money(offer)}</b>${total ? ` <span class="mu">(${sqPctTxt((offer / total) * 100)}% of market)${sel.length && sel.length < ready.length ? ` · selected ${money(selO)}` : ""}</span>` : ""}</div>` : "") : "";
+      : "";
   }
   el.querySelector("[data-qa=add]").disabled = !sel.length;
+  sqGroupSync();
   const all = el.querySelector("[data-qa=all]"); if (all) all.textContent = ready.length && sel.length === ready.length ? "Select none" : "Select all";
   const rm = document.querySelector("#ppscan [data-qa=rmsel]"); if (rm) rm.textContent = sel.length ? `Remove ${sel.length} from list` : "Remove from list", rm.disabled = !sel.length;
   sqCount();
@@ -984,6 +1039,7 @@ function sqRender() {
     ${has ? `<div class="sq-top"><span class="mu">${scanQ.length} card${scanQ.length === 1 ? "" : "s"}</span> <span class="mu" id="sq-n"></span><span style="flex:1"></span><button type="button" class="cs-back" data-qa="all">Select all</button></div>
       <div class="sq-top sq-top2"><button type="button" class="cs-back" data-qa="rmsel">Remove from list</button><span style="flex:1"></span><button type="button" class="cs-back sq-dl" data-qa="clear">Clear list</button></div>
       <div class="sq-v" id="sq-v"></div>
+      ${sqGroupHTML()}
       <div class="sq-list">${scanQ.map(sqRowHTML).join("")}</div>
       <form id="sq-bar" class="sq-bar"><div class="pg">${pfField(sqDefaults.pf && (pfs.includes(sqDefaults.pf) || !pfs.length) ? sqDefaults.pf : pfs[0] || "", pfs)}
         <label>Condition for selected<select data-qa="cond"><option value="">Keep each</option>${CONDS.map((x) => `<option>${x}</option>`).join("")}</select></label></div>
@@ -1091,6 +1147,7 @@ document.addEventListener("click", (e) => {
     .then((v) => { if (v) { scanQ = scanQ.filter((x) => x.st === "wait" || x.st === "reading"); sqSave(); sqRender(); } });
   else if (d.qo) { sqView = d.qo; sqRender(); ov.querySelector(".ppm").scrollTop = 0; }
   else if (d.qc) sqComp(d.qc);
+  else if (d.qgpp) { sqGroupSetPct(+d.qgpp); sqSave(); }
   else if (d.qpp) { const it = sqItem(d.qid); if (it) { sqSetPct(it, +d.qpp); sqSave(); } }
   else if (d.qx) { scanQ = scanQ.filter((x) => x.id !== d.qx); sqPhotos.delete(d.qx); sqSave(); const el = $("sq-" + d.qx); if (el) el.remove(); if (!scanQ.length) sqRender(); else sqBar(); }
   else if (d.qp != null) { const it = sqItem(sqView); if (it) { it.pick = +d.qp; it.unsure = false; it.err = ""; it.sel = true; sqSave(); } sqView = null; sqRender(); }
@@ -1196,8 +1253,20 @@ document.addEventListener("change", (e) => {
   const t = e.target; if (!t.dataset || !t.dataset.qsh || !t.closest("#ppscan")) return;
   const it = sqItem(t.dataset.qsh); if (it) sqShadow(it, t.checked);
 });
+document.addEventListener("input", (e) => {
+  const t = e.target; if (!t.dataset || !t.closest || !t.closest("#sq-go") || t.value === "") return;
+  if (t.dataset.qgpct) sqGroupSetPct(t.value); else if (t.dataset.qgoff) sqGroupSetTotal(t.value);
+});
+document.addEventListener("change", (e) => {
+  const t = e.target; if (!t.dataset || !t.closest || !t.closest("#sq-go")) return;
+  if (t.value !== "" && Number.isFinite(+t.value)) { if (t.dataset.qgpct) sqGroupSetPct(t.value); else if (t.dataset.qgoff) sqGroupSetTotal(t.value); }
+  sqSave(); sqGroupSync();
+  // tidy the box that was just finished (sqGroupSync leaves the focused one alone)
+  const g = sqGroupStats(); if (t.dataset.qgoff) t.value = sqOffTxt(g.offer); else if (t.type === "range") t.value = Math.min(100, Math.round(g.pct)); else t.value = sqPctTxt(g.pct);
+});
 document.addEventListener("toggle", (e) => {
-  const t = e.target; if (!t.dataset) return;
+  const t = e.target; if (t && t.id === "sq-go") { sqGoOpen = t.open; return; }
+  if (!t.dataset) return;
   if (t.dataset.qo2) { const it = sqItem(t.dataset.qo2); if (it) it.offOpen = t.open; }
   else if (t.dataset.qls) { const it = sqItem(t.dataset.qls); if (!it || it.lsOpen === t.open) return; it.lsOpen = t.open; if (t.open) { sqSalesPaint(it); sqSalesLoad(it); } }
 }, true);
