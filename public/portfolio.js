@@ -802,27 +802,30 @@ const sqTyped = (it) => it.offAmt != null && it.offK === sqPxKey(it);
 const sqOffer = (it) => (!(it.px > 0) ? 0 : sqTyped(it) ? it.offAmt : Math.round(it.px * sqPctOf(it)) / 100); // each, to the cent
 const sqOfferVal = (it) => sqOffer(it) * Math.max(1, Math.round(+it.qty || 1));
 const sqOffTxt = (v) => (Math.round(v * 100) / 100).toFixed(2);
-function sqOfferRest(it) {
+// the folded line: offer each, its %, and the total when there's more than one copy
+function sqOfferSum(it) {
   const q = Math.max(1, Math.round(+it.qty || 1));
-  return `${q > 1 ? `<span class="mu">each × ${q} =</span> <span class="sq-pv">${money(sqOfferVal(it))}</span>` : `<span class="mu">each</span>`}`;
+  return `<span class="sq-osl">Offer</span> <span class="sq-pv">${money(sqOffer(it))}</span> <span class="mu">· ${sqPctTxt(sqPctOf(it))}%${q > 1 ? ` · ${money(sqOfferVal(it))} for ${q}` : ""}</span><i class="sq-chev" aria-hidden="true"></i>`;
 }
 function sqOfferHTML(it, c) {
   if (!c || !(it.px > 0) || it.pxK !== sqPxKey(it)) return "";
   if (it.pct == null) it.pct = sqPctOf(it); // each card keeps its own %; the last one used is only where new cards start
   const v = sqPctOf(it);
-  return `<div class="sq-o" data-qo2="${it.id}">
-    <div class="sq-or"><div class="sq-ot"><label class="sq-od">Offer $<input type="number" data-qoff="${it.id}" min="0" step="0.01" inputmode="decimal" value="${sqOffTxt(sqOffer(it))}" aria-label="Offer price each, in dollars"></label> <span class="sq-ox">${sqOfferRest(it)}</span></div>
+  // folded into an "Offer" line so the list stays tidy; tap it to open the controls (stays open while you scan)
+  return `<details class="sq-o" data-qo2="${it.id}"${it.offOpen ? " open" : ""}>
+    <summary class="sq-os">${sqOfferSum(it)}</summary>
+    <div class="sq-oc"><div class="sq-or"><div class="sq-ot"><label class="sq-od">Each $<input type="number" data-qoff="${it.id}" min="0" step="0.01" inputmode="decimal" value="${sqOffTxt(sqOffer(it))}" aria-label="Offer price each, in dollars"></label></div>
       <label class="sq-pn"><input type="number" data-qpct="${it.id}" min="0" max="200" step="0.5" inputmode="decimal" value="${sqPctTxt(v)}" aria-label="Offer percent of TCGplayer market">%</label></div>
     <input type="range" class="sq-rg" data-qpct="${it.id}" min="0" max="100" step="1" value="${Math.min(100, Math.round(v))}" aria-label="Offer percent of TCGplayer market">
     <div class="sq-pp">${SQ_PRESETS.map((x) => `<button type="button" class="sq-pb" data-qpp="${x}" data-qid="${it.id}" aria-pressed="${!sqTyped(it) && v === x}">${x}%</button>`).join("")}</div>
-  </div>`;
+  </div></details>`;
 }
 // redraw the offer box in place (not the whole row), skipping the box being typed or dragged in
 function sqOfferSync(it, from) {
   const box = document.querySelector(`#ppscan [data-qo2="${it.id}"]`);
   if (box) {
     const v = sqPctOf(it), n = box.querySelector("input[data-qpct][type=number]"), r = box.querySelector("input[type=range]"), o = box.querySelector("input[data-qoff]");
-    box.querySelector(".sq-ox").innerHTML = sqOfferRest(it);
+    box.querySelector(".sq-os").innerHTML = sqOfferSum(it);
     if (n && n !== from) n.value = sqPctTxt(v);
     if (r && r !== from) r.value = Math.min(100, Math.round(v));
     if (o && o !== from) o.value = sqOffTxt(sqOffer(it));
@@ -1115,6 +1118,10 @@ document.addEventListener("input", (e) => {
   const it = sqItem(t.dataset.qoff); if (!it || t.value === "") return;
   sqSetOffer(it, t.value, t);
 });
+document.addEventListener("toggle", (e) => {
+  const t = e.target; if (!t.dataset || !t.dataset.qo2) return;
+  const it = sqItem(t.dataset.qo2); if (it) it.offOpen = t.open;
+}, true);
 document.addEventListener("change", (e) => {
   const t = e.target; if (!t.dataset || !t.dataset.qoff || !t.closest("#ppscan")) return;
   const it = sqItem(t.dataset.qoff); if (!it) return;
