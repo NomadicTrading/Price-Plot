@@ -402,8 +402,9 @@ function getTcg(q){if(!tcgCache.has(q)){const p=fetch("/api/tcg?q="+encodeURICom
  p.catch(()=>tcgCache.delete(q));tcgCache.set(q,p)}return tcgCache.get(q)}
 const toPrints=j=>{const seen=new Set();return(j.cards||[]).filter(c=>c.id&&!seen.has(c.id)&&seen.add(c.id)).map(c=>({id:c.id,set:c.set||"",year:c.year||+String(c.released||"").slice(0,4)||0,number:c.number,printedTotal:c.printedTotal,exact:!!c.exact,finishes:c.finishes||[]}))};
 
+let ebayQ="";
 async function load(){
- const q=$("q").value.trim();if(!q)return;
+ const q=$("q").value.trim();if(!q)return;ebayQ=q;
  $("status").textContent="Loading…";view=null;scrub=null;psel.clear();yr={lo:0,hi:0,min:0,max:0};prints=[];pre=[];
  const tp=getTcg(q).catch(()=>null);
  try{
@@ -572,7 +573,7 @@ function sugPick(i){const c=sugItems[i];if(!c)return;
  const num=c.numberText||(c.number?c.number+(c.printedTotal&&/^\d+$/.test(c.number)?"/"+c.printedTotal:""):"");
  $("q").value=[c.name,num].filter(Boolean).join(" ");sugQ=$("q").value;sugHide();
  if(c.print)tprintWant=c.print; // the TCGplayer tab opens on this printing
- $("f").requestSubmit()}
+ tcgQ="";const b=$("tb").querySelector('[data-t="tcg"]');if(tab!=="tcg")b.click();else loadTcg()}
 $("q").addEventListener("input",()=>{const q=$("q").value.trim();clearTimeout(sugT);if(sugCtl)sugCtl.abort();
  if(q.length<3||q===sugQ){sugHide();return}
  sugT=setTimeout(async()=>{sugCtl=new AbortController();const ctl=sugCtl;
@@ -590,7 +591,8 @@ sugEl.addEventListener("mousedown",e=>e.preventDefault()); // keep the keyboard 
 sugEl.addEventListener("click",e=>{const b=e.target.closest("[data-si]");if(b)sugPick(+b.dataset.si)});
 document.addEventListener("click",e=>{if(!sugEl.hidden&&!sugEl.contains(e.target)&&e.target!==$("q"))sugHide()});
 addEventListener("resize",()=>{if(!sugEl.hidden)sugPlace()});
-$("f").onsubmit=e=>{e.preventDefault();sugHide();clearTimeout(sugT);if(sugCtl)sugCtl.abort();tcgQ="";if(tab==="pf"){const b=$("tb").querySelector('[data-t="ebay"]');if(b)b.click()}load();if(tab==="tcg")loadTcg()};
+$("f").onsubmit=e=>{e.preventDefault();sugHide();clearTimeout(sugT);if(sugCtl)sugCtl.abort();tcgQ="";if(tab==="tcg"){loadTcg();return} // the eBay search waits until the eBay tab is opened
+ if(tab==="pf"){ebayQ="";const b=$("tb").querySelector('[data-t="ebay"]');if(b){ebayQ=$("q").value.trim();b.click()}}load()};
 $("tS").onclick=e=>{show.S=!show.S;e.target.setAttribute("aria-pressed",show.S);draw()};
 $("tA").onclick=e=>{show.A=!show.A;e.target.setAttribute("aria-pressed",show.A);draw()};
 $("tU").onclick=e=>{show.U=!show.U;e.target.setAttribute("aria-pressed",show.U);draw()};
@@ -837,7 +839,7 @@ async function loadTcg(){
  catch(e){if(q!==$("q").value.trim())return;tcgQ=q;TM=null;renderTcgBasic(basic,q,"Condition prices unavailable ("+e.message+"). Showing TCGplayer's overall prices instead.")}}
 $("tb").onclick=e=>{const k=e.target.dataset.t;if(!k)return;tab=k;
  [...$("tb").children].forEach(b=>b.setAttribute("aria-pressed",b.dataset.t===k));
- $("ebay").hidden=k!=="ebay";$("tcg").hidden=k!=="tcg";$("pf").hidden=k!=="pf";$("sv").hidden=k==="pf";if(k==="pf")return;if(k==="tcg")loadTcg();else draw()};
+ $("ebay").hidden=k!=="ebay";$("tcg").hidden=k!=="tcg";$("pf").hidden=k!=="pf";$("sv").hidden=k==="pf";if(k==="pf")return;if(k==="tcg")loadTcg();else{const q=$("q").value.trim();if(q&&q!==ebayQ)load();else draw()}};
 function pillBar(id,opts,cur,on){$(id).innerHTML=opts.map(([k,l])=>`<button class="pill" type="button" data-k="${k}" aria-pressed="${k===cur}">${l}</button>`).join("");
  $(id).onclick=e=>{const k=e.target.dataset.k;if(!k)return;$(id).querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.k===k));on(k);view=null;scrub=null;draw()}}
 pillBar("ln",[["any","Any language"],["en","English"],["jp","Japanese"],["kr","Korean"],["cn","Chinese"],["other","Other"]],lmode,k=>lmode=k);
