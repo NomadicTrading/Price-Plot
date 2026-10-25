@@ -816,7 +816,7 @@ function sqSalesPaint(it) {
 function sqSalesHTML(it, c) {
   if (!c || !(it.px > 0) || it.pxK !== sqPxKey(it)) return "";
   const d = sqSalesData.get(c.tcgId || "") || sqSalesData.get("none:" + c.id);
-  let body = `<div class="mu">Loading sales…</div>`, top = "";
+  let body = `<div class="mu">Loading sales…</div>`;
   if (d && d.error) body = `<div class="mu">Sales unavailable (${esc(d.error)})</div>`;
   else if (d) {
     // the card's own condition and printing, in English unless it's a Japanese card
@@ -828,11 +828,10 @@ function sqSalesHTML(it, c) {
     if (!list.length && samePr.length) { list = samePr; note = `No recent ${COND_CODE[want] || want} sales; showing every condition.`; }
     list = list.slice(0, 10);
     const day = (t) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", ...(Date.now() - Date.parse(t) > 300 * 864e5 ? { year: "numeric" } : {}) });
-    if (list.length) top = ` <span class="mu">· ${day(list[0].date)}</span> <span class="sq-pv">${money(list[0].price)}</span>`;
     body = list.length ? `${note ? `<div class="mu sq-lsn">${esc(note)}</div>` : ""}<ul class="sq-ls">${list.map((x) => `<li><span>${day(x.date)}</span><span class="mu">${note ? esc(COND_CODE[tcCond(x.cond)] || tcCond(x.cond) || "") : ""}${x.qty > 1 ? " ×" + x.qty : ""}</span><b>${money(x.price)}</b></li>`).join("")}</ul>`
       : `<div class="mu">No recent TCGplayer sales for this printing.</div>`;
   }
-  return `<details class="sq-lsd" data-qls="${it.id}"${it.lsOpen ? " open" : ""}><summary>Last sold${top}<i class="sq-chev" aria-hidden="true"></i></summary>${it.lsOpen ? body : ""}</details>`;
+  return `<details class="sq-lsd" data-qls="${it.id}"${it.lsOpen ? " open" : ""}><summary>Last sold<i class="sq-chev" aria-hidden="true"></i></summary>${it.lsOpen ? body : ""}</details>`;
 }
 
 // --- offer: a percentage of the TCGplayer market price, per card, or a dollar amount you type ---
