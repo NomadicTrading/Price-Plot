@@ -370,7 +370,7 @@ function sqComp(id) {
   const it = sqItem(id), c = it && it.pick >= 0 ? it.cards[it.pick] : null; if (!c) return;
   const x = { ...sqToItem(it, ""), id: "scan-" + it.id + "-" + it.pick, qty: 0 };
   if (!x.tcgId && c.tcgId) x.tcgId = c.tcgId;
-  previewTab = typeof tab === "string" ? tab : ""; const ov = $("ppscan"); if (ov) ov.remove(); sqView = null;
+  previewTab = typeof tab === "string" ? tab : ""; const ov = $("ppscan"); if (ov) ov.remove(); sqView = null; syncScrollLock();
   const b = $("tb").querySelector('[data-t="pf"]'); if (b && tab !== "pf") b.click();
   preview = x; listY = 0; detail = x.id; cview = null; dsel = ownSel(x); editing = null; try { history.pushState({ ppd: x.id }, ""); } catch {} render(); scrollTo(0, 0);
 }
@@ -1020,7 +1020,7 @@ document.addEventListener("click", (e) => {
   else if (d.qpp) { const it = sqItem(d.qid); if (it) { sqSetPct(it, +d.qpp); sqSave(); } }
   else if (d.qx) { scanQ = scanQ.filter((x) => x.id !== d.qx); sqPhotos.delete(d.qx); sqSave(); const el = $("sq-" + d.qx); if (el) el.remove(); if (!scanQ.length) sqRender(); else sqBar(); }
   else if (d.qp != null) { const it = sqItem(sqView); if (it) { it.pick = +d.qp; it.unsure = false; it.err = ""; it.sel = true; sqSave(); } sqView = null; sqRender(); }
-  else if (d.qa === "comps") { const it = sqItem(sqView), c = it && it.cards[it.pick]; if (!c) return; ov.remove();
+  else if (d.qa === "comps") { const it = sqItem(sqView), c = it && it.cards[it.pick]; if (!c) return; ov.remove(); syncScrollLock();
     $("q").value = `${c.name} ${/^\d+$/.test(c.number) && c.printedTotal ? c.number + "/" + c.printedTotal : c.number}`;
     const t = $("tb").querySelector('[data-t="ebay"]'); if (t && tab !== "ebay") t.click(); tcgQ = ""; load(); scrollTo({ top: 0, behavior: "smooth" }); }
 });
@@ -1157,3 +1157,15 @@ document.addEventListener("change", (e) => {
   const box = sel.closest("label").nextElementSibling; if (!box || !box.classList.contains("pfnew")) return;
   box.hidden = sel.value !== "__new"; if (!box.hidden) box.querySelector("input").focus();
 });
+
+/* While a pop-up window (scan list, camera, a question) is open, the page behind it stays put. On iPhone a swipe on a
+   window that can't scroll any further otherwise scrolls the page underneath. The page is pinned where it was and
+   put back at the same spot when the last window closes. */
+let lockY = null;
+function syncScrollLock() {
+  const open = !!document.querySelector("body > .ppm-ov, body > .sq-cam"), b = document.body.style;
+  if (open && lockY == null) { lockY = scrollY; Object.assign(b, { position: "fixed", top: -lockY + "px", left: "0", right: "0", width: "100%", overflow: "hidden" }); }
+  else if (!open && lockY != null) { const y = lockY; lockY = null; Object.assign(b, { position: "", top: "", left: "", right: "", width: "", overflow: "" }); scrollTo(0, y); }
+}
+new MutationObserver(syncScrollLock).observe(document.body, { childList: true });
+syncScrollLock();

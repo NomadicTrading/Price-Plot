@@ -136,7 +136,7 @@ label.pill{display:inline-block}
 #ppt.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}#ppt button{font:inherit;font-weight:700;color:#8fb0ff;background:none;border:0;cursor:pointer;padding:4px}
 .cimp-l{margin:8px 0;font-size:14px;display:flex;flex-direction:column;gap:4px}.cimp-s ol{padding-left:20px;margin:10px 0;display:flex;flex-direction:column;gap:10px;font-size:14px;line-height:1.45}.cimp-s ol .ppm-x{width:100%}
 .cimp-c{display:flex;gap:8px;margin-top:6px}.cimp-c input{flex:1;min-width:0;font:inherit;font-size:16px;letter-spacing:2px;text-transform:uppercase;border:1px solid var(--bd);border-radius:999px;padding:8px 14px;background:var(--bg);color:var(--fg)}.cimp-c .ppm-x{padding:0 18px}
-.ppm{max-height:calc(100vh - 32px);overflow:auto}
+.ppm{max-height:calc(100vh - 32px);overflow:auto;overscroll-behavior:contain}.ppm-ov,.sq-cam{overscroll-behavior:contain;touch-action:pan-y}
 .cs-pick{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0 4px}
 .cs-pick button{font:inherit;color:var(--fg);background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:16px 10px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;min-height:84px}
 .cs-pick b{font-size:17px}.cs-pick span{font-size:12.5px;color:var(--mut);text-align:center}
@@ -806,5 +806,5 @@ $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
-<script src="/portfolio.js?v=49"></script>
+<script src="/portfolio.js?v=50"></script>
 </body></html>
