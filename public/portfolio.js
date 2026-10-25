@@ -794,6 +794,47 @@ function sqPriceHTML(it, c) {
   return `<div class="sq-p">TCGplayer <span class="sq-pv">${money(it.px)}</span>${q > 1 ? ` <span class="mu">× ${q} =</span> <span class="sq-pv">${money(it.px * q)}</span>` : ""}${tip}${it.grade ? ` <span class="mu">(raw price, not graded)</span>` : ""}</div>`;
 }
 
+// --- recent TCGplayer sales for a scanned card: a fold-out list, loaded only when opened ---
+const sqSalesData = new Map(), sqSalesJob = new Map(); // TCGplayer product id -> { sold, at } or { error }
+async function sqSalesLoad(it) {
+  const c = it.pick >= 0 ? it.cards[it.pick] : null; if (!c) return;
+  if (!c.tcgId) { try { const j = await getJSON("/api/cardimg?" + new URLSearchParams({ name: c.name, set: c.set || "", num: sqNum(c), cat: "Pokemon" })); if (j.tcgId) c.tcgId = j.tcgId; } catch {} }
+  const id = c.tcgId;
+  if (!id) { sqSalesData.set("none:" + c.id, { error: "couldn't find this card on TCGplayer" }); return sqSalesPaint(it); }
+  const have = sqSalesData.get(id); if (have && !have.error && Date.now() - have.at < 30 * 60e3) return sqSalesPaint(it);
+  if (!sqSalesJob.has(id)) sqSalesJob.set(id, getJSON("/api/tcgplayer?id=" + encodeURIComponent(id))
+    .then((j) => sqSalesData.set(id, { sold: j.sold || [], at: Date.now() }), (e) => sqSalesData.set(id, { error: e.message }))
+    .finally(() => sqSalesJob.delete(id)));
+  await sqSalesJob.get(id);
+  for (const x of scanQ) if (x.lsOpen && x.pick >= 0 && x.cards[x.pick] && x.cards[x.pick].tcgId === id) sqSalesPaint(x);
+}
+// redraw only the sales fold-out, so tapping it (which focuses the row) still shows the list right away
+function sqSalesPaint(it) {
+  const el = document.querySelector(`#ppscan [data-qls="${it.id}"]`), c = it.pick >= 0 ? it.cards[it.pick] : null;
+  if (el && c) el.outerHTML = sqSalesHTML(it, c);
+}
+function sqSalesHTML(it, c) {
+  if (!c || !(it.px > 0) || it.pxK !== sqPxKey(it)) return "";
+  const d = sqSalesData.get(c.tcgId || "") || sqSalesData.get("none:" + c.id);
+  let body = `<div class="mu">Loading sales…</div>`, top = "";
+  if (d && d.error) body = `<div class="mu">Sales unavailable (${esc(d.error)})</div>`;
+  else if (d) {
+    // the card's own condition and printing, in English unless it's a Japanese card
+    const want = it.cond || "Near Mint", pr = String(it.print || "").toLowerCase(), jp = sqJp(it, c);
+    const langOk = (x) => !x.lang || (jp ? /japan/i.test(x.lang) : /english/i.test(x.lang));
+    const sorted = d.sold.filter(langOk).slice().sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+    const samePr = sorted.filter((x) => !pr || String(x.print || "").toLowerCase() === pr);
+    let list = samePr.filter((x) => tcCond(x.cond) === want), note = "";
+    if (!list.length && samePr.length) { list = samePr; note = `No recent ${COND_CODE[want] || want} sales; showing every condition.`; }
+    list = list.slice(0, 10);
+    const day = (t) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", ...(Date.now() - Date.parse(t) > 300 * 864e5 ? { year: "numeric" } : {}) });
+    if (list.length) top = ` <span class="mu">· ${day(list[0].date)}</span> <span class="sq-pv">${money(list[0].price)}</span>`;
+    body = list.length ? `${note ? `<div class="mu sq-lsn">${esc(note)}</div>` : ""}<ul class="sq-ls">${list.map((x) => `<li><span>${day(x.date)}</span><span class="mu">${note ? esc(COND_CODE[tcCond(x.cond)] || tcCond(x.cond) || "") : ""}${x.qty > 1 ? " ×" + x.qty : ""}</span><b>${money(x.price)}</b></li>`).join("")}</ul>`
+      : `<div class="mu">No recent TCGplayer sales for this printing.</div>`;
+  }
+  return `<details class="sq-lsd" data-qls="${it.id}"${it.lsOpen ? " open" : ""}><summary>Last sold${top}<i class="sq-chev" aria-hidden="true"></i></summary>${it.lsOpen ? body : ""}</details>`;
+}
+
 // --- offer: a percentage of the TCGplayer market price, per card, or a dollar amount you type ---
 const SQ_PRESETS = [60, 70, 75, 80, 85];
 const sqPctOf = (it) => { const v = it.pct ?? sqDefaults.pct ?? 70; return Number.isFinite(+v) ? Math.min(200, Math.max(0, +v)) : 70; };
@@ -863,6 +904,7 @@ function sqRowHTML(it) {
       ${status ? `<div class="sq-st${it.st === "error" || it.err || it.unsure ? " warn" : ""}">${esc(status)}</div>` : ""}
       ${c && it.grade ? `<div class="mu sq-g">Graded: ${esc(it.grade)}</div>` : ""}
       ${sqPriceHTML(it, c)}
+      ${sqSalesHTML(it, c)}
     </div>
     <div class="sq-a">${busy ? "" : `<button type="button" class="sq-b" data-qo="${it.id}">${c ? "Change" : "Fix"}</button>`}${c && !busy ? `<button type="button" class="sq-b" data-qc="${it.id}">Comp</button>` : ""}<button type="button" class="sq-x" data-qx="${it.id}" aria-label="Remove from list">✕</button></div>
       ${c ? `<div class="sq-f">
@@ -1120,8 +1162,9 @@ document.addEventListener("input", (e) => {
   sqSetOffer(it, t.value, t);
 });
 document.addEventListener("toggle", (e) => {
-  const t = e.target; if (!t.dataset || !t.dataset.qo2) return;
-  const it = sqItem(t.dataset.qo2); if (it) it.offOpen = t.open;
+  const t = e.target; if (!t.dataset) return;
+  if (t.dataset.qo2) { const it = sqItem(t.dataset.qo2); if (it) it.offOpen = t.open; }
+  else if (t.dataset.qls) { const it = sqItem(t.dataset.qls); if (!it || it.lsOpen === t.open) return; it.lsOpen = t.open; if (t.open) { sqSalesPaint(it); sqSalesLoad(it); } }
 }, true);
 document.addEventListener("change", (e) => {
   const t = e.target; if (!t.dataset || !t.dataset.qoff || !t.closest("#ppscan")) return;
