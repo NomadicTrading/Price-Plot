@@ -315,6 +315,18 @@ $("cd").innerHTML=CND.map(([k,l])=>`<button class="pill" type="button" data-c="$
 $("cd").onclick=e=>{const k=e.target.dataset.c;if(!k)return;
  if(k==="any")cset.clear();else cset.has(k)?cset.delete(k):cset.add(k);
  $("cd").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.c==="any"?!cset.size:cset.has(b.dataset.c)));view=null;scrub=null;draw()};
+/* Used by a card's comps page: set the eBay tab's grader, grade and condition to what was selected there
+   ("Near Mint", "LP", "PSA 10", "CGC 9.5"...), before its search runs. */
+const CODE_OF={"Near Mint":"NM","Lightly Played":"LP","Moderately Played":"MP","Heavily Played":"HP","Damaged":"DMG"};
+function ppEbayFilter(sel){
+ const m=/^(PSA|BGS|CGC|TAG)\s+(\d+(?:\.5)?)$/.exec(sel||"");
+ mode=m?m[1]:"raw";$("gr").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.m===mode));grades();
+ if(m){const s=$("gs");if(![...s.options].some(o=>o.value===m[2]))s.insertAdjacentHTML("beforeend",`<option value="${m[2]}">${esc(m[1]==="BGS"?"Beckett":m[1])} ${m[2]}</option>`);s.value=m[2];gsel=m[2];}
+ cset.clear();const c=m?null:CODE_OF[sel]||(Object.values(CODE_OF).includes(sel)?sel:"NM");if(c)cset.add(c);
+ $("cd").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.c==="any"?!cset.size:cset.has(b.dataset.c)));view=null;scrub=null}
+/* ...and the TCGplayer tab's condition and printing (TCGplayer has no graded cards, so a grade keeps the card's own condition) */
+let tprintWant="";
+function ppTcgFilter(cond,print){tconds=new Set([CODE_OF[cond]?cond:"Near Mint"]);tprintWant=print||""}
 const FIN=[["any","Any finish"],["holo","Holo"],["reverse","Reverse holo"],["nonholo","Non-holo"],["none","Unspecified"]];
 $("fn").innerHTML=FIN.map(([k,l])=>`<button class="pill" type="button" data-f="${k}" aria-pressed="${k===fmode}">${l}</button>`).join("");
 $("fn").onclick=e=>{const k=e.target.dataset.f;if(!k)return;fmode=k;
@@ -777,7 +789,7 @@ async function loadTcg(){
   if(q!==$("q").value.trim())return;
   tcgQ=q;tQ=q;tBasic=basic;
   if(!j.cards||!j.cards.length){TM=null;renderTcgBasic(basic,q,"No condition prices found for this search.");return}
-  TM=j;tci=0;tprint="";drawTcg()}
+  TM=j;tci=0;tprint=tprintWant;tprintWant="";drawTcg()}
  catch(e){if(q!==$("q").value.trim())return;tcgQ=q;TM=null;renderTcgBasic(basic,q,"Condition prices unavailable ("+e.message+"). Showing TCGplayer's overall prices instead.")}}
 $("tb").onclick=e=>{const k=e.target.dataset.t;if(!k)return;tab=k;
  [...$("tb").children].forEach(b=>b.setAttribute("aria-pressed",b.dataset.t===k));
@@ -815,5 +827,5 @@ $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
-<script src="/portfolio.js?v=59"></script>
+<script src="/portfolio.js?v=60"></script>
 </body></html>
