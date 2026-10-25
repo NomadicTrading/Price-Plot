@@ -91,7 +91,7 @@ svg{display:block;width:100%;height:auto;user-select:none;-webkit-user-select:no
 .tci{width:150px;height:auto;border-radius:8px;flex:none;align-self:flex-start;box-shadow:0 1px 4px rgba(0,0,0,.25)}@media (max-width:420px){.tci{width:120px}}
 .btn.o{background:var(--bg);color:var(--fg);border:1px solid var(--bd)}
 footer{border-top:1px solid var(--line);margin-top:22px;padding:12px 0;color:var(--mut);font-size:12px}
-.thm{display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--fg);font-size:14px}.thm .seg{flex:none}.thm .seg button{padding:7px 16px}
+.thm{flex:none;margin-left:auto;font-size:13.5px;padding:3px}.thm button{padding:6px 12px}
 /* portfolio */
 .pill.on{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:700}.pill.dl{color:var(--dn);border-color:var(--dn)}.pill.sm2{padding:4px 11px;font-size:13px;margin-left:6px}
 label.pill{display:inline-block}
@@ -220,7 +220,7 @@ label.pill{display:inline-block}
 .sq-camlast{justify-self:end;position:relative;width:52px;height:68px;border-radius:8px;border:2px solid #fff;background:rgba(0,0,0,.45);padding:0;overflow:visible;cursor:pointer;visibility:hidden}.sq-camlast.on{visibility:visible}
 .sq-camlast img{width:100%;height:100%;object-fit:cover;border-radius:6px}.sq-camlast i{position:absolute;top:-8px;right:-8px;font-style:normal;font-size:12px;font-weight:700;background:var(--blue);color:#fff;border-radius:999px;min-width:22px;height:22px;line-height:22px;text-align:center;padding:0 4px}
 </style></head><body>
-<header><div class="wrap hd"><a class="brand" href="/" aria-label="Price Plot home"><img src="/brand/icon-small.svg" width="36" height="36" alt=""><span>Price<span class="pp-dot">·</span>Plot</span></a>
+<header><div class="wrap hd"><a class="brand" href="/" aria-label="Price Plot home"><img src="/brand/icon-small.svg" width="36" height="36" alt=""><span>Price<span class="pp-dot">·</span>Plot</span></a><div class="seg thm" id="thm" role="group" aria-label="Light or dark mode"><button type="button" data-th="light">Light</button><button type="button" data-th="dark">Dark</button></div>
 <form id="f"><button class="cam" id="camb" type="button" aria-label="Search with your camera" title="Search with your camera"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg></button><input id="q" type="search" placeholder="Search a card, e.g. charizard 4/102 base set" aria-label="Search listings" autocomplete="off" enterkeyhint="search" autofocus><button class="go" type="submit">Search</button></form><div id="sug" class="sug" role="listbox" aria-label="Cards on TCGplayer" hidden></div></div></header>
 <main class="wrap">
 <div class="seg tabs" id="tb" role="group" aria-label="Data source"><button type="button" data-t="pf" aria-pressed="false">Portfolio</button><button type="button" data-t="tcg" aria-pressed="false">TCGplayer</button><button type="button" data-t="ebay" aria-pressed="true">eBay</button></div>
@@ -259,7 +259,7 @@ label.pill{display:inline-block}
 <div id="pf" hidden></div>
 <p class="sm">Tip: add the card number, like 4/102, to cut out other cards, and put a minus sign in front of a word to leave it out, like -jumbo.</p>
 </main>
-<footer><div class="wrap"><div class="thm"><span>Appearance</span><div class="seg" id="thm" role="group" aria-label="Light or dark mode"><button type="button" data-th="light">Light</button><button type="button" data-th="dark">Dark</button></div></div>Not affiliated with or endorsed by eBay Inc. Active listings come from eBay. Sold data, when shown, comes from an independent data service.</div></footer>
+<footer><div class="wrap">Not affiliated with or endorsed by eBay Inc. Active listings come from eBay. Sold data, when shown, comes from an independent data service.</div></footer>
 <script>
 const $=id=>document.getElementById(id);
 /* As a home-screen app, opening a link in a new window leaves an empty "Search or enter website name" page
