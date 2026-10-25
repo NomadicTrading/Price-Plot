@@ -1242,7 +1242,7 @@ document.addEventListener("click", (e) => {
     return; }
   if (d.ed && detail) { detail = null; }
   if (d.pv != null) { view = d.pv; shown = PAGE; editing = null; render(); }
-  else if (d.cmp) { const x = P.items.find((y) => y.id === d.cmp); if (x) comp(x); }
+  else if (d.cmp) openDetail(d.cmp); // the card's comps page, the same one Comp opens from the scan list
   else if (d.ed) { editing = d.ed; render(); }
   else if (d.cx) { editing = null; render(); }
   else if (d.del) askRemove(d.del);
