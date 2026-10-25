@@ -571,6 +571,35 @@ const scoreCard = (c, nn, d, words, extra) => {
   const cn = String(c.number || "").toLowerCase().replace(/^0+(?=\d)/, ""); if (nn && cn === nn.toLowerCase()) sc += 5; if (d && String(c.printedTotal) === d) sc += 5;
   return sc + (extra ? extra(c) : 0);
 };
+// The Shadowless (or regular Base Set) version of a Base Set card: TCGplayer lists them as separate products.
+const editionCache = new Map();
+app.get("/api/scan-edition", async (req, res) => {
+  const name = String(req.query.name || "").replace(/\s+-\s+[\w/]+$/, "").replace(/["\\*:()]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+  const n = String(+String(req.query.n || "").replace(/\D/g, "") || ""), d = String(req.query.d || "").replace(/\D/g, "").slice(0, 4) || "102";
+  const want = req.query.want === "unlimited" ? "unlimited" : "shadowless";
+  if (!name || !n) return res.status(400).json({ error: "Missing card name or number" });
+  const key = [name.toLowerCase(), n, d, want].join("|"), hit = editionCache.get(key);
+  if (hit && hit.exp > Date.now()) return res.json(hit.data);
+  const words = norm(name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length > 1);
+  const fits = (c) => {
+    const set = String(c.set || ""), cw = norm(c.name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/);
+    const setOk = want === "shadowless" ? /shadowless/i.test(set) : /^base set$/i.test(set.trim());
+    return setOk && String(+c.number) === n && words.every((w) => cw.includes(w));
+  };
+  let found = null;
+  try {
+    for (const q of want === "shadowless" ? [`${name} Shadowless ${n}/${d}`, `${name} Base Set Shadowless`] : [`${name} Base Set ${n}/${d}`, `${name} Base Set`]) {
+      found = (await tcgScan(q)).find(fits); if (found) break;
+    }
+  } catch (e) { return res.status(502).json({ error: "TCGplayer didn't answer: " + e.message }); }
+  if (!found) return res.status(404).json({ error: want === "shadowless" ? "No Shadowless version of this card on TCGplayer" : "No regular Base Set version of this card on TCGplayer" });
+  // the printings TCGplayer sells this product in (Holofoil or Normal; 1st Edition is its own choice)
+  found.prints = ["Holofoil", "Normal", "1st Edition Holofoil", "1st Edition"];
+  const data = { card: found };
+  editionCache.set(key, { exp: Date.now() + 7 * 864e5, data });
+  res.json(data);
+});
+
 app.get("/api/scan-match", async (req, res) => {
   const name = String(req.query.name || "").replace(/["\\*:()]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
   const n = String(req.query.n || "").replace(/[^a-z0-9]/gi, "").slice(0, 8), d = String(req.query.d || "").replace(/\D/g, "").slice(0, 4);

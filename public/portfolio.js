@@ -795,6 +795,33 @@ function sqPriceHTML(it, c) {
   return `<div class="sq-p">TCGplayer <span class="sq-pv">${money(it.px)}</span>${q > 1 ? ` <span class="mu">× ${q} =</span> <span class="sq-pv">${money(it.px * q)}</span>` : ""}${tip}${it.grade ? ` <span class="mu">(raw price, not graded)</span>` : ""}</div>`;
 }
 
+// --- Shadowless: Base Set cards only. TCGplayer lists the Shadowless print as its own product, so ticking the box swaps
+// the matched card for that product (and back), and the price, sales and comps follow. ---
+const sqIsBase = (c) => !!c && /^base( set)?( \(shadowless\))?$/i.test(String(c.set || "").trim());
+const sqIsShadow = (c) => !!c && /shadowless/i.test(String(c.set || ""));
+function sqShadowHTML(it, c) {
+  if (!sqIsBase(c)) return "";
+  return `<label class="sq-sh"><input type="checkbox" data-qsh="${it.id}" ${sqIsShadow(c) ? "checked" : ""} ${it.shBusy ? "disabled" : ""}> Shadowless${it.shBusy ? ` <span class="mu">finding it…</span>` : it.shErr ? ` <span class="sq-st warn">${esc(it.shErr)}</span>` : ""}</label>`;
+}
+async function sqShadow(it, on) {
+  const c = it.pick >= 0 ? it.cards[it.pick] : null; if (!c || on === sqIsShadow(c)) return;
+  it.shErr = "";
+  // going back to the version the scan first matched, when there is one
+  if (!on && it.shFrom != null && it.cards[it.shFrom] && !sqIsShadow(it.cards[it.shFrom])) { it.pick = it.shFrom; it.shFrom = null; sqSave(); return sqRow(it, true); }
+  it.shBusy = true; sqRow(it, true);
+  try {
+    const j = await getJSON("/api/scan-edition?" + new URLSearchParams({ name: c.name, n: c.number, d: c.printedTotal || "", want: on ? "shadowless" : "unlimited" }));
+    const nc = j.card, at = it.cards.findIndex((x) => x.tcgId && x.tcgId === nc.tcgId);
+    const from = it.pick;
+    it.pick = at >= 0 ? at : it.cards.push(nc) - 1;
+    if (on) it.shFrom = from; else it.shFrom = null;
+    // keep the printing: "Unlimited Holofoil" is just "Holofoil" on the Shadowless product
+    const pr = String(it.print || "").replace(/^Unlimited /, ""), list = it.cards[it.pick].prints || [];
+    it.print = list.includes(pr) ? pr : list[0] || pr;
+  } catch (e) { it.shErr = e.message; }
+  it.shBusy = false; sqSave(); sqRow(it, true);
+}
+
 // --- recent TCGplayer sales for a scanned card: a fold-out list, loaded only when opened ---
 const sqSalesData = new Map(), sqSalesJob = new Map(); // TCGplayer product id -> { sold, at } or { error }
 async function sqSalesLoad(it) {
@@ -912,14 +939,18 @@ function sqRowHTML(it) {
         <select data-qf="cond" data-qid="${it.id}" aria-label="Condition">${CONDS.map((x) => `<option value="${x}" ${x === it.cond ? "selected" : ""}>${{ "Near Mint": "NM", "Lightly Played": "LP", "Moderately Played": "MP", "Heavily Played": "HP", Damaged: "DMG" }[x] || x}</option>`).join("")}</select>
         <input data-qf="qty" data-qid="${it.id}" type="number" min="1" step="1" inputmode="numeric" value="${it.qty || 1}" aria-label="Quantity">
       </div>` : ""}
+      ${busy ? "" : sqShadowHTML(it, c)}
       ${sqOfferHTML(it, c)}
   </div>`;
 }
 // replace just one row, so typing in another box isn't interrupted
-function sqRow(it) {
+// force: redraw even though something in the row has focus (a tapped checkbox), then put focus back on it
+function sqRow(it, force) {
   const el = $("sq-" + it.id); if (!el || sqView) return;
-  if (el.contains(document.activeElement)) { el.dataset.stale = "1"; return; }
+  const f = document.activeElement, fsel = force && el.contains(f) && f.dataset && f.dataset.qsh ? `[data-qsh="${it.id}"]` : null;
+  if (!force && el.contains(f)) { el.dataset.stale = "1"; return; }
   el.outerHTML = sqRowHTML(it); sqBar();
+  if (fsel) { const n = document.querySelector("#ppscan " + fsel); if (n) n.focus({ preventScroll: true }); }
   if (it.pick >= 0 && it.pxK !== sqPxKey(it)) setTimeout(() => sqPrice(it), 0);
 }
 function sqCount() { const n = scanQ.filter((x) => x.st === "wait" || x.st === "reading").length, el = $("sq-n"); if (el) el.textContent = n ? `${n} still reading` : ""; }
@@ -1160,6 +1191,10 @@ document.addEventListener("input", (e) => {
   const t = e.target; if (!t.dataset || !t.dataset.qoff || !t.closest("#ppscan")) return;
   const it = sqItem(t.dataset.qoff); if (!it || t.value === "") return;
   sqSetOffer(it, t.value, t);
+});
+document.addEventListener("change", (e) => {
+  const t = e.target; if (!t.dataset || !t.dataset.qsh || !t.closest("#ppscan")) return;
+  const it = sqItem(t.dataset.qsh); if (it) sqShadow(it, t.checked);
 });
 document.addEventListener("toggle", (e) => {
   const t = e.target; if (!t.dataset) return;
