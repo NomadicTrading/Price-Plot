@@ -681,24 +681,25 @@ ${tover&&tid?`<div class="lg"><span><i style="background:var(--mut)"></i>Sold</s
 /* Last sold: the latest TCGplayer sale for the selected conditions and printing, with the 5 before it in a dropdown
    and every sale in a window of its own */
 let tLsOpen=false;
-const tSoldList=d=>!d||d.loading||d.error?null:d.sold.map(x=>({...x,c2:tcN(x.cond),t:+new Date(x.date)})).filter(x=>tpPrintOk(x)&&tpLangOk(x)&&tconds.has(x.c2)&&!isNaN(x.t)).sort((a,b)=>b.t-a.t);
+const tSoldList=d=>!d||d.loading||d.error?null:d.sold.map(x=>({...x,c2:tcN(x.cond),t:+new Date(x.date),tot:+(x.price+(x.ship>0?x.ship:0)).toFixed(2)})).filter(x=>tpPrintOk(x)&&tpLangOk(x)&&tconds.has(x.c2)&&!isNaN(x.t)).sort((a,b)=>b.t-a.t);
 const tDay=t=>new Date(t).toLocaleDateString(undefined,{month:"short",day:"numeric",...(Date.now()-t>300*864e5?{year:"numeric"}:{})});
 const tCode=n=>(TCOND.find(x=>x[0]===n)||[])[1]||"";
-const tSaleRow=x=>`<li><span>${tDay(x.t)}</span><span class="mu">${esc(tCode(x.c2))}${x.qty>1?" ×"+x.qty:""}</span><b>${pf(x.price)}</b></li>`;
+const tShip=x=>x.ship==null?"":x.ship>0?"incl. "+pf(x.ship)+" ship":"free ship";
+const tSaleRow=(x,full)=>`<li><span>${tDay(x.t)}</span><span class="mu">${esc(tCode(x.c2))}${x.qty>1?" ×"+x.qty:""}${full&&tShip(x)?" · "+tShip(x):""}</span><b>${pf(x.tot)}</b></li>`;
 function tcgLastSold(d){
  if(!d)return"";
  if(d.loading)return`<div class="tls mu">Last sold: loading…</div>`;
  if(d.error)return`<div class="tls mu">Last sold: unavailable right now</div>`;
  const L=tSoldList(d);if(!L.length)return`<div class="tls mu">No recent sales for ${tconds.size?"the selected condition"+(tconds.size>1?"s":""):"any condition"}</div>`;
  const more=L.slice(1,6);
- return`<details class="tls" id="tls"${tLsOpen?" open":""}><summary><span class="mu">Last sold</span> <b>${pf(L[0].price)}</b> <span class="mu">· ${tDay(L[0].t)} · ${esc(tCode(L[0].c2))}${L[0].qty>1?" ×"+L[0].qty:""}</span><i class="sq-chev" aria-hidden="true"></i></summary>
-  ${more.length?`<ul class="sq-ls">${more.map(tSaleRow).join("")}</ul>`:`<div class="mu" style="font-size:12.5px">No earlier sales.</div>`}
+ return`<details class="tls" id="tls"${tLsOpen?" open":""}><summary><span class="mu">Last sold</span> <b>${pf(L[0].tot)}</b> <span class="mu">· ${tDay(L[0].t)} · ${esc(tCode(L[0].c2))}${L[0].qty>1?" ×"+L[0].qty:""} · incl. shipping</span><i class="sq-chev" aria-hidden="true"></i></summary>
+  ${more.length?`<ul class="sq-ls">${more.map(x=>tSaleRow(x)).join("")}</ul>`:`<div class="mu" style="font-size:12.5px">No earlier sales.</div>`}
   ${L.length>1?`<button type="button" class="pill tls-all" data-tsall="1">See all ${L.length} sales</button>`:""}</details>`}
 function tcgAllSold(){const c=TM&&TM.cards[tci];if(!c)return;const tid=c.tcgId||(String(c.tcgUrl||"").match(/product\/(\d+)/)||[])[1]||"",L=tSoldList(TPD.get(tid));if(!L)return;
  const ov=document.createElement("div");ov.className="ppm-ov";
  ov.innerHTML=`<div class="ppm tls-win" role="dialog" aria-modal="true" aria-labelledby="tls-t"><div class="sq-h"><h3 id="tls-t">TCGplayer sales</h3><button type="button" class="ppm-x plain" data-x="1">Close</button></div>
-  <div class="mu" style="font-size:13px;margin:-4px 0 8px">${esc(c.name)} · ${esc(c.set||"")}${tprint?" · "+esc(tprint):""} · ${[...tconds].map(tCode).join(", ")||"every condition"}. Newest first; prices don't include shipping.</div>
-  <ul class="sq-ls">${L.map(tSaleRow).join("")}</ul></div>`;
+  <div class="mu" style="font-size:13px;margin:-4px 0 8px">${esc(c.name)} · ${esc(c.set||"")}${tprint?" · "+esc(tprint):""} · ${[...tconds].map(tCode).join(", ")||"every condition"}. Newest first; prices include shipping.</div>
+  <ul class="sq-ls">${L.map(x=>tSaleRow(x,true)).join("")}</ul></div>`;
  const close=()=>{removeEventListener("keydown",key);ov.remove()},key=e=>{if(e.key==="Escape")close()};
  ov.onclick=e=>{if(e.target===ov||e.target.closest("[data-x]"))close()};addEventListener("keydown",key);document.body.appendChild(ov);ov.querySelector("[data-x]").focus()}
 document.addEventListener("toggle",e=>{if(e.target&&e.target.id==="tls")tLsOpen=e.target.open},true);
