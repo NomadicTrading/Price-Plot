@@ -86,6 +86,11 @@ svg{display:block;width:100%;height:auto;user-select:none;-webkit-user-select:no
 .tabs{margin-top:12px}
 .tc{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
 .tc img{width:84px;height:auto;border-radius:6px;align-self:flex-start}
+.tc-r{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:8px;width:132px}
+.tc-btns{display:flex;flex-direction:column;gap:6px;width:100%}.tc-btns .btn{margin:0;text-align:center;font:inherit;font-size:13px;font-weight:700;padding:8px 6px;cursor:pointer}
+.tls{margin-top:8px;font-size:13.5px}.tls>summary{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px;min-height:32px;cursor:pointer;list-style:none;-webkit-user-select:none;user-select:none}
+.tls>summary::-webkit-details-marker{display:none}.tls>summary::marker{content:""}.tls>summary b{font-size:16px}.tls>summary .sq-chev{margin-left:4px;width:6px;height:6px;align-self:center}.tls[open]>summary .sq-chev{transform:rotate(-135deg) translate(-2px,-2px)}
+.tls .sq-ls{margin-top:4px}.tls-all{margin-top:8px}.tls-win{max-width:440px;max-height:calc(100dvh - 32px)}.tls-win .sq-ls li{padding:7px 0}
 .tci-b{flex:none;align-self:flex-start;padding:0;border:0;background:none;cursor:zoom-in;border-radius:6px}.tci-b img{display:block}
 .tc-pr{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin:6px 0 2px}.tc-pv{font-size:24px;font-weight:700;letter-spacing:-.4px;white-space:nowrap}
 .tc-pv small{font-size:12px;font-weight:700;margin-right:5px;letter-spacing:0}.tc-pl{font-size:12px;flex-basis:100%}
@@ -655,7 +660,7 @@ function drawTcg(){
  const selP=TCOND.filter(([n])=>tconds.has(n)&&byC[n]&&byC[n].price!=null).map(([n,a,col])=>`<span class="tc-pv"><small style="color:${col}">${a}</small>${pf(byC[n].price)}</span>`).join("");
  $("tcg").innerHTML=pick+`<div class="tc"><div style="flex:1;min-width:0"><b>${esc(c.name)}</b> <span class="mu">${esc(c.set||"")} · ${esc(c.number||"")}${c.rarity?" · "+esc(c.rarity):""}</span>
 ${selP?`<div class="tc-pr" aria-label="Market price for the selected condition">${selP}<span class="mu tc-pl">${esc(tprint)} market</span></div>`:""}
-<div>${c.tcgUrl?`<a class="btn" href="${esc(safeUrl(c.tcgUrl))}" target="_blank" rel="noopener">Open on TCGplayer</a>`:""}<button class="btn o" type="button" data-addpf="1" style="font:inherit;font-weight:700;cursor:pointer">+ Add to portfolio</button></div></div>${tImgs.length?`<button type="button" class="tci-b" data-zoom="1" aria-label="Enlarge the card picture"><img class="tci" id="tci" src="${esc(tImgs[0])}" alt="${esc(c.name)} card" data-alt="${esc(tImgs.slice(1).join(" "))}"></button>`:""}</div>
+${tcgLastSold(tpd)}</div><div class="tc-r">${tImgs.length?`<button type="button" class="tci-b" data-zoom="1" aria-label="Enlarge the card picture"><img class="tci" id="tci" src="${esc(tImgs[0])}" alt="${esc(c.name)} card" data-alt="${esc(tImgs.slice(1).join(" "))}"></button>`:""}<div class="tc-btns">${c.tcgUrl?`<a class="btn" href="${esc(safeUrl(c.tcgUrl))}" target="_blank" rel="noopener">Open TCGplayer</a>`:""}<button class="btn o" type="button" data-addpf="1">+ Add to portfolio</button></div></div></div>
 <div class="bar fs" id="tpr" role="group" aria-label="Printing">${prints.map(p=>`<button class="pill" type="button" data-tp="${esc(p)}" aria-pressed="${p===tprint}">${esc(p)}</button>`).join("")}</div>
 <div class="bar fs" id="tcd" role="group" aria-label="Condition">${TCOND.filter(([n])=>n in byC).map(([n,a])=>`<button class="pill" type="button" data-tc="${n}" aria-pressed="${tconds.has(n)}">${a}</button>`).join("")}</div>
 <div class="ch-h"><div><h2>Market Price</h2><div class="mu" style="font-size:12.5px">TCGplayer market price by condition${tover&&tid?", with sold cards and live listings":""}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex:none">${tid?`<button class="pill" type="button" style="white-space:nowrap" data-tover="1" aria-pressed="${tover}">Sales &amp; listings</button>`:""}<button class="pill" type="button" style="white-space:nowrap" data-tboll="1" aria-pressed="${tboll}" title="20-day average of the market price, with a band 2 standard deviations either side">Bollinger bands</button></div></div>
@@ -673,6 +678,30 @@ ${tover&&tid?`<div class="lg"><span><i style="background:var(--mut)"></i>Sold</s
  if(tover&&tid)tpSlider(tpd);
  if(hasHist||(tover&&tid))drawTcgChart(vs2,tover&&tid?tpd:null);else readout(vs2,null);
  if(tsel!=null&&tpts[tsel])tpPick(tsel);else tsel=null}
+/* Last sold: the latest TCGplayer sale for the selected conditions and printing, with the 5 before it in a dropdown
+   and every sale in a window of its own */
+let tLsOpen=false;
+const tSoldList=d=>!d||d.loading||d.error?null:d.sold.map(x=>({...x,c2:tcN(x.cond),t:+new Date(x.date)})).filter(x=>tpPrintOk(x)&&tpLangOk(x)&&tconds.has(x.c2)&&!isNaN(x.t)).sort((a,b)=>b.t-a.t);
+const tDay=t=>new Date(t).toLocaleDateString(undefined,{month:"short",day:"numeric",...(Date.now()-t>300*864e5?{year:"numeric"}:{})});
+const tCode=n=>(TCOND.find(x=>x[0]===n)||[])[1]||"";
+const tSaleRow=x=>`<li><span>${tDay(x.t)}</span><span class="mu">${esc(tCode(x.c2))}${x.qty>1?" ×"+x.qty:""}</span><b>${pf(x.price)}</b></li>`;
+function tcgLastSold(d){
+ if(!d)return"";
+ if(d.loading)return`<div class="tls mu">Last sold: loading…</div>`;
+ if(d.error)return`<div class="tls mu">Last sold: unavailable right now</div>`;
+ const L=tSoldList(d);if(!L.length)return`<div class="tls mu">No recent sales for ${tconds.size?"the selected condition"+(tconds.size>1?"s":""):"any condition"}</div>`;
+ const more=L.slice(1,6);
+ return`<details class="tls" id="tls"${tLsOpen?" open":""}><summary><span class="mu">Last sold</span> <b>${pf(L[0].price)}</b> <span class="mu">· ${tDay(L[0].t)} · ${esc(tCode(L[0].c2))}${L[0].qty>1?" ×"+L[0].qty:""}</span><i class="sq-chev" aria-hidden="true"></i></summary>
+  ${more.length?`<ul class="sq-ls">${more.map(tSaleRow).join("")}</ul>`:`<div class="mu" style="font-size:12.5px">No earlier sales.</div>`}
+  ${L.length>1?`<button type="button" class="pill tls-all" data-tsall="1">See all ${L.length} sales</button>`:""}</details>`}
+function tcgAllSold(){const c=TM&&TM.cards[tci];if(!c)return;const tid=c.tcgId||(String(c.tcgUrl||"").match(/product\/(\d+)/)||[])[1]||"",L=tSoldList(TPD.get(tid));if(!L)return;
+ const ov=document.createElement("div");ov.className="ppm-ov";
+ ov.innerHTML=`<div class="ppm tls-win" role="dialog" aria-modal="true" aria-labelledby="tls-t"><div class="sq-h"><h3 id="tls-t">TCGplayer sales</h3><button type="button" class="ppm-x plain" data-x="1">Close</button></div>
+  <div class="mu" style="font-size:13px;margin:-4px 0 8px">${esc(c.name)} · ${esc(c.set||"")}${tprint?" · "+esc(tprint):""} · ${[...tconds].map(tCode).join(", ")||"every condition"}. Newest first; prices don't include shipping.</div>
+  <ul class="sq-ls">${L.map(tSaleRow).join("")}</ul></div>`;
+ const close=()=>{removeEventListener("keydown",key);ov.remove()},key=e=>{if(e.key==="Escape")close()};
+ ov.onclick=e=>{if(e.target===ov||e.target.closest("[data-x]"))close()};addEventListener("keydown",key);document.body.appendChild(ov);ov.querySelector("[data-x]").focus()}
+document.addEventListener("toggle",e=>{if(e.target&&e.target.id==="tls")tLsOpen=e.target.open},true);
 /* the card picture, enlarged over the page: the largest picture that loads; tap anywhere or Escape to close */
 let tZoom=[];
 function tcgZoom(){const shown=$("tci"),list=[...new Set([...tZoom,shown&&shown.currentSrc].filter(Boolean))];if(!list.length)return;
@@ -843,6 +872,7 @@ function tGesture(pf,nf,f){const v=tview||TG.full,w=v.x1-v.x0,h=v.y1-v.y0,cx=v.x
 $("tcg").onclick=e=>{const dot=e.target.closest&&e.target.closest("[data-tpi]");if(dot){tpPick(+dot.dataset.tpi);return}
  const d=e.target.closest("button")?.dataset;if(!d||!TM)return;
  if(d.zoom){tcgZoom();return}
+ if(d.tsall){tcgAllSold();return}
  if(d.addpf){if(window.ppAddFromTcg)ppAddFromTcg(TM.cards[tci],tprint,[...tconds]);return}
  if(d.tzr){tview=null;if(TG)drawTcgChart(TG.vs,TG.tpd);return}
  tsel=null;tview=null;
