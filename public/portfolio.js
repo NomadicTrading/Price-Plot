@@ -331,7 +331,7 @@ function render() {
   <div class="tk" id="pfv">${[["all", "All"], ...pfs.map((p) => [p, p]), ...(w ? [["watch", "Watchlist (" + w + ")"]] : [])].map(([k, l]) => `<button class="pill" type="button" data-pv="${esc(k)}" aria-pressed="${k === view}">${esc(l)}${k !== "all" && k !== "watch" ? ` <span class="mu">${money(totals(o.filter((x) => (x.pf || "Unsorted") === k)).value)}</span>` : ""}</button>`).join("")}</div>
   <div class="bar"><input id="pfq" type="search" placeholder="Filter by name, set, number…" value="${esc(findTxt)}" autocomplete="off">
    <select id="pfo" aria-label="Sort">${[["value", "Value: high to low"], ["low", "Value: low to high"], ["unit", "Price per card"], ["gain", "Gain"], ["name", "Name"], ["added", "Recently added"]].map(([k, l]) => `<option value="${k}" ${k === sortBy ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-  <div class="sm">${list.length.toLocaleString()} ${list.length === 1 ? "entry" : "entries"}${findTxt ? " match" : ""}</div>
+  <div class="sm">${list.length.toLocaleString()} ${list.length === 1 ? "entry" : "entries"}${findTxt.trim() ? " match" : ""}</div>
   <div id="pfl2">${list.slice(0, shown).map(rowHTML).join("")}</div>
   ${list.length > shown ? `<button class="pill" type="button" data-pa="more" style="margin-top:10px">Show ${Math.min(PAGE, list.length - shown)} more</button>` : ""}`
   : `<p class="sm">Your portfolio is empty. Import a Collectr export (in Collectr: Portfolio → ⋯ → Export, then open the emailed file here), or add cards one at a time. Everything stays saved on this device.</p>`}`;
@@ -1522,7 +1522,9 @@ document.addEventListener("change", (e) => {
   t.value = t.type === "range" ? Math.min(100, Math.round(sqPctOf(it))) : sqPctTxt(sqPctOf(it)); sqSave();
 });
 let qt; document.addEventListener("input", (e) => { if (e.target.id !== "pfq") return; clearTimeout(qt);
-  qt = setTimeout(() => { findTxt = e.target.value.trim(); shown = PAGE; render(); const q = $("pfq"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }, 200); });
+  qt = setTimeout(() => { const t = $("pfq") || e.target, at = t.selectionStart, prev = findTxt.trim(); findTxt = t.value;
+    if (findTxt.trim() === prev) return; // only spaces changed: nothing to filter, and the box is left alone
+    shown = PAGE; render(); const q = $("pfq"); if (q) { q.focus(); const c = Math.min(at ?? q.value.length, q.value.length); q.setSelectionRange(c, c); } }, 200); });
 document.addEventListener("submit", (e) => { if (e.target.classList?.contains("pe")) { e.preventDefault(); saveForm(e.target); } });
 render();
 setTimeout(fillPrices, 1500);
