@@ -289,7 +289,7 @@ function render() {
    ${view !== "watch" ? `<div class="pst"><span><b>${V.n.toLocaleString()}</b> cards</span><span><b>${V.graded}</b> graded</span><span><b>${pfs.length}</b> portfolio${pfs.length === 1 ? "" : "s"}</span>${P.asOf ? `<span>Prices as of <b>${esc(P.asOf)}</b></span>` : ""}</div>` : ""}</div>
   <div class="bar"><label class="pill on" for="pff">Import Collectr file</label><button class="pill" type="button" data-pa="clink">From a Collectr link</button><input id="pff" type="file" accept=".csv,.xlsx,.xls,text/csv" hidden>
    <button class="pill" type="button" data-pa="add">+ Add card</button>${P.items.length ? `${canUndo() ? `<button class="pill" type="button" data-pa="undo">Undo last import</button>` : ""}<button class="pill" type="button" data-pa="export">Export CSV</button><button class="pill" type="button" data-pa="clear">Clear all</button>` : ""}</div>
-  ${cimpPanel()}<div class="sm" id="pfs"></div><div id="pfi" class="pbx" hidden></div>
+  ${cimpPanel()}<div class="sm" id="pfs">${pfText()}</div>${pfBarHTML()}<div id="pfi" class="pbx" hidden></div>
   ${editing === "new" ? `<div class="pbx">${form({ qty: 1 })}</div>` : ""}
   ${P.items.length ? `
   ${view === "all" ? `<div class="pch">${chart()}</div>` : ""}
@@ -620,7 +620,19 @@ let pfq = [], pfRunning = 0, pfTotal = 0, pfDone = 0;
 const needsPrice = (x, now) => x.qty > 0 && !isGraded(x) && (x.mktV !== 2 || now - (x.pT || 0) > 864e5) && !(x.pTry && now - x.pTry < 864e5);
 function fillPrices() {
   const now = Date.now(), want = P.items.filter((x) => needsPrice(x, now) && !pfq.includes(x));
-  if (!want.length) return; pfq.push(...want); pfTotal += want.length; pricePump();
+  if (!want.length) return; pfq.push(...want); pfTotal += want.length; pricePump(); pfProgress();
+}
+// the TCGplayer price lookup's progress: "N of M" and a bar that fills as cards are priced
+const pfBusy = () => pfq.length > 0 || pfRunning > 0;
+function pfBarHTML() {
+  const on = pfBusy() && pfTotal > 0, pc = on ? Math.min(100, (pfDone / pfTotal) * 100) : 0;
+  return `<div class="pfb" id="pfb" role="progressbar" aria-label="TCGplayer prices looked up" aria-valuemin="0" aria-valuemax="${pfTotal}" aria-valuenow="${pfDone}"${on ? "" : " hidden"}><i style="width:${pc.toFixed(1)}%"></i></div>`;
+}
+const pfText = () => (pfBusy() && pfTotal > 0 && !pending ? `Looking up TCGplayer prices: ${pfDone.toLocaleString()} of ${pfTotal.toLocaleString()} (${Math.floor((pfDone / pfTotal) * 100)}%)…` : "");
+function pfProgress() {
+  const s = $("pfs"), b = $("pfb"), on = pfBusy() && pfTotal > 0;
+  if (s && !pending) s.textContent = pfText();
+  if (b) { b.hidden = !on; b.setAttribute("aria-valuemax", pfTotal); b.setAttribute("aria-valuenow", pfDone); b.firstElementChild.style.width = (on ? Math.min(100, (pfDone / pfTotal) * 100) : 0).toFixed(1) + "%"; }
 }
 async function priceOne(x) {
   if (!x.tcgId) { const j = await getJSON("/api/cardimg?" + new URLSearchParams({ name: x.name, set: x.set || "", num: x.num || "", cat: x.cat || "" })).catch(() => null);
@@ -636,7 +648,7 @@ function pricePump() {
     const x = pfq.shift(); pfRunning++;
     priceOne(x).then((ok) => {
       pfRunning--; pfDone++; x.pTry = Date.now(); if (!ok && x.pT && x.mktV !== 2) { x.mkt = null; x.mktEst = false; }
-      const s = $("pfs"); if (s && !pending) s.textContent = pfq.length || pfRunning ? `Looking up TCGplayer prices: ${pfDone.toLocaleString()} of ${pfTotal.toLocaleString()}…` : "";
+      pfProgress();
       clearTimeout(saveT); saveT = setTimeout(store, 1500);
       if (!pfq.length && !pfRunning) { pfTotal = pfDone = 0; store(); snap(); if (!detail && !editing) render(); }
       else pricePump();
