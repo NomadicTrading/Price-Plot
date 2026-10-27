@@ -276,10 +276,32 @@ document.addEventListener("input", (e) => {
   if (t.name === "costPct") c.value = t.value === "" || !Number.isFinite(+t.value) ? "" : (Math.round(mk * +t.value) / 100).toFixed(2);
   else p.value = t.value === "" || !Number.isFinite(+t.value) ? "" : String(Math.round((+t.value / mk) * 1000) / 10);
 });
+const PRINTS_ANY = ["Normal", "Holofoil", "Reverse Holofoil", "1st Edition", "1st Edition Holofoil", "Unlimited", "Unlimited Holofoil"];
+const printsCache = new Map();
+// the card's own printing stays in its usual place in the list (or first, if TCGplayer doesn't list it)
+function printOpts(list, cur) { const a = !cur || list.includes(cur) ? list.slice() : [cur, ...list]; return a.map((p) => `<option ${p === cur ? "selected" : ""}>${esc(p)}</option>`).join(""); }
+function printField(x) {
+  const known = x.tcgId && printsCache.get(String(x.tcgId));
+  return `<label>Printing<select name="var" data-pr="${x.id || ""}">${known ? printOpts(known, x.var) : printOpts(x.tcgId || x.id ? [] : PRINTS_ANY, x.var || "")}${known ? "" : x.id ? `<option value="" disabled>Loading printings…</option>` : ""}</select></label>`;
+}
+// fill the dropdown with the printings TCGplayer has for this card (finding the card on TCGplayer first if needed)
+async function loadPrints(x) {
+  let list = null;
+  try {
+    if (!x.tcgId) { const j = await getJSON("/api/cardimg?" + new URLSearchParams({ name: x.name, set: x.set || "", num: x.num || "", cat: x.cat || "" })); if (j && j.tcgId) { x.tcgId = j.tcgId; if (!x.img && j.img) { x.img = j.img; x.big = j.big; } store(); } }
+    if (x.tcgId) { list = printsCache.get(String(x.tcgId)); if (!list) { list = (await getJSON("/api/tcgprints?id=" + encodeURIComponent(x.tcgId))).prints || []; printsCache.set(String(x.tcgId), list); } }
+  } catch {}
+  const sel = document.querySelector(`#pf select[data-pr="${x.id}"]`); if (!sel) return;
+  const cur = sel.value || x.var || "";
+  sel.innerHTML = printOpts(list && list.length ? list : PRINTS_ANY, cur);
+}
 function form(x) {
   const f = (k, l, v, t = "text", extra = "") => `<label>${l}<input name="${k}" type="${t}" value="${esc(v ?? "")}" ${extra}></label>`;
   const pfs = [...new Set(P.items.map((y) => y.pf).filter(Boolean))];
-  return `<form class="pe" data-fid="${x.id || ""}"><button type="button" class="pe-x" data-cx="1" aria-label="Close without saving">✕</button><div class="pg">${f("name", "Card name", x.name, "text", "required")}${f("set", "Set", x.set)}${f("num", "Number", x.num)}${f("var", "Printing", x.var)}
+  const pic = x.big || x.img;
+  return `<form class="pe" data-fid="${x.id || ""}"><button type="button" class="pe-x" data-cx="1" aria-label="Close without saving">✕</button>
+  ${x.id ? `<div class="pe-h"><button type="button" class="pe-pic" data-zm="${x.id}" aria-label="Enlarge the picture of ${esc(x.name)}" ${pic ? "" : "disabled"}>${pic ? `<img src="${esc(x.img || pic)}" alt="">` : ""}</button>
+    <div class="pe-hm"><b>${esc(x.name)}</b>${esc([x.set, x.num].filter(Boolean).join(" · "))}</div></div>` : ""}<div class="pg">${f("name", "Card name", x.name, "text", "required")}${f("set", "Set", x.set)}${f("num", "Number", x.num)}${printField(x)}
   <label>Condition<select name="cond">${CONDS.map((c) => `<option ${c === (x.cond || "Near Mint") ? "selected" : ""}>${c}</option>`).join("")}</select></label>
   ${f("grade", "Grade (blank if raw)", isGraded(x) ? x.grade : "", "text", 'placeholder="e.g. PSA 10"')}
   ${f("qty", "Quantity", x.qty ?? 1, "number", 'min="0" step="1" inputmode="numeric"')}${costField(x)}
@@ -1437,7 +1459,8 @@ document.addEventListener("click", (e) => {
   if (d.ed && detail) { detail = null; }
   if (d.pv != null) { view = d.pv; shown = PAGE; editing = null; render(); }
   else if (d.cmp) openDetail(d.cmp); // the card's comps page, the same one Comp opens from the scan list
-  else if (d.ed) { editing = d.ed; render(); }
+  else if (d.ed) { editing = d.ed; render(); const x = P.items.find((y) => y.id === d.ed); if (x) loadPrints(x); }
+  else if (d.zm) { const x = P.items.find((y) => y.id === d.zm); if (x) ppZoom([x.tcgId ? `https://tcgplayer-cdn.tcgplayer.com/product/${x.tcgId}_in_1000x1000.jpg` : "", x.big, x.img], x.name); }
   else if (d.cx) { editing = null; render(); }
   else if (d.del) askRemove(d.del);
   else if (d.trash) askRemove(d.trash);

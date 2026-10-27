@@ -989,6 +989,18 @@ async function tpLatest(id) {
   }
   return rows.list;
 }
+// The printings TCGplayer lists for a product (Holofoil, Reverse Holofoil, 1st Edition Holofoil...), for the portfolio's
+// Edit form. Read from the product's price history, remembered for 24 hours.
+app.get("/api/tcgprints", async (req, res) => {
+  const id = String(req.query.id || "").replace(/\D/g, "").slice(0, 12);
+  if (!id) return res.status(400).json({ error: "Missing TCGplayer product id" });
+  try {
+    const ORDER = ["normal", "holofoil", "reverse holofoil", "1st edition", "1st edition holofoil", "unlimited", "unlimited holofoil"];
+    const rank = (p) => { const i = ORDER.indexOf(p.toLowerCase()); return i < 0 ? 99 : i; };
+    const prints = [...new Set((await tpLatest(id)).map((r) => r.print).filter(Boolean))].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+    res.json({ prints });
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
 app.get("/api/tcgprice", async (req, res) => {
   const id = String(req.query.id || "").replace(/\D/g, "").slice(0, 12);
   if (!id) return res.status(400).json({ error: "Missing TCGplayer product id" });

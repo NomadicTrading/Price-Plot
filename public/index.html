@@ -122,7 +122,8 @@ label.pill{display:inline-block}
 .pm{min-width:0;flex:1}.pm .mu{font-size:12.5px;margin-top:2px}
 .pm .pr-g{white-space:nowrap;position:relative;z-index:1} /* sits below the price and buttons, so it may run under them instead of wrapping */.pv{text-align:right;flex:none}.pv b{font-size:16px;display:block;margin-bottom:6px}
 .cg{font-size:11.5px;font-weight:700;border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:var(--mut);white-space:nowrap}.cg.gr{border-color:#F59E0B;color:#b46d00}
-.pr>.pe{padding:12px 2px;position:relative}.pe-x{position:absolute;top:4px;right:0;width:28px;height:28px;border:0;border-radius:50%;background:var(--soft);color:var(--mut);font-size:13px;line-height:28px;padding:0;cursor:pointer;z-index:2}.pe .pg{padding-top:22px}
+.pr>.pe{padding:12px 2px;position:relative}.pe-x{position:absolute;top:4px;right:0;width:28px;height:28px;border:0;border-radius:50%;background:var(--soft);color:var(--mut);font-size:13px;line-height:28px;padding:0;cursor:pointer;z-index:2}.pe-x+.pg{padding-top:26px}.pe-h{display:flex;align-items:center;gap:12px;margin:0 36px 12px 0}.pe-pic{flex:none;width:64px;height:89px;padding:0;border:0;border-radius:6px;background:var(--soft) center/22px no-repeat url("/brand/icon-small.svg");overflow:hidden;cursor:zoom-in}.pe-pic img{width:100%;height:100%;object-fit:contain;display:block}.pe-pic:disabled{cursor:default;opacity:.5}
+.pe-hm{min-width:0;font-size:13px;color:var(--mut);line-height:1.3}.pe-hm b{display:block;font-size:16px;color:var(--fg)}
 .pg{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 .pg label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--mut)}
 .pg input,.pg select{font:inherit;font-size:15px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;width:100%}
@@ -711,9 +712,11 @@ function tcgAllSold(){const c=TM&&TM.cards[tci];if(!c)return;const tid=c.tcgId||
 document.addEventListener("toggle",e=>{if(e.target&&e.target.id==="tls")tLsOpen=e.target.open},true);
 /* the card picture, enlarged over the page: the largest picture that loads; tap anywhere or Escape to close */
 let tZoom=[];
-function tcgZoom(){const shown=$("tci"),list=[...new Set([...tZoom,shown&&shown.currentSrc].filter(Boolean))];if(!list.length)return;
+function tcgZoom(){const shown=$("tci");ppZoom([...tZoom,shown&&shown.currentSrc],TM&&TM.cards[tci]?TM.cards[tci].name:"Card")}
+/* a card picture enlarged over the page: the first of the pictures that loads; tap anywhere or Escape to close */
+function ppZoom(srcs,name){const list=[...new Set((srcs||[]).filter(Boolean))];if(!list.length)return;
  const ov=document.createElement("div");ov.className="ppm-ov zoom";ov.setAttribute("role","dialog");ov.setAttribute("aria-label","Card picture");
- ov.innerHTML=`<img alt="${esc(TM&&TM.cards[tci]?TM.cards[tci].name:"Card")} card, enlarged"><button type="button" class="zoom-x" aria-label="Close">✕</button>`;
+ ov.innerHTML=`<img alt="${esc(name||"Card")} card, enlarged"><button type="button" class="zoom-x" aria-label="Close">✕</button>`;
  const im=ov.querySelector("img");let i=0;im.onerror=()=>{i++;if(i<list.length)im.src=list[i];else close()};im.src=list[0];
  const key=e=>{if(e.key==="Escape")close()};
  function close(){removeEventListener("keydown",key);ov.remove()}
@@ -952,5 +955,5 @@ $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
-<script src="/portfolio.js?v=84"></script>
+<script src="/portfolio.js?v=85"></script>
 </body></html>
