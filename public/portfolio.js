@@ -1075,12 +1075,11 @@ function sqSalesHTML(it, c) {
     const langOk = (x) => !x.lang || (jp ? /japan/i.test(x.lang) : /english/i.test(x.lang));
     const sorted = d.sold.filter(langOk).slice().sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
     const samePr = sorted.filter((x) => !pr || String(x.print || "").toLowerCase() === pr);
-    let list = samePr.filter((x) => tcCond(x.cond) === want), note = "";
-    if (!list.length && samePr.length) { list = samePr; note = `No recent ${COND_CODE[want] || want} sales; showing every condition.`; }
-    list = list.slice(0, 10);
+    // only the card's selected condition
+    const list = samePr.filter((x) => tcCond(x.cond) === want).slice(0, 10), note = "";
     const day = (t) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", ...(Date.now() - Date.parse(t) > 300 * 864e5 ? { year: "numeric" } : {}) });
     body = list.length ? `${note ? `<div class="mu sq-lsn">${esc(note)}</div>` : ""}<ul class="sq-ls">${list.map((x) => `<li><span>${day(x.date)}</span><span class="mu">${note ? esc(COND_CODE[tcCond(x.cond)] || tcCond(x.cond) || "") : ""}${x.qty > 1 ? " ×" + x.qty : ""}</span><b>${money(x.price)}</b></li>`).join("")}</ul>`
-      : `<div class="mu">No recent TCGplayer sales for this printing.</div>`;
+      : `<div class="mu">No recent ${esc(COND_CODE[want] || want)} sales on TCGplayer for this printing.</div>`;
   }
   return `<details class="sq-lsd" data-qls="${it.id}"${it.lsOpen ? " open" : ""}><summary>Last sold<i class="sq-chev" aria-hidden="true"></i></summary>${it.lsOpen ? body : ""}</details>`;
 }
