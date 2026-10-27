@@ -957,13 +957,17 @@ async function tpHistory(id) {
   if (!r.ok || !j) throw new Error(r.status === 403 || r.status === 429 ? "TCGplayer is refusing requests from the server right now" : `TCGplayer returned ${r.status}`);
   const rows = Array.isArray(j) ? j : j.result || j.results || j.data || [];
   const num = (v) => (v == null || v === "" ? null : Number(v));
-  return rows.map((s) => ({
-    cond: s.condition || "", print: s.variant || s.printing || "", lang: s.language || "",
-    b: (s.buckets || []).map((k) => {
+  return rows.map((s) => {
+    const all = (s.buckets || []).map((k) => {
       const t = Date.parse(k.bucketStartDate);
       return [t, num(k.lowSalePrice), num(k.highSalePrice), num(k.quantitySold) || 0, num(k.transactionCount) || 0, num(k.marketPrice), num(k.lowSalePriceWithShipping), num(k.highSalePriceWithShipping)];
-    }).filter((k) => !isNaN(k[0]) && k[4] > 0 && k[1] > 0),
-  })).filter((s) => s.b.length);
+    }).filter((k) => !isNaN(k[0]));
+    // TCGplayer lists a market price for each condition and printing every week, whether or not it sold:
+    // mk/mt is the latest one. b keeps only the weeks with sales (for the sales chart).
+    const lm = all.filter((k) => k[5] > 0).sort((x, y) => x[0] - y[0]).pop();
+    return { cond: s.condition || "", print: s.variant || s.printing || "", lang: s.language || "", mk: lm ? lm[5] : null, mt: lm ? lm[0] : null,
+      b: all.filter((k) => k[4] > 0 && k[1] > 0) };
+  }).filter((s) => s.b.length || s.mk > 0);
 }
 // One card's TCGplayer market price for a given condition and printing (the latest week's market price from
 // TCGplayer's price history), for the Portfolio list. Each product's history is remembered for 24 hours.
@@ -973,12 +977,13 @@ const COND_STEP = { "Near Mint": 1, "Lightly Played": 0.85, "Moderately Played":
 async function tpLatest(id) {
   let rows = tphCache.get(id);
   if (!rows || rows.exp < Date.now()) {
-    const saved = await kv.get("tph:" + id);
+    const saved = await kv.get("tph2:" + id);
     if (saved) rows = { exp: Date.now() + 864e5, list: saved };
     else {
       const hist = await tpHistory(id);
-      const list = hist.map((s) => { const b = s.b.slice().sort((x, y) => x[0] - y[0]).filter((k) => k[5] > 0); const last = b[b.length - 1]; return last ? { cond: tpCond(s.cond), print: String(s.print || ""), lang: String(s.lang || ""), m: last[5], t: last[0] } : null; }).filter(Boolean);
-      rows = { exp: Date.now() + 864e5, list }; await kv.set("tph:" + id, list, 864e2);
+      // the latest listed market price for each condition and printing
+      const list = hist.map((s) => s.mk > 0 ? { cond: tpCond(s.cond), print: String(s.print || ""), lang: String(s.lang || ""), m: s.mk, t: s.mt } : null).filter(Boolean);
+      rows = { exp: Date.now() + 864e5, list }; await kv.set("tph2:" + id, list, 864e2);
     }
     tphCache.set(id, rows); if (tphCache.size > 5000) tphCache.delete(tphCache.keys().next().value);
   }

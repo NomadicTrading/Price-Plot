@@ -1491,6 +1491,7 @@ new MutationObserver(syncScrollLock).observe(document.body, { childList: true })
 syncScrollLock();
 
 // once, after the "nearest condition" estimate was added: cards still on Collectr's price try TCGplayer again now
-try { if (!localStorage.getItem("pp_price_retry1")) { let n = 0; for (const x of P.items) if (x.mktV !== 2 && x.pTry) { x.pTry = 0; n++; } localStorage.setItem("pp_price_retry1", "1"); if (n) { store(); fillPrices(); } } } catch {}
+// (and again once TCGplayer's listed price per condition was used): cards on Collectr's price or an estimate look again now
+try { if (!localStorage.getItem("pp_price_retry2")) { let n = 0; for (const x of P.items) if (!isGraded(x) && (x.mktV !== 2 || x.mktEst)) { x.pTry = 0; if (x.mktEst) x.mktV = 0; n++; } localStorage.setItem("pp_price_retry2", "1"); if (n) { store(); fillPrices(); } } } catch {}
 // Price Plot opens on the Portfolio tab (the first one)
 { const b = $("tb").querySelector('[data-t="pf"]'); if (b && tab !== "pf") b.click(); }
