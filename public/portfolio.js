@@ -267,8 +267,8 @@ function rowHTML(x) {
 function costField(x) {
   const mk = x.mkt > 0 ? x.mkt : null, pc = mk && x.cost > 0 ? String(Math.round((x.cost / mk) * 1000) / 10) : "";
   return `<div class="pe-cl"><div class="pe-lh"><label for="pe-cost">Paid each ($)</label>
-    <span class="pe-pct" title="${mk ? "Percent of the market price, " + money(mk) : "No market price yet"}"><input name="costPct" type="number" min="0" max="999" step="0.5" inputmode="decimal" aria-label="Paid as a percent of the market price" data-mk="${mk ?? ""}" value="${pc}" ${mk ? "" : "disabled placeholder=\"–\""}>%</span></div>
-    <input id="pe-cost" name="cost" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(x.cost || "")}"></div>`;
+    <span class="pe-pct" title="${mk ? "Percent of the market price, " + money(mk) : "No market price yet"}"><input name="costPct" type="number" min="0" step="any" inputmode="decimal" aria-label="Paid as a percent of the market price" data-mk="${mk ?? ""}" value="${pc}" ${mk ? "" : "disabled placeholder=\"–\""}>%</span></div>
+    <input id="pe-cost" name="cost" type="number" min="0" step="any" inputmode="decimal" value="${esc(x.cost || "")}"></div>`;
 }
 document.addEventListener("input", (e) => {
   const t = e.target, fm = t.closest && t.closest("form.pe"); if (!fm || (t.name !== "cost" && t.name !== "costPct")) return;
@@ -283,7 +283,7 @@ function form(x) {
   <label>Condition<select name="cond">${CONDS.map((c) => `<option ${c === (x.cond || "Near Mint") ? "selected" : ""}>${c}</option>`).join("")}</select></label>
   ${f("grade", "Grade (blank if raw)", isGraded(x) ? x.grade : "", "text", 'placeholder="e.g. PSA 10"')}
   ${f("qty", "Quantity", x.qty ?? 1, "number", 'min="0" step="1" inputmode="numeric"')}${costField(x)}
-  ${f("ovr", "Your price each ($)", x.ovr || "", "number", `min="0" step="0.01" inputmode="decimal" placeholder="${x.mkt != null ? "Market " + money(x.mkt) : "Value per card"}"`)}
+  ${f("ovr", "Your price each ($)", x.ovr || "", "number", `min="0" step="any" inputmode="decimal" placeholder="${x.mkt != null ? "Market " + money(x.mkt) : "Value per card"}"`)}
   ${pfField(x.pf || (view !== "all" && view !== "watch" ? view : ""), pfs)}
   ${f("notes", "Notes", x.notes)}</div>
   <div class="bar"><button class="pill on" type="submit">Save</button><button class="pill" type="button" data-cx="1">Cancel</button>${x.id ? `<button class="pill dl" type="button" data-del="${x.id}">Delete</button>` : ""}</div>
