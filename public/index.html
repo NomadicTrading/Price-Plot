@@ -236,6 +236,7 @@ label.pill{display:inline-block}
 .sq-camlast{justify-self:end;position:relative;width:52px;height:68px;border-radius:8px;border:2px solid #fff;background:rgba(0,0,0,.45);padding:0;overflow:visible;cursor:pointer;visibility:hidden}.sq-camlast.on{visibility:visible}
 .sq-camlast img{width:100%;height:100%;object-fit:cover;border-radius:6px}.sq-camlast i{position:absolute;top:-8px;right:-8px;font-style:normal;font-size:12px;font-weight:700;background:var(--blue);color:#fff;border-radius:999px;min-width:22px;height:22px;line-height:22px;text-align:center;padding:0 4px}
 .mg{max-width:460px;max-height:calc(100dvh - 32px)}.mg-s{margin:10px 0 2px;font-size:14px}.mg-l{margin:2px 0 0;padding-left:18px;font-size:13px;color:var(--mut)}.mg-l li{margin:2px 0}.mg-p{margin:8px 0;padding:8px 10px;border-radius:10px;background:var(--soft);font-size:13.5px}.mg-p select{margin-top:6px;width:100%;font:inherit;font-size:14px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:6px;min-height:36px}
+.mg-more{margin:0 0 0 18px;font-size:13px}.mg-more>summary{cursor:pointer;color:var(--link);font-weight:600;padding:3px 0;list-style:none}.mg-more>summary::-webkit-details-marker{display:none}.mg-more[open]>summary{color:var(--mut)}.mg-more>.mg-l{margin:0;padding-left:0}
 .mg-c{display:flex;gap:8px;align-items:flex-start;margin:8px 0 0;font-size:13.5px}.mg-c input{width:18px;height:18px;flex:none;margin-top:1px}
 </style></head><body>
 <header><div class="wrap hd"><a class="brand" href="/" aria-label="Price Plot home"><img src="/brand/icon-small.svg" width="36" height="36" alt=""><span>Price<span class="pp-dot">·</span>Plot</span></a><div class="seg thm" id="thm" role="group" aria-label="Light or dark mode"><button type="button" data-th="light">Light</button><button type="button" data-th="dark">Dark</button></div>
@@ -948,5 +949,5 @@ $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
-<script src="/portfolio.js?v=69"></script>
+<script src="/portfolio.js?v=70"></script>
 </body></html>

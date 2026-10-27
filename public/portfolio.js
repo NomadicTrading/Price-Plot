@@ -158,7 +158,9 @@ function planMerge(incoming, scopePfs, collectrPfs, links) {
 function mergeReview(make, source) {
   return new Promise((done) => {
     const links = new Map(); let rmOnly = false, plan = make(links);
-    const li = (a, n = 8) => a.length ? `<ul class="mg-l">${a.slice(0, n).map((t) => `<li>${esc(t)}</li>`).join("")}${a.length > n ? `<li class="mu">…and ${a.length - n} more</li>` : ""}</ul>` : "";
+    // a list showing its first few, with "…and N more" opening the rest (and staying open when the review recounts)
+    const openLists = new Set();
+    const li = (a, n = 8, k = "") => a.length ? `<ul class="mg-l">${a.slice(0, n).map((t) => `<li>${esc(t)}</li>`).join("")}</ul>${a.length > n ? `<details class="mg-more" data-mgk="${k}"${openLists.has(k) ? " open" : ""}><summary>…and ${a.length - n} more</summary><ul class="mg-l">${a.slice(n).map((t) => `<li>${esc(t)}</li>`).join("")}</ul></details>` : ""}` : "";
     const desc = (y) => [y.name + (y.num ? " " + y.num : ""), y.set, isGraded(y) ? shortGrade(y.grade) : COND_CODE[y.cond] || y.cond, y.var, "×" + y.qty, y.cost > 0 ? "paid " + money(y.cost) : "", y.pf].filter(Boolean).join(" · ");
     const ov = document.createElement("div"); ov.className = "ppm-ov";
     const draw = () => {
@@ -179,17 +181,18 @@ function mergeReview(make, source) {
       ov.innerHTML = `<div class="ppm mg" role="dialog" aria-modal="true" aria-labelledby="mg-t"><h3 id="mg-t">Merge ${esc(source)} into Price Plot</h3>
       <p class="mu" style="margin:0 0 8px">Nothing changes until you tap Merge, and you can undo it afterward.</p>
       <div class="mg-s"><b>${plan.same.length}</b> ${plan.same.length === 1 ? "card already matches" : "cards already match"} (no change)</div>
-      ${plan.up.length ? `<div class="mg-s"><b>${plan.up.length}</b> with more copies in Collectr</div>${li(plan.up)}` : ""}
-      ${plan.down.length ? `<div class="mg-s"><b>${plan.down.length}</b> with fewer copies in Collectr (copies without a cost are removed first)</div>${li(plan.down)}` : ""}
-      ${plainNew.length + ask.length ? `<div class="mg-s"><b>${plainNew.length + ask.length}</b> new card${plainNew.length + ask.length === 1 ? "" : "s"}</div>${li(plainNew.map((k) => plan.added[k]).map((x) => `${x.name}${x.num ? " " + x.num : ""}${x.qty > 1 ? " ×" + x.qty : ""}`), 5)}` : ""}
+      ${plan.up.length ? `<div class="mg-s"><b>${plan.up.length}</b> with more copies in Collectr</div>${li(plan.up, 8, "up")}` : ""}
+      ${plan.down.length ? `<div class="mg-s"><b>${plan.down.length}</b> with fewer copies in Collectr (copies without a cost are removed first)</div>${li(plan.down, 8, "down")}` : ""}
+      ${plainNew.length + ask.length ? `<div class="mg-s"><b>${plainNew.length + ask.length}</b> new card${plainNew.length + ask.length === 1 ? "" : "s"}</div>${li(plainNew.map((k) => plan.added[k]).map((x) => `${x.name}${x.num ? " " + x.num : ""}${x.qty > 1 ? " ×" + x.qty : ""}`), 5, "new")}` : ""}
       ${pick}
       ${sold}${zIgnored ? `<div class="mg-s mu" style="font-size:13px">${zIgnored} other card${zIgnored === 1 ? " is" : "s are"} at 0 in Collectr and not in Price Plot, so nothing changes for ${zIgnored === 1 ? "it" : "them"}.</div>` : ""}
       <div class="mg-s">What you paid is kept on <b>${plan.costKept}</b> entr${plan.costKept === 1 ? "y" : "ies"}${plan.costFilled ? `; Collectr's cost fills in <b>${plan.costFilled}</b> that had none` : ""}.</div>
-      ${plan.onlyPP.length ? `<div class="mg-s"><b>${plan.onlyPP.length}</b> card${plan.onlyPP.length === 1 ? " is" : "s are"} in Price Plot but not in this Collectr import</div>${li(plan.onlyPP.map((x) => `${x.name}${x.num ? " " + x.num : ""} ×${x.qty}${x.cost > 0 ? " · paid " + money(x.cost) : ""}${x.pf ? " · " + x.pf : ""}`), 6)}
+      ${plan.onlyPP.length ? `<div class="mg-s"><b>${plan.onlyPP.length}</b> card${plan.onlyPP.length === 1 ? " is" : "s are"} in Price Plot but not in this Collectr import</div>${li(plan.onlyPP.map((x) => `${x.name}${x.num ? " " + x.num : ""} ×${x.qty}${x.cost > 0 ? " · paid " + money(x.cost) : ""}${x.pf ? " · " + x.pf : ""}`), 6, "pp")}
         <label class="mg-c"><input type="checkbox" id="mg-rm" ${rmOnly ? "checked" : ""}> Remove these from Price Plot (leave unticked to keep them)</label>` : ""}
       <div class="ppm-b"><button type="button" class="ppm-x primary" data-mg="go">Merge</button><button type="button" class="ppm-x plain" data-mg="no">Cancel</button></div></div>`;
     };
     const close = (v) => { removeEventListener("keydown", key); ov.remove(); done(v); }, key = (e) => { if (e.key === "Escape") close(null); };
+    ov.addEventListener("toggle", (e) => { const d = e.target; if (d.dataset && d.dataset.mgk != null) { if (d.open) openLists.add(d.dataset.mgk); else openLists.delete(d.dataset.mgk); } }, true);
     ov.addEventListener("click", (e) => { const b = e.target.closest("[data-mg]"); if (b) close(b.dataset.mg === "go" ? { plan, removeOnly: rmOnly } : null); else if (e.target === ov) close(null); });
     ov.addEventListener("change", (e) => {
       const t = e.target;
