@@ -311,6 +311,17 @@ function form(x) {
   <div class="bar"><button class="pill on" type="submit">Save</button><button class="pill" type="button" data-cx="1">Cancel</button>${x.id ? `<button class="pill dl" type="button" data-del="${x.id}">Delete</button>` : ""}</div>
   <div class="sm">Leave “Your price” blank to use the market price (TCGplayer's; Collectr's for graded cards). The % beside Paid each is of that market price.</div></form>`;
 }
+// the card list under the search box: its count, the rows shown so far and the Show more button
+function listHTML(list) {
+  return `<div class="sm">${list.length.toLocaleString()} ${list.length === 1 ? "entry" : "entries"}${findTxt.trim() ? " match" : ""}</div>
+  <div id="pfl2">${list.slice(0, shown).map(rowHTML).join("")}</div>
+  ${list.length > shown ? `<button class="pill" type="button" data-pa="more" style="margin-top:10px">Show ${Math.min(PAGE, list.length - shown)} more</button>` : ""}`;
+}
+// redraw only the list, leaving the search box (and everything above it) untouched, so typing doesn't move the page
+function renderList() {
+  const box = $("pflist"); if (!box || detail || editing) return render();
+  const list = filtered(); box.innerHTML = listHTML(list); fetchImgs(list.slice(0, shown)); watchMore();
+}
 function render() {
   const box = $("pf"); if (!box) return;
   if (detail) { const x = detailItem(); if (x) return renderDetail(box, x); detail = null; }
@@ -331,9 +342,7 @@ function render() {
   <div class="tk" id="pfv">${[["all", "All"], ...pfs.map((p) => [p, p]), ...(w ? [["watch", "Watchlist (" + w + ")"]] : [])].map(([k, l]) => `<button class="pill" type="button" data-pv="${esc(k)}" aria-pressed="${k === view}">${esc(l)}${k !== "all" && k !== "watch" ? ` <span class="mu">${money(totals(o.filter((x) => (x.pf || "Unsorted") === k)).value)}</span>` : ""}</button>`).join("")}</div>
   <div class="bar"><input id="pfq" type="search" placeholder="Filter by name, set, number…" value="${esc(findTxt)}" autocomplete="off">
    <select id="pfo" aria-label="Sort">${[["value", "Value: high to low"], ["low", "Value: low to high"], ["unit", "Price per card"], ["gain", "Gain"], ["name", "Name"], ["added", "Recently added"]].map(([k, l]) => `<option value="${k}" ${k === sortBy ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-  <div class="sm">${list.length.toLocaleString()} ${list.length === 1 ? "entry" : "entries"}${findTxt.trim() ? " match" : ""}</div>
-  <div id="pfl2">${list.slice(0, shown).map(rowHTML).join("")}</div>
-  ${list.length > shown ? `<button class="pill" type="button" data-pa="more" style="margin-top:10px">Show ${Math.min(PAGE, list.length - shown)} more</button>` : ""}`
+  <div id="pflist">${listHTML(list)}</div>`
   : `<p class="sm">Your portfolio is empty. Import a Collectr export (in Collectr: Portfolio → ⋯ → Export, then open the emailed file here), or add cards one at a time. Everything stays saved on this device.</p>`}`;
   if (P.items.length) fetchImgs(list.slice(0, shown));
   watchMore();
@@ -346,7 +355,7 @@ function watchMore() {
     if (!es.some((e) => e.isIntersecting)) return;
     moreObs.disconnect();
     if (detail || editing) return;
-    shown += PAGE; render();
+    shown += PAGE; renderList();
   }, { rootMargin: "0px 0px 600px 0px" });
   moreObs.disconnect();
   const b = document.querySelector('#pf [data-pa="more"]'); if (b && !detail && !editing) moreObs.observe(b);
@@ -1521,9 +1530,12 @@ document.addEventListener("change", (e) => {
   t.value = t.type === "range" ? Math.min(100, Math.round(sqPctOf(it))) : sqPctTxt(sqPctOf(it)); sqSave();
 });
 let qt; document.addEventListener("input", (e) => { if (e.target.id !== "pfq") return; clearTimeout(qt);
-  qt = setTimeout(() => { const t = $("pfq") || e.target, at = t.selectionStart, prev = findTxt.trim(); findTxt = t.value;
-    if (findTxt.trim() === prev) return; // only spaces changed: nothing to filter, and the box is left alone
-    shown = PAGE; render(); const q = $("pfq"); if (q) { q.focus(); const c = Math.min(at ?? q.value.length, q.value.length); q.setSelectionRange(c, c); } }, 200); });
+  qt = setTimeout(() => { const prev = findTxt.trim(); findTxt = e.target.value;
+    if (findTxt.trim() === prev) return; // only spaces changed: nothing to filter
+    shown = PAGE; renderList(); }, 200); });
+// while the search box is in use, the list keeps at least a screen of height, so fewer matches don't shrink the page under it
+document.addEventListener("focusin", (e) => { if (e.target.id === "pfq") { const b = $("pflist"); if (b) b.style.minHeight = innerHeight + "px"; } });
+document.addEventListener("focusout", (e) => { if (e.target.id === "pfq") { const b = $("pflist"); if (b) b.style.minHeight = ""; } });
 document.addEventListener("submit", (e) => { if (e.target.classList?.contains("pe")) { e.preventDefault(); saveForm(e.target); } });
 render();
 setTimeout(fillPrices, 1500);
