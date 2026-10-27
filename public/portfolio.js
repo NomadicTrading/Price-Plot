@@ -257,7 +257,7 @@ function rowHTML(x) {
   if (editing === x.id) return `<div class="pr" data-id="${x.id}">${form(x)}</div>`;
   return `<div class="pr" data-id="${x.id}"><button class="prx" type="button" data-trash="${x.id}" tabindex="-1" aria-label="Remove ${esc(x.name)}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></button><div class="prc">${thumb(x)}<div class="pm"><b>${esc(x.name)}</b> <span class="cg ${g ? "gr" : ""}">${esc(g ? shortGrade(x.grade) : x.cond || "")}</span>
   <div class="mu">${meta}${view === "all" && x.pf ? ` · <i>${esc(x.pf)}</i>` : ""}</div>
-  <div class="mu">${view === "watch" ? "" : x.qty + " × "}${x.mkt == null && !(x.ovr > 0) ? "—" : money(unit(x))}${x.ovr > 0 ? ` <span title="Your own price, set in Collectr or here">(your price)</span>` : x.mkt == null ? (pfq.includes(x) || pfRunning ? " (looking up price…)" : " (no price)") : x.mktSrc === "collectr" ? ` <span title="Japanese card: price from Collectr">(Collectr)</span>` : x.mktEst ? ` <span title="No recent ${esc(x.cond || "")} sales on TCGplayer, so this is the Near Mint price with the usual discount for this condition">(est.)</span>` : ""}${gain != null ? ` · <span style="color:var(${gain >= 0 ? "--up" : "--dn"})">${gain >= 0 ? "+" : "−"}${money(Math.abs(gain))}</span> vs. ${money(x.cost)} paid` : ""}</div>
+  <div class="mu">${view === "watch" ? "" : x.qty + " × "}${x.mkt == null && !(x.ovr > 0) ? "—" : money(unit(x))}${x.ovr > 0 ? ` <span title="Your own price, set in Collectr or here">(your price)</span>` : x.mkt == null ? (pfq.includes(x) || pfRunning ? " (looking up price…)" : " (no price)") : x.mktSrc === "collectr" ? ` <span title="Japanese card: price from Collectr">(Collectr)</span>` : x.mktV !== 2 && !isGraded(x) ? ` <span title="Collectr's price until TCGplayer's is found">(Collectr)</span>` : x.mktEst ? ` <span title="No recent ${esc(x.cond || "")} sales on TCGplayer, so this is the Near Mint price with the usual discount for this condition">(est.)</span>` : ""}${gain != null ? ` · <span style="color:var(${gain >= 0 ? "--up" : "--dn"})">${gain >= 0 ? "+" : "−"}${money(Math.abs(gain))}</span> vs. ${money(x.cost)} paid` : ""}</div>
   ${x.notes ? `<div class="mu">${esc(x.notes)}</div>` : ""}</div>
   <div class="pv"><b>${x.mkt == null && !(x.ovr > 0) && x.qty ? "—" : money(line)}</b><div><button class="pill sm2" type="button" data-cmp="${x.id}">Comp</button><button class="pill sm2" type="button" data-ed="${x.id}">Edit</button></div></div></div></div>`;
 }
@@ -561,7 +561,7 @@ window.ppAddFromTcg = async (c, print, conds) => {
   }
   const tid = c.tcgId || (String(c.tcgUrl || "").match(/product\/(\d+)/) || [])[1] || null;
   const x = { id: uid(), pf, cat: "Pokemon", set: c.set || "", name, num: c.number || "", rarity: c.rarity || "", var: print || "", grade: "Ungraded", cond, cost: 0, qty: 1,
-    mkt: v && v.price != null ? +v.price : null, ovr: 0, watch: false, added: today(), notes: "", tcgId: tid,
+    mkt: v && v.price != null ? +v.price : null, ...(v && v.price != null ? { mktV: 2, pT: Date.now() } : {}), ovr: 0, watch: false, added: today(), notes: "", tcgId: tid,
     img: tid ? `https://tcgplayer-cdn.tcgplayer.com/product/${tid}_200w.jpg` : undefined, big: tid ? `https://tcgplayer-cdn.tcgplayer.com/product/${tid}_400w.jpg` : undefined, imgT: tid ? Date.now() : 0 };
   const same = P.items.find((y) => y.qty > 0 && keyOf(y) === keyOf(x));
   if (same) { same.qty += 1; if (x.mkt != null) same.mkt = x.mkt; } else P.items.push(x);
@@ -610,7 +610,10 @@ let pfq = [], pfRunning = 0, pfTotal = 0, pfDone = 0;
 // search (older versions, which ignored condition and printing) are looked up again. Prices from a Collectr file and
 // your own prices are left alone (the TCGplayer price is still fetched behind them, for when they are removed);
 // graded cards have no TCGplayer price.
-const needsPrice = (x, now) => x.qty > 0 && !isGraded(x) && x.mktSrc !== "collectr" && x.mktV !== 2 && (x.mkt == null || x.pT) && !(x.pTry && now - x.pTry < 3 * 864e5);
+// every raw card gets TCGplayer's price for its condition and printing, including ones that came in with Collectr's
+// price (that one stays until TCGplayer's arrives). Graded and Japanese cards keep Collectr's. A failed lookup is
+// tried again a day later.
+const needsPrice = (x, now) => x.qty > 0 && !isGraded(x) && x.mktSrc !== "collectr" && x.mktV !== 2 && !(x.pTry && now - x.pTry < 864e5);
 function fillPrices() {
   const now = Date.now(), want = P.items.filter((x) => needsPrice(x, now) && !pfq.includes(x));
   if (!want.length) return; pfq.push(...want); pfTotal += want.length; pricePump();
