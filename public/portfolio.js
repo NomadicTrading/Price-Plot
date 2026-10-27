@@ -1078,7 +1078,7 @@ function sqSalesHTML(it, c) {
     // only the card's selected condition
     const list = samePr.filter((x) => tcCond(x.cond) === want).slice(0, 10), note = "";
     const day = (t) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", ...(Date.now() - Date.parse(t) > 300 * 864e5 ? { year: "numeric" } : {}) });
-    body = list.length ? `${note ? `<div class="mu sq-lsn">${esc(note)}</div>` : ""}<ul class="sq-ls">${list.map((x) => `<li><span>${day(x.date)}</span><span class="mu">${note ? esc(COND_CODE[tcCond(x.cond)] || tcCond(x.cond) || "") : ""}${x.qty > 1 ? " ×" + x.qty : ""}</span><b>${money(x.price)}</b></li>`).join("")}</ul>`
+    body = list.length ? `${note ? `<div class="mu sq-lsn">${esc(note)}</div>` : ""}<ul class="sq-ls">${list.map((x) => `<li><span>${day(x.date)}</span><span class="mu">${esc(COND_CODE[tcCond(x.cond)] || tcCond(x.cond) || "")}${x.qty > 1 ? " ×" + x.qty : ""}</span><b>${money(x.price)}</b></li>`).join("")}</ul>`
       : `<div class="mu">No recent ${esc(COND_CODE[want] || want)} sales on TCGplayer for this printing.</div>`;
   }
   return `<details class="sq-lsd" data-qls="${it.id}"${it.lsOpen ? " open" : ""}><summary>Last sold<i class="sq-chev" aria-hidden="true"></i></summary>${it.lsOpen ? body : ""}</details>`;
