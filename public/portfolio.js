@@ -279,7 +279,7 @@ document.addEventListener("input", (e) => {
 function form(x) {
   const f = (k, l, v, t = "text", extra = "") => `<label>${l}<input name="${k}" type="${t}" value="${esc(v ?? "")}" ${extra}></label>`;
   const pfs = [...new Set(P.items.map((y) => y.pf).filter(Boolean))];
-  return `<form class="pe" data-fid="${x.id || ""}"><div class="pg">${f("name", "Card name", x.name, "text", "required")}${f("set", "Set", x.set)}${f("num", "Number", x.num)}${f("var", "Printing", x.var)}
+  return `<form class="pe" data-fid="${x.id || ""}"><button type="button" class="pe-x" data-cx="1" aria-label="Close without saving">✕</button><div class="pg">${f("name", "Card name", x.name, "text", "required")}${f("set", "Set", x.set)}${f("num", "Number", x.num)}${f("var", "Printing", x.var)}
   <label>Condition<select name="cond">${CONDS.map((c) => `<option ${c === (x.cond || "Near Mint") ? "selected" : ""}>${c}</option>`).join("")}</select></label>
   ${f("grade", "Grade (blank if raw)", isGraded(x) ? x.grade : "", "text", 'placeholder="e.g. PSA 10"')}
   ${f("qty", "Quantity", x.qty ?? 1, "number", 'min="0" step="1" inputmode="numeric"')}${costField(x)}
