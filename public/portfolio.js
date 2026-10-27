@@ -263,18 +263,30 @@ function rowHTML(x) {
   ${x.notes ? `<div class="mu">${esc(x.notes)}</div>` : ""}</div>
   <div class="pv"><b>${x.mkt == null && !(x.ovr > 0) && x.qty ? "—" : money(line)}</b><div><button class="pill sm2" type="button" data-cmp="${x.id}">Comp</button><button class="pill sm2" type="button" data-ed="${x.id}">Edit</button></div></div></div></div>`;
 }
+// "Paid each" with a small % box beside it: the % is of the card's market price. Typing either one fills in the other.
+function costField(x) {
+  const mk = x.mkt > 0 ? x.mkt : null, pc = mk && x.cost > 0 ? String(Math.round((x.cost / mk) * 1000) / 10) : "";
+  return `<label>Paid each ($)<span class="pe-cost"><input name="cost" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(x.cost || "")}">
+    <span class="pe-pct" title="${mk ? "Percent of the market price, " + money(mk) : "No market price yet"}"><input name="costPct" type="number" min="0" max="999" step="0.5" inputmode="decimal" aria-label="Paid as a percent of the market price" data-mk="${mk ?? ""}" value="${pc}" ${mk ? "" : "disabled placeholder=\"–\""}>%</span></span></label>`;
+}
+document.addEventListener("input", (e) => {
+  const t = e.target, fm = t.closest && t.closest("form.pe"); if (!fm || (t.name !== "cost" && t.name !== "costPct")) return;
+  const c = fm.querySelector('[name="cost"]'), p = fm.querySelector('[name="costPct"]'), mk = +p.dataset.mk; if (!(mk > 0)) return;
+  if (t.name === "costPct") c.value = t.value === "" || !Number.isFinite(+t.value) ? "" : (Math.round(mk * +t.value) / 100).toFixed(2);
+  else p.value = t.value === "" || !Number.isFinite(+t.value) ? "" : String(Math.round((+t.value / mk) * 1000) / 10);
+});
 function form(x) {
   const f = (k, l, v, t = "text", extra = "") => `<label>${l}<input name="${k}" type="${t}" value="${esc(v ?? "")}" ${extra}></label>`;
   const pfs = [...new Set(P.items.map((y) => y.pf).filter(Boolean))];
   return `<form class="pe" data-fid="${x.id || ""}"><div class="pg">${f("name", "Card name", x.name, "text", "required")}${f("set", "Set", x.set)}${f("num", "Number", x.num)}${f("var", "Printing", x.var)}
   <label>Condition<select name="cond">${CONDS.map((c) => `<option ${c === (x.cond || "Near Mint") ? "selected" : ""}>${c}</option>`).join("")}</select></label>
   ${f("grade", "Grade (blank if raw)", isGraded(x) ? x.grade : "", "text", 'placeholder="e.g. PSA 10"')}
-  ${f("qty", "Quantity", x.qty ?? 1, "number", 'min="0" step="1" inputmode="numeric"')}${f("cost", "Paid each ($)", x.cost || "", "number", 'min="0" step="0.01" inputmode="decimal"')}
+  ${f("qty", "Quantity", x.qty ?? 1, "number", 'min="0" step="1" inputmode="numeric"')}${costField(x)}
   ${f("ovr", "Your price each ($)", x.ovr || "", "number", `min="0" step="0.01" inputmode="decimal" placeholder="${x.mkt != null ? "Market " + money(x.mkt) : "Value per card"}"`)}
   ${pfField(x.pf || (view !== "all" && view !== "watch" ? view : ""), pfs)}
   ${f("notes", "Notes", x.notes)}</div>
   <div class="bar"><button class="pill on" type="submit">Save</button><button class="pill" type="button" data-cx="1">Cancel</button>${x.id ? `<button class="pill dl" type="button" data-del="${x.id}">Delete</button>` : ""}</div>
-  <div class="sm">Leave “Your price” blank to use the market price from your last import.</div></form>`;
+  <div class="sm">Leave “Your price” blank to use the market price (TCGplayer's; Collectr's for graded cards). The % beside Paid each is of that market price.</div></form>`;
 }
 function render() {
   const box = $("pf"); if (!box) return;
