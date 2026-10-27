@@ -73,15 +73,113 @@ async function onFile(file) {
   status(""); render();
   $("pfi").innerHTML = `<div><b>Found ${o.reduce((a, x) => a + x.qty, 0).toLocaleString()} cards</b> <span class="mu">(${o.length.toLocaleString()} entries${pfs.size ? " in " + pfs.size + " portfolio" + (pfs.size === 1 ? "" : "s") : ""}${w ? ", " + w + " on your watchlist" : ""}) worth ${money(totals(o).value)}${pending.asOf ? " as of " + pending.asOf : ""}.</span></div>
   <div class="bar">${P.items.length ? `<button class="pill" type="button" data-pa="merge">Add to my portfolio</button><button class="pill" type="button" data-pa="replace">Replace my portfolio</button>` : `<button class="pill on" type="button" data-pa="replace">Import</button>`}<button class="pill" type="button" data-pa="cancel">Cancel</button></div>
-  ${P.items.length ? `<div class="sm">“Add” updates cards you already have and adds new ones. “Replace” clears your current portfolio first.</div>` : ""}`;
+  ${P.items.length ? `<div class="sm">“Add” merges: quantities follow Collectr, what you paid in Price Plot is kept, and you see every change before it happens. “Replace” clears your current portfolio first.</div>` : ""}`;
   $("pfi").hidden = false;
 }
-function applyImport(how) {
+
+/* ---------- merging a Collectr import into the portfolio ----------
+   Collectr is the up-to-date count of what you own; Price Plot is where what you paid is kept.
+   Cards are matched by the card itself (name without Collectr's notes, card number, set, printing, grade,
+   condition), across portfolio names, so a card scanned into Price Plot meets its Collectr entry.
+   - quantity follows Collectr
+   - Price Plot's cost is kept; Collectr's cost is used only where Price Plot has none
+   - more copies in Collectr: added (to a copy without a cost, or as a new entry with Collectr's cost)
+   - fewer copies in Collectr: copies without a cost go first, then the oldest paid-for copies
+   - cards only in Price Plot are kept unless you choose to remove them */
+const mName = (s) => String(s || "").toLowerCase().replace(/\([^)]*\)/g, " ").replace(/\s+-\s+[\w/]+$/, " ").replace(/[^a-z0-9]+/g, " ").trim();
+const mNum = (s) => { const t = String(s || "").toLowerCase().split("/")[0].replace(/[^a-z0-9]/g, ""); return /^\d+$/.test(t) ? String(+t) : t.replace(/^([a-z]+)0+(\d)/, "$1$2"); };
+const SET_SKIP = new Set(["set", "the", "pokemon", "tcg", "and", "of", "series", "expansion", "promos", "promo"]);
+const mSetWords = (s) => String(s || "").toLowerCase().replace(/\b(sv|swsh|sm|xy|bw|me)\d+[a-z]?\b/g, " ").split(/[^a-z0-9]+/).filter((w) => w && !SET_SKIP.has(w));
+const mVar = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+const mGrade = (x) => (isGraded(x) ? shortGrade(x.grade).toLowerCase() : "");
+const mCond = (x) => (isGraded(x) ? "" : String(x.cond || "Near Mint").toLowerCase());
+const mBase = (x) => [x.watch && !x.qty ? "w" : "o", mName(x.name), mNum(x.num), mGrade(x), mCond(x)].join("|");
+function mSetFit(a, b) {
+  if (a.tcgId && b.tcgId) return String(a.tcgId) === String(b.tcgId) ? 9 : -1;
+  const wa = mSetWords(a.set), wb = mSetWords(b.set); if (!wa.length || !wb.length) return 1;
+  const hit = wa.filter((w) => wb.includes(w)).length; return hit ? 2 + hit : -1;
+}
+const mVarFit = (a, b) => { const va = mVar(a.var), vb = mVar(b.var); return !va || !vb ? 1 : va === vb ? 2 : -1; };
+const byAdded = (a, b) => String(a.added || "").localeCompare(String(b.added || ""));
+// collectrPfs: every Collectr portfolio name. Copies in a Price Plot-only portfolio (like one made while scanning) count
+// toward the matching Collectr card; copies in another Collectr portfolio belong to that portfolio's own row.
+function planMerge(incoming, scopePfs, collectrPfs) {
+  const cPfs = new Set([...(collectrPfs || []), ...incoming.map((r) => String(r.pf || ""))]);
+  const items = P.items.map((x) => ({ ...x })), used = new Set(), plan = { same: [], up: [], down: [], added: [], costFilled: 0, costKept: 0 };
+  const groups = new Map(); items.forEach((x, i) => { const k = mBase(x); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(i); });
+  for (const r of incoming) {
+    const cand = (groups.get(mBase(r)) || []).filter((i) => !used.has(i) && mVarFit(items[i], r) > 0 && mSetFit(items[i], r) > 0);
+    // this Collectr portfolio's copies, plus copies in Price Plot-only portfolios
+    const mine = cand.filter((i) => { const pf = String(items[i].pf || ""); return pf === String(r.pf || "") || !cPfs.has(pf); });
+    if (!mine.length) { const x = { ...r, id: uid() }; items.push(x); plan.added.push(x); continue; }
+    mine.forEach((i) => used.add(i));
+    const es = mine.map((i) => items[i]), have = es.reduce((a, x) => a + (x.qty || 0), 0), want = r.qty || 0, label = r.name;
+    for (const e of es) {
+      if (!e.tcgId && r.tcgId) e.tcgId = r.tcgId; if (!e.img && r.img) { e.img = r.img; e.big = r.big; }
+      if (r.mktSrc === "collectr") { e.mkt = r.mkt; e.mktSrc = "collectr"; e.mktV = 0; }
+      if (r.watch) e.watch = true;
+      if (r.cost > 0 && !(e.cost > 0) && e.qty > 0) { e.cost = r.cost; plan.costFilled++; } else if (e.cost > 0) plan.costKept++;
+    }
+    if (want === have) { plan.same.push(label); continue; }
+    if (want > have) {
+      const extra = want - have, free = es.find((e) => !(e.cost > 0));
+      if (free && !(r.cost > 0 && free.qty > 0)) { free.qty += extra; if (r.cost > 0) free.cost = r.cost; }
+      else { const x = { ...es[0], id: uid(), qty: extra, cost: r.cost > 0 ? r.cost : 0, added: r.added || today() }; delete x.pT; items.push(x); }
+      plan.up.push(`${label} +${extra}`);
+    } else {
+      let cut = have - want; const order = [...es.filter((e) => !(e.cost > 0)).sort(byAdded), ...es.filter((e) => e.cost > 0).sort(byAdded)], paid = [];
+      for (const e of order) { if (!cut) break; const k = Math.min(cut, e.qty); e.qty -= k; cut -= k; if (e.cost > 0) paid.push(`${k} at ${money(e.cost)}`); }
+      plan.down.push(`${label} −${have - want}${paid.length ? " (incl. " + paid.join(", ") + " paid)" : ""}`);
+    }
+  }
+  // cards only in Price Plot, in the portfolios this import covers
+  const inScope = (pf) => (scopePfs ? scopePfs.has(pf) : true) || !cPfs.has(pf);
+  const onlyPP = items.map((x, i) => [x, i]).filter(([x, i]) => !used.has(i) && x.qty > 0 && !plan.added.includes(x) && inScope(String(x.pf || "")));
+  plan.onlyPP = onlyPP.map(([x]) => x);
+  plan.items = items.filter((x) => x.qty > 0 || x.watch);
+  return plan;
+}
+// the review window: what will change, before anything does
+function mergeReview(plan, source) {
+  return new Promise((done) => {
+    const li = (a, n = 8) => a.length ? `<ul class="mg-l">${a.slice(0, n).map((t) => `<li>${esc(t)}</li>`).join("")}${a.length > n ? `<li class="mu">…and ${a.length - n} more</li>` : ""}</ul>` : "";
+    const ov = document.createElement("div"); ov.className = "ppm-ov";
+    ov.innerHTML = `<div class="ppm mg" role="dialog" aria-modal="true" aria-labelledby="mg-t"><h3 id="mg-t">Merge ${esc(source)} into Price Plot</h3>
+      <p class="mu" style="margin:0 0 8px">Nothing changes until you tap Merge, and you can undo it afterward.</p>
+      <div class="mg-s"><b>${plan.same.length}</b> card${plan.same.length === 1 ? "" : "s"} already match (no change)</div>
+      ${plan.up.length ? `<div class="mg-s"><b>${plan.up.length}</b> with more copies in Collectr</div>${li(plan.up)}` : ""}
+      ${plan.down.length ? `<div class="mg-s"><b>${plan.down.length}</b> with fewer copies in Collectr (copies without a cost are removed first)</div>${li(plan.down)}` : ""}
+      ${plan.added.length ? `<div class="mg-s"><b>${plan.added.length}</b> new card${plan.added.length === 1 ? "" : "s"}</div>${li(plan.added.map((x) => `${x.name}${x.num ? " " + x.num : ""}${x.qty > 1 ? " ×" + x.qty : ""}`), 5)}` : ""}
+      <div class="mg-s">What you paid is kept on <b>${plan.costKept}</b> entr${plan.costKept === 1 ? "y" : "ies"}${plan.costFilled ? `; Collectr's cost fills in <b>${plan.costFilled}</b> that had none` : ""}.</div>
+      ${plan.onlyPP.length ? `<div class="mg-s"><b>${plan.onlyPP.length}</b> card${plan.onlyPP.length === 1 ? " is" : "s are"} in Price Plot but not in this Collectr import</div>${li(plan.onlyPP.map((x) => `${x.name}${x.num ? " " + x.num : ""} ×${x.qty}${x.cost > 0 ? " · paid " + money(x.cost) : ""}${x.pf ? " · " + x.pf : ""}`), 6)}
+        <label class="mg-c"><input type="checkbox" id="mg-rm"> Remove these from Price Plot (leave unticked to keep them)</label>` : ""}
+      <div class="ppm-b"><button type="button" class="ppm-x primary" data-mg="go">Merge</button><button type="button" class="ppm-x plain" data-mg="no">Cancel</button></div></div>`;
+    const close = (v) => { removeEventListener("keydown", key); ov.remove(); done(v); }, key = (e) => { if (e.key === "Escape") close(null); };
+    ov.addEventListener("click", (e) => { const b = e.target.closest("[data-mg]"); if (b) close(b.dataset.mg === "go" ? { removeOnly: !!(ov.querySelector("#mg-rm") || {}).checked } : null); else if (e.target === ov) close(null); });
+    addEventListener("keydown", key); document.body.appendChild(ov); ov.querySelector("[data-mg=go]").focus();
+  });
+}
+const UNDO_KEY = "pp_portfolio_undo";
+async function smartMerge(incoming, source, scopePfs, collectrPfs) {
+  const plan = planMerge(incoming, scopePfs, collectrPfs), ok = await mergeReview(plan, source); if (!ok) return false;
+  try { localStorage.setItem(UNDO_KEY, JSON.stringify({ at: Date.now(), source, P })); } catch {}
+  const drop = ok.removeOnly ? new Set(plan.onlyPP) : null;
+  P = { ...P, items: drop ? plan.items.filter((x) => !drop.has(x)) : plan.items };
+  return true;
+}
+function undoImport() {
+  let u = null; try { u = JSON.parse(localStorage.getItem(UNDO_KEY) || "null"); } catch {}
+  if (!u || !u.P || !Array.isArray(u.P.items)) return toast("Nothing to undo");
+  P = u.P; try { localStorage.removeItem(UNDO_KEY); } catch {} store(); snap(); render(); toast("Undid the last import");
+}
+const canUndo = () => { try { const u = JSON.parse(localStorage.getItem(UNDO_KEY) || "null"); return !!(u && Date.now() - u.at < 14 * 864e5); } catch { return false; } };
+async function applyImport(how) {
   if (!pending) return;
-  if (how === "replace") P.items = pending.items;
-  else { const at = new Map(P.items.map((x, i) => [keyOf(x), i])); for (const x of pending.items) { const k = keyOf(x); if (at.has(k)) { const o = P.items[at.get(k)]; P.items[at.get(k)] = { ...x, id: o.id, img: o.img, big: o.big, tcgId: o.tcgId, imgT: o.imgT }; } else { at.set(k, P.items.length); P.items.push(x); } } }
+  if (how === "replace") { try { localStorage.setItem(UNDO_KEY, JSON.stringify({ at: Date.now(), source: pending.file, P })); } catch {} P = { ...P, items: pending.items }; }
+  else if (!(await smartMerge(pending.items, pending.file || "Collectr file"))) return;
   P.asOf = pending.asOf || today(); P.source = pending.file; store(); snap(P.asOf);
-  status(`Imported ${pending.items.length.toLocaleString()} rows from ${pending.file}.`); pending = null; $("pfi").hidden = true; view = "all"; shown = PAGE; render();
+  status(`Imported ${pending.items.length.toLocaleString()} rows from ${pending.file}.`); pending = null; $("pfi").hidden = true; view = "all"; shown = PAGE; render(); fillPrices();
+  toast("Import done", { label: "Undo", run: undoImport });
 }
 
 /* ---------- drawing ---------- */
@@ -139,7 +237,7 @@ function render() {
    ${view !== "watch" && gl != null ? `<span style="color:var(${gl >= 0 ? "--up" : "--dn"});font-weight:600">${gl >= 0 ? "▲ +" : "▼ −"}${money(Math.abs(gl))} <span class="mu">on cards with a cost (${money(V.cost)} paid)</span></span>` : ""}</div>
    ${view !== "watch" ? `<div class="pst"><span><b>${V.n.toLocaleString()}</b> cards</span><span><b>${V.graded}</b> graded</span><span><b>${pfs.length}</b> portfolio${pfs.length === 1 ? "" : "s"}</span>${P.asOf ? `<span>Prices as of <b>${esc(P.asOf)}</b></span>` : ""}</div>` : ""}</div>
   <div class="bar"><label class="pill on" for="pff">Import Collectr file</label><button class="pill" type="button" data-pa="clink">From a Collectr link</button><input id="pff" type="file" accept=".csv,.xlsx,.xls,text/csv" hidden>
-   <button class="pill" type="button" data-pa="add">+ Add card</button>${P.items.length ? `<button class="pill" type="button" data-pa="export">Export CSV</button><button class="pill" type="button" data-pa="clear">Clear all</button>` : ""}</div>
+   <button class="pill" type="button" data-pa="add">+ Add card</button>${P.items.length ? `${canUndo() ? `<button class="pill" type="button" data-pa="undo">Undo last import</button>` : ""}<button class="pill" type="button" data-pa="export">Export CSV</button><button class="pill" type="button" data-pa="clear">Clear all</button>` : ""}</div>
   ${cimpPanel()}<div class="sm" id="pfs"></div><div id="pfi" class="pbx" hidden></div>
   ${editing === "new" ? `<div class="pbx">${form({ qty: 1 })}</div>` : ""}
   ${P.items.length ? `
@@ -580,10 +678,10 @@ async function cimpAction(a) {
     const only = cimp.raw && cimp.raw.portfolio;
     if (a === "replace" && P.items.length && !(await modal({ title: only ? `Replace ${only}?` : "Replace your whole portfolio?", text: only ? `Every card in ${esc(only)} in Price Plot is removed first, then these Collectr cards are added. Your other portfolios aren't touched.` : "Every card in Price Plot is removed first, then your Collectr cards are added.", buttons: [{ label: "Replace", value: true, kind: "danger" }, { label: "Cancel", value: false }] }))) return;
     const items = cimp.items;
-    if (a === "replace") P.items = only ? P.items.filter((x) => x.pf !== only).concat(items) : items;
-    else { const at = new Map(P.items.map((x, i) => [keyOf(x), i])); for (const x of items) { const k = keyOf(x); if (at.has(k)) { const o = P.items[at.get(k)]; o.qty = x.qty; if (x.cost) o.cost = x.cost; if (x.mktSrc === "collectr") { o.mkt = x.mkt; o.mktSrc = "collectr"; o.mktV = 0; } } else { at.set(k, P.items.length); P.items.push(x); } } }
+    if (a === "replace") { try { localStorage.setItem(UNDO_KEY, JSON.stringify({ at: Date.now(), source: "Collectr link", P })); } catch {} P = { ...P, items: only ? P.items.filter((x) => x.pf !== only).concat(items) : items }; }
+    else if (!(await smartMerge(items, only ? `Collectr's ${only}` : "the Collectr link", only ? new Set([only]) : null, new Set([only, ...((cimp.raw && cimp.raw.others) || [])].filter(Boolean))))) return;
     P.source = "Collectr link"; store(); cimp = null; view = "all"; shown = PAGE; render(); fillPrices();
-    toast(`Imported ${items.length.toLocaleString()} entries from Collectr`);
+    toast(`Imported ${items.length.toLocaleString()} entries from Collectr`, { label: "Undo", run: undoImport });
   }
 }
 // The iCloud link of the shared "Send to Price Plot" Shortcut. Empty until it has been built and shared once.
@@ -1254,6 +1352,7 @@ document.addEventListener("click", (e) => {
   else if (d.pa === "add") { editing = "new"; render(); }
   else if (d.pa === "more") { shown += PAGE; render(); }
   else if (d.pa === "export") exportCSV();
+  else if (d.pa === "undo") { modal({ title: "Undo the last import?", text: "Your portfolio goes back to how it was just before it. Changes you've made since then are undone too.", buttons: [{ label: "Undo", value: true, kind: "danger" }, { label: "Keep", value: false, kind: "primary" }] }).then((v) => { if (v) undoImport(); }); }
   else if (d.pa === "clear") { if (confirm("Remove every card from your portfolio on this device? Export a CSV first if you want a backup.")) { P = { items: [], asOf: null }; store(); try { localStorage.removeItem(HKEY); } catch {} render(); } }
 });
 document.addEventListener("change", (e) => {
