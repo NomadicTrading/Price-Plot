@@ -1005,7 +1005,10 @@ app.get("/api/tcgprice", async (req, res) => {
     // sealed products are listed as "Unopened" rather than a card condition
     const sealed = same.find((r) => !r.cond) || pool.find((r) => !r.cond);
     if (sealed) return res.json({ market: sealed.m, cond: "Unopened", print: sealed.print, est: false });
-    res.json({ market: null, cond, print: null, est: false });
+    // no Near Mint sales either: estimate from the nearest condition that sold, in the same printing
+    const near = same.filter((r) => COND_STEP[r.cond]).sort((a, b) => Math.abs(COND_STEP[a.cond] - COND_STEP[cond]) - Math.abs(COND_STEP[b.cond] - COND_STEP[cond]))[0];
+    if (near) return res.json({ market: +(near.m * COND_STEP[cond] / COND_STEP[near.cond]).toFixed(2), cond, print: near.print, est: true, from: near.cond });
+    res.json({ market: null, cond, print: null, est: false, why: pool.length ? "no TCGplayer sales for this printing" : "no TCGplayer sales in the past year" });
   } catch (e) {
     res.status(502).json({ error: e.message });
   }
