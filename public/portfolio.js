@@ -266,8 +266,9 @@ function rowHTML(x) {
 // "Paid each" with a small % box beside it: the % is of the card's market price. Typing either one fills in the other.
 function costField(x) {
   const mk = x.mkt > 0 ? x.mkt : null, pc = mk && x.cost > 0 ? String(Math.round((x.cost / mk) * 1000) / 10) : "";
-  return `<label>Paid each ($)<span class="pe-cost"><input name="cost" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(x.cost || "")}">
-    <span class="pe-pct" title="${mk ? "Percent of the market price, " + money(mk) : "No market price yet"}"><input name="costPct" type="number" min="0" max="999" step="0.5" inputmode="decimal" aria-label="Paid as a percent of the market price" data-mk="${mk ?? ""}" value="${pc}" ${mk ? "" : "disabled placeholder=\"–\""}>%</span></span></label>`;
+  return `<div class="pe-cl"><div class="pe-lh"><label for="pe-cost">Paid each ($)</label>
+    <span class="pe-pct" title="${mk ? "Percent of the market price, " + money(mk) : "No market price yet"}"><input name="costPct" type="number" min="0" max="999" step="0.5" inputmode="decimal" aria-label="Paid as a percent of the market price" data-mk="${mk ?? ""}" value="${pc}" ${mk ? "" : "disabled placeholder=\"–\""}>%</span></div>
+    <input id="pe-cost" name="cost" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(x.cost || "")}"></div>`;
 }
 document.addEventListener("input", (e) => {
   const t = e.target, fm = t.closest && t.closest("form.pe"); if (!fm || (t.name !== "cost" && t.name !== "costPct")) return;
