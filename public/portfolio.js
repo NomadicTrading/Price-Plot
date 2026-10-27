@@ -124,7 +124,9 @@ function planMerge(incoming, scopePfs, collectrPfs, links) {
     const es = mine.map((i) => items[i]), have = es.reduce((a, x) => a + (x.qty || 0), 0), want = r.qty || 0, label = r.name;
     for (const e of es) {
       if (!e.tcgId && r.tcgId) e.tcgId = r.tcgId; if (!e.img && r.img) { e.img = r.img; e.big = r.big; }
-      if (e.mkt == null && r.mkt != null) e.mkt = r.mkt; // Collectr's price only fills a card that has none yet
+      // graded cards are valued at Collectr's price, so each import brings its latest; raw cards use TCGplayer's,
+      // and Collectr's only fills one that has no price yet
+      if (r.mkt != null && (isGraded(e) || e.mkt == null)) e.mkt = r.mkt;
       if (r.watch) e.watch = true;
       if (r.cost > 0 && !(e.cost > 0) && e.qty > 0) { e.cost = r.cost; plan.costFilled++; } else if (e.cost > 0) plan.costKept++;
     }
