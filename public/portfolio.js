@@ -313,6 +313,20 @@ function render() {
   ${list.length > shown ? `<button class="pill" type="button" data-pa="more" style="margin-top:10px">Show ${Math.min(PAGE, list.length - shown)} more</button>` : ""}`
   : `<p class="sm">Your portfolio is empty. Import a Collectr export (in Collectr: Portfolio → ⋯ → Export, then open the emailed file here), or add cards one at a time. Everything stays saved on this device.</p>`}`;
   if (P.items.length) fetchImgs(list.slice(0, shown));
+  watchMore();
+}
+// the next 50 cards load by themselves as you scroll near the end of the list (the button still works too)
+let moreObs = null;
+function watchMore() {
+  if (!("IntersectionObserver" in window)) return;
+  if (!moreObs) moreObs = new IntersectionObserver((es) => {
+    if (!es.some((e) => e.isIntersecting)) return;
+    moreObs.disconnect();
+    if (detail || editing) return;
+    shown += PAGE; render();
+  }, { rootMargin: "0px 0px 600px 0px" });
+  moreObs.disconnect();
+  const b = document.querySelector('#pf [data-pa="more"]'); if (b && !detail && !editing) moreObs.observe(b);
 }
 
 /* ---------- card pictures ---------- */
