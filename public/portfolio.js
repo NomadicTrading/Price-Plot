@@ -105,7 +105,7 @@ const byAdded = (a, b) => String(a.added || "").localeCompare(String(b.added || 
 // toward the matching Collectr card; copies in another Collectr portfolio belong to that portfolio's own row.
 function planMerge(incoming, scopePfs, collectrPfs, links) {
   const cPfs = new Set([...(collectrPfs || []), ...incoming.map((r) => String(r.pf || ""))]);
-  const items = P.items.map((x) => ({ ...x })), used = new Set(), plan = { same: [], up: [], down: [], added: [], addedRi: [], costFilled: 0, costKept: 0 };
+  const items = P.items.map((x) => ({ ...x })), used = new Set(), plan = { same: [], up: [], down: [], added: [], addedRi: [], zeroRi: [], costFilled: 0, costKept: 0 };
   const groups = new Map(); items.forEach((x, i) => { const k = mBase(x); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(i); });
   const orig = items.length, made = new Set(); // made: extra copies created by this merge
   incoming.forEach((r, ri) => {
@@ -116,7 +116,10 @@ function planMerge(incoming, scopePfs, collectrPfs, links) {
       // this Collectr portfolio's copies, plus copies in Price Plot-only portfolios
       mine = cand.filter((i) => { const pf = String(items[i].pf || ""); return pf === String(r.pf || "") || !cPfs.has(pf); });
     }
-    if (!mine.length) { const x = { ...r, id: uid() }; items.push(x); plan.added.push(x); plan.addedRi.push(ri); return; }
+    if (!mine.length) {
+      if (!(r.qty > 0) && !r.watch) { plan.zeroRi.push(ri); return; } // at 0 in Collectr and not in Price Plot: nothing to add
+      const x = { ...r, id: uid() }; items.push(x); plan.added.push(x); plan.addedRi.push(ri); return;
+    }
     mine.forEach((i) => used.add(i));
     const es = mine.map((i) => items[i]), have = es.reduce((a, x) => a + (x.qty || 0), 0), want = r.qty || 0, label = r.name;
     for (const e of es) {
@@ -140,7 +143,9 @@ function planMerge(incoming, scopePfs, collectrPfs, links) {
   });
   // for each new card, the cards you already have that look like it (same name and number, any set, condition or portfolio),
   // so you can say it's more copies of one of them
-  plan.cands = plan.added.map((x) => P.items.map((y, i) => i).filter((i) => !used.has(i) && P.items[i].qty > 0 && mName(P.items[i].name) === mName(x.name) && (!mNum(x.num) || !mNum(P.items[i].num) || mNum(x.num) === mNum(P.items[i].num)) && !!x.watch === !!P.items[i].watch));
+  const looks = (x) => P.items.map((y, i) => i).filter((i) => !used.has(i) && P.items[i].qty > 0 && mName(P.items[i].name) === mName(x.name) && (!mNum(x.num) || !mNum(P.items[i].num) || mNum(x.num) === mNum(P.items[i].num)) && !!x.watch === !!P.items[i].watch);
+  plan.cands = plan.added.map(looks);
+  plan.zcands = plan.zeroRi.map((ri) => looks(incoming[ri]));
   // cards only in Price Plot, in the portfolios this import covers
   const inScope = (pf) => (scopePfs ? scopePfs.has(pf) : true) || !cPfs.has(pf);
   const onlyPP = items.map((x, i) => [x, i]).filter(([x, i]) => !used.has(i) && i < orig && !made.has(x) && x.qty > 0 && !plan.added.includes(x) && inScope(String(x.pf || "")));
@@ -157,14 +162,20 @@ function mergeReview(make, source) {
     const desc = (y) => [y.name + (y.num ? " " + y.num : ""), y.set, isGraded(y) ? shortGrade(y.grade) : COND_CODE[y.cond] || y.cond, y.var, "×" + y.qty, y.cost > 0 ? "paid " + money(y.cost) : "", y.pf].filter(Boolean).join(" · ");
     const ov = document.createElement("div"); ov.className = "ppm-ov";
     const draw = () => {
-      const ask = [], plainNew = [];
+      const ask = [], plainNew = [], zero = (ri) => !(make.incoming[ri].qty > 0);
       plan.added.forEach((x, k) => (plan.cands[k].length ? ask : plainNew).push(k));
-      // rows you've linked are no longer "new", but they stay in the list so the choice can be changed
+      // rows you've linked are no longer "new" or "sold", but they stay in the list so the choice can be changed
       const linked = [...links.keys()];
-      const rows = [...linked.map((ri) => ({ ri, x: make.incoming[ri], cands: make.candsFor(ri) })), ...ask.map((k) => ({ ri: plan.addedRi[k], x: plan.added[k], cands: plan.cands[k] }))];
+      const all = [...linked.map((ri) => ({ ri, x: make.incoming[ri], cands: make.candsFor(ri) })), ...ask.map((k) => ({ ri: plan.addedRi[k], x: plan.added[k], cands: plan.cands[k] })),
+        ...plan.zeroRi.map((ri, k) => ({ ri, x: make.incoming[ri], cands: plan.zcands[k] })).filter((o) => o.cands.length)];
+      const rows = all.filter((o) => !zero(o.ri)), zrows = all.filter((o) => zero(o.ri));
+      const zIgnored = plan.zeroRi.length - plan.zeroRi.filter((ri, k) => plan.zcands[k].length).length;
       const pick = rows.length ? `<div class="mg-s"><b>Already have some of these?</b> <span class="mu">These look like cards in your portfolio. Choose “Same as…” if they're more copies of one; quantities then follow Collectr and what you paid is kept.</span></div>
         ${rows.map(({ ri, x, cands }) => `<div class="mg-p"><div>${esc(x.name)}${x.num ? " " + esc(x.num) : ""} <span class="mu">· ${esc([x.set, isGraded(x) ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond, x.var].filter(Boolean).join(" · "))} ×${x.qty}</span></div>
           <select data-mgl="${ri}" aria-label="Is this a new card?"><option value="-1">New card</option>${cands.map((i) => `<option value="${i}" ${links.get(ri) === i ? "selected" : ""}>Same as: ${esc(desc(P.items[i]))}</option>`).join("")}</select></div>`).join("")}` : "";
+      const sold = zrows.length ? `<div class="mg-s"><b>Sold or removed in Collectr?</b> <span class="mu">Collectr has these at 0. If one is a card in your portfolio, choose it to remove it (or lower its count).</span></div>
+        ${zrows.map(({ ri, x, cands }) => `<div class="mg-p"><div>${esc(x.name)}${x.num ? " " + esc(x.num) : ""} <span class="mu">· ${esc([x.set, isGraded(x) ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond, x.var].filter(Boolean).join(" · "))} · 0 in Collectr</span></div>
+          <select data-mgl="${ri}" aria-label="Remove a card you sold?"><option value="-1">Keep (no change)</option>${cands.map((i) => `<option value="${i}" ${links.get(ri) === i ? "selected" : ""}>Remove: ${esc(desc(P.items[i]))}</option>`).join("")}</select></div>`).join("")}` : "";
       ov.innerHTML = `<div class="ppm mg" role="dialog" aria-modal="true" aria-labelledby="mg-t"><h3 id="mg-t">Merge ${esc(source)} into Price Plot</h3>
       <p class="mu" style="margin:0 0 8px">Nothing changes until you tap Merge, and you can undo it afterward.</p>
       <div class="mg-s"><b>${plan.same.length}</b> ${plan.same.length === 1 ? "card already matches" : "cards already match"} (no change)</div>
@@ -172,6 +183,7 @@ function mergeReview(make, source) {
       ${plan.down.length ? `<div class="mg-s"><b>${plan.down.length}</b> with fewer copies in Collectr (copies without a cost are removed first)</div>${li(plan.down)}` : ""}
       ${plainNew.length + ask.length ? `<div class="mg-s"><b>${plainNew.length + ask.length}</b> new card${plainNew.length + ask.length === 1 ? "" : "s"}</div>${li(plainNew.map((k) => plan.added[k]).map((x) => `${x.name}${x.num ? " " + x.num : ""}${x.qty > 1 ? " ×" + x.qty : ""}`), 5)}` : ""}
       ${pick}
+      ${sold}${zIgnored ? `<div class="mg-s mu" style="font-size:13px">${zIgnored} other card${zIgnored === 1 ? " is" : "s are"} at 0 in Collectr and not in Price Plot, so nothing changes for ${zIgnored === 1 ? "it" : "them"}.</div>` : ""}
       <div class="mg-s">What you paid is kept on <b>${plan.costKept}</b> entr${plan.costKept === 1 ? "y" : "ies"}${plan.costFilled ? `; Collectr's cost fills in <b>${plan.costFilled}</b> that had none` : ""}.</div>
       ${plan.onlyPP.length ? `<div class="mg-s"><b>${plan.onlyPP.length}</b> card${plan.onlyPP.length === 1 ? " is" : "s are"} in Price Plot but not in this Collectr import</div>${li(plan.onlyPP.map((x) => `${x.name}${x.num ? " " + x.num : ""} ×${x.qty}${x.cost > 0 ? " · paid " + money(x.cost) : ""}${x.pf ? " · " + x.pf : ""}`), 6)}
         <label class="mg-c"><input type="checkbox" id="mg-rm" ${rmOnly ? "checked" : ""}> Remove these from Price Plot (leave unticked to keep them)</label>` : ""}
@@ -191,7 +203,7 @@ function mergeReview(make, source) {
 const UNDO_KEY = "pp_portfolio_undo";
 async function smartMerge(incoming, source, scopePfs, collectrPfs) {
   // the possible "Same as" cards for a Collectr row, worked out once from a plan with no choices made
-  const base = planMerge(incoming, scopePfs, collectrPfs), candMap = new Map(base.addedRi.map((ri, k) => [ri, base.cands[k]]));
+  const base = planMerge(incoming, scopePfs, collectrPfs), candMap = new Map([...base.addedRi.map((ri, k) => [ri, base.cands[k]]), ...base.zeroRi.map((ri, k) => [ri, base.zcands[k]])]);
   const make = (links) => planMerge(incoming, scopePfs, collectrPfs, links);
   make.incoming = incoming; make.candsFor = (ri) => candMap.get(ri) || [];
   const ok = await mergeReview(make, source); if (!ok) return false;
