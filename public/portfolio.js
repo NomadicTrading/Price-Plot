@@ -1494,9 +1494,11 @@ function sqMineHTML(it, c) {
   const mine = sqMine(it, c);
   if (!mine.length) { it.pid = null; return `<div class="sq-mine"><span class="sq-st warn">Not in your portfolio</span><span class="mu">None of the matches for this photo are cards you own. Tap Change to search, or remove it.</span></div>`; }
   const pid = sqMinePick(it, mine);
-  const one = new Set(mine.map((x) => x.pf)).size < 2;
-  return `<div class="sq-mine">${c.fromPf && !it.okPf ? `<span class="sq-st warn sq-chk">Found by searching your portfolio for what was read. Check it's the right card${it.cards.filter((y) => y.fromPf).length > 1 ? " (Change shows the others)" : ""}. <button type="button" class="sq-ok" data-qok="${it.id}">Yes, that's it</button></span>` : ""}<span class="mu">Your copy${mine.length > 1 ? " (tap one)" : ""}:</span>${mine.map((x) => `<button type="button" class="sq-mc" data-qown="${x.id}" data-qid="${it.id}" aria-pressed="${x.id === pid}">${esc(isGraded(x) ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond || "NM")}${x.var ? " · " + esc(x.var) : ""}${x.pf && !one ? " · " + esc(x.pf) : ""} · ×${x.qty}${x.mkt != null || x.ovr > 0 ? " · " + money(unit(x)) : ""}</button>`).join("")}<label class="sq-mq">Qty <input data-qf="qty" data-qid="${it.id}" type="number" min="1" step="1" inputmode="numeric" value="${it.qty || 1}" aria-label="Quantity"></label></div>`;
+  const one = new Set(mine.map((x) => x.pf)).size < 2, cp = mine.find((x) => x.id === pid), cpc = sqCopyCond(cp), cur = it.mcond || cpc;
+  const csel = `<select class="sq-mcd" data-qf="mcond" data-qid="${it.id}" aria-label="Condition for the trade">${[...CONDS, ...TR_GRADES].map((o) => `<option value="${o}" ${o === cur ? "selected" : ""}>${COND_CODE[o] || o}</option>`).join("")}</select>`;
+  return `<div class="sq-mine">${c.fromPf && !it.okPf ? `<span class="sq-st warn sq-chk">Found by searching your portfolio for what was read. Check it's the right card${it.cards.filter((y) => y.fromPf).length > 1 ? " (Change shows the others)" : ""}. <button type="button" class="sq-ok" data-qok="${it.id}">Yes, that's it</button></span>` : ""}<span class="mu">Your copy${mine.length > 1 ? " (tap one)" : ""}:</span>${mine.map((x) => `<button type="button" class="sq-mc" data-qown="${x.id}" data-qid="${it.id}" aria-pressed="${x.id === pid}">${esc(isGraded(x) ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond || "NM")}${x.var ? " · " + esc(x.var) : ""}${x.pf && !one ? " · " + esc(x.pf) : ""} · ×${x.qty}${x.mkt != null || x.ovr > 0 ? " · " + money(unit(x)) : ""}</button>`).join("")}<span class="sq-mrow">${csel}<label class="sq-mq">Qty <input data-qf="qty" data-qid="${it.id}" type="number" min="1" step="1" inputmode="numeric" value="${it.qty || 1}" aria-label="Quantity"></label></span>${it.mcond && it.mcond !== cpc ? `<span class="mu">Traded as ${esc(COND_CODE[it.mcond] || it.mcond)} (your copy is ${esc(COND_CODE[cpc] || cpc)}), priced at TCGplayer's ${esc(COND_CODE[it.mcond] || it.mcond)} price${TR_GRADES.includes(it.mcond) ? " (graded: type Collectr's price in the trade)" : ""}.</span>` : ""}</div>`;
 }
+const sqCopyCond = (x) => (!x ? "Near Mint" : isGraded(x) ? shortGrade(x.grade) : x.cond || "Near Mint");
 function sqPfs() { return [...new Set(P.items.filter((x) => x.qty > 0 && x.pf).map((x) => x.pf))].sort(); }
 function sqRowHTML(it) {
   if (sqTarget === "tradeGive") sqOwnFix(it);
@@ -1608,8 +1610,9 @@ function sqAddSelected(fm) {
     const pick = scanQ.filter((x) => x.sel && x.pick >= 0 && sqMine(x, x.cards[x.pick]).length); if (!pick.length) return;
     let short = 0;
     for (const it of pick) { const c = it.cards[it.pick], want = Math.max(1, Math.round(+it.qty || 1)), mine = sqMine(it, c), x = mine.length ? P.items.find((y) => y.id === sqMinePick(it, mine)) : null;
-      if (x) { const have = TRD.give.find((t) => t.pid === x.id), now = have ? have.qty : 0, q = Math.min(x.qty, now + want); if (now + want > x.qty) short++;
-        if (have) have.qty = q; else TRD.give.push(trCard({ ...x, pid: x.id, qty: q, max: x.qty, grade: isGraded(x) ? x.grade : "" }, "give")); }
+      if (x) { const mc = it.mcond && it.mcond !== sqCopyCond(x) ? it.mcond : null, gr = mc ? (TR_GRADES.includes(mc) ? mc : "") : isGraded(x) ? x.grade : "", cd = mc && !gr ? mc : x.cond;
+        const have = TRD.give.find((t) => t.pid === x.id && (t.grade ? shortGrade(t.grade) : t.cond) === (gr ? shortGrade(gr) : cd)), now = have ? have.qty : 0, q = Math.min(x.qty, now + want); if (now + want > x.qty) short++;
+        if (have) have.qty = q; else TRD.give.push(trCard({ ...x, pid: x.id, qty: q, max: x.qty, grade: gr, cond: cd }, "give")); }
     }
     scanQ = scanQ.filter((x) => !pick.includes(x)); sqSave(); trSave(); sqTarget = null;
     const ov = $("ppscan"); if (ov) ov.remove(); tradeOpen = true; render();
@@ -1697,7 +1700,7 @@ document.addEventListener("click", (e) => {
   else if (d.qo) { sqView = d.qo; sqRender(); ov.querySelector(".ppm").scrollTop = 0; }
   else if (d.qc) sqComp(d.qc);
   else if (d.qok) { const it = sqItem(d.qok); if (it) { it.okPf = true; sqSave(); const n = ov.querySelector(`#sq-${it.id} .sq-chk`); if (n) n.remove(); } }
-  else if (d.qown) { const it = sqItem(d.qid); if (it) { it.pid = d.qown; it.okPf = true; sqSave(); const n = ov.querySelector(`#sq-${it.id} .sq-chk`); if (n) n.remove(); ov.querySelectorAll(`[data-qown][data-qid="${it.id}"]`).forEach((m) => m.setAttribute("aria-pressed", String(m.dataset.qown === d.qown))); } }
+  else if (d.qown) { const it = sqItem(d.qid); if (it) { it.pid = d.qown; it.mcond = null; it.okPf = true; sqSave(); sqRow(it, true); ov.querySelectorAll(`[data-qown][data-qid="${it.id}"]`).forEach((m) => m.setAttribute("aria-pressed", String(m.dataset.qown === d.qown))); } }
   else if (d.qgpp) { sqGroupSetPct(+d.qgpp); sqSave(); }
   else if (d.qpp) { const it = sqItem(d.qid); if (it) { sqSetPct(it, +d.qpp); sqSave(); } }
   else if (d.qx) { scanQ = scanQ.filter((x) => x.id !== d.qx); sqPhotos.delete(d.qx); sqSave(); const el = $("sq-" + d.qx); if (el) el.remove(); if (!scanQ.length) sqRender(); else sqBar(); }
@@ -1709,6 +1712,11 @@ document.addEventListener("click", (e) => {
 document.addEventListener("change", (e) => {
   const t = e.target; if (!t.closest || !t.closest("#ppscan")) return;
   if (t.dataset.qk) { const it = sqItem(t.dataset.qk); if (it) it.sel = t.checked; sqSave(); sqBar(); }
+  else if (t.dataset.qf === "mcond") { const it = sqItem(t.dataset.qid); if (!it) return; const c = it.cards[it.pick], mine = c ? sqMine(it, c) : [];
+    // a copy you own in that condition is used as is; otherwise your chosen copy is traded as that condition
+    const m = mine.find((x) => sqCopyCond(x) === t.value);
+    if (m) { it.pid = m.id; it.mcond = null; } else it.mcond = t.value;
+    it.okPf = true; sqSave(); sqRow(it, true); }
   else if (t.dataset.qf) { const it = sqItem(t.dataset.qid); if (!it) return; if (t.dataset.qf === "qty") it.qty = Math.max(1, Math.round(+t.value || 1)); else it[t.dataset.qf] = t.value; sqSave();
     if (t.dataset.qf !== "qty") sqPrice(it); sqRow(it); }
   else if (t.dataset.qa === "cond" && t.value) { for (const it of scanQ) if (it.sel && it.pick >= 0) it.cond = t.value; sqSave();
