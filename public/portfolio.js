@@ -7,8 +7,8 @@ const CONDS = ["Near Mint", "Lightly Played", "Moderately Played", "Heavily Play
 const PAGE = 50;
 let P = readStore(), view = "all", sortBy = "value", findTxt = "", shown = PAGE, editing = null, pending = null, impOpen = false;
 /* ---------- trade analyzer ----------
-   You give: cards from your portfolio (or found on TCGplayer), at their full market value.
-   You get: the trader's cards (TCGplayer search or the scanner), counted at a trade % (list-wide, or per card).
+   Your cards: cards from your portfolio (or found on TCGplayer), at their full market value.
+   Their cards: the trader's cards (TCGplayer search or the scanner), counted at a trade % (list-wide, or per card).
    Your position = their trade credit + cash they add − (your cards + cash you add): green when you come out ahead.
    Their cards needed = what you give (net of cash) ÷ the trade %: the reverse calculation ($80 at 80% → $100).
    Graded cards are valued at Collectr's price (from your portfolio); a graded card you don't own needs its price typed.
@@ -99,7 +99,7 @@ function trValTxt(c) {
 function trBalHTML() {
   const m = trMath(), up = m.pos >= -0.005;
   return `<div class="tr-pos" style="color:var(${up ? "--up" : "--dn"})">${up ? "+" : "−"}${money(Math.abs(m.pos))}</div>
-    <div class="tr-st"><span>You give <b>${money(m.give)}</b></span><span>They give <b>${money(m.getMk)}</b> <span class="mu">= ${money(m.credit)} credit</span></span>
+    <div class="tr-st"><span>Your cards <b>${money(m.give)}</b></span><span>Their cards <b>${money(m.getMk)}</b> <span class="mu">= ${money(m.credit)} credit</span></span>
     <span>Their cards needed <b>${m.need != null ? money(m.need) : "—"}</b> <span class="mu">at ${TRD.pct}%</span></span>
     <span>Cash offer for their cards <b>${money(m.cash)}</b> <span class="mu">at ${TRD.cashPct}%</span></span></div>
     ${m.missing ? `<div class="mu" style="font-size:12.5px">${m.missing} card${m.missing === 1 ? " has" : "s have"} no price yet and count as $0.</div>` : ""}`;
@@ -132,12 +132,12 @@ function renderTrade(box) {
     <input type="range" class="sq-rg" id="tr-rg" min="0" max="100" step="1" value="${Math.min(100, Math.round(TRD.pct))}" aria-label="Trade percent for their cards">
     <div class="sq-pp" id="tr-pr">${SQ_PRESETS.map((x) => `<button type="button" class="sq-pb" data-tpp="${x}" aria-pressed="${TRD.pct === x}">${x}%</button>`).join("")}</div>
     <div class="tr-cash"><label>Cash they add $<input id="tr-cin" type="number" min="0" step="any" inputmode="decimal" value="${trMoneyIn(TRD.cashIn)}" placeholder="0"></label><label>Cash you add $<input id="tr-cout" type="number" min="0" step="any" inputmode="decimal" value="${trMoneyIn(TRD.cashOut)}" placeholder="0"></label><label>Cash offer %<input id="tr-cpct" type="number" min="0" step="any" inputmode="decimal" value="${TRD.cashPct}"></label></div></div>
-  <div class="tr-sec"><div class="tr-h"><b>You give</b><span class="mu">${TRD.give.length} card${TRD.give.length === 1 ? "" : "s"}</span></div>
+  <div class="tr-sec"><div class="tr-h"><b>Your cards</b><span class="mu">${TRD.give.length} card${TRD.give.length === 1 ? "" : "s"}</span></div>
     ${TRD.give.map(trRow).join("")}
     <div class="tr-add"><input id="tr-find" type="search" placeholder="Add from your portfolio…" value="${esc(trFind)}" autocomplete="off"><button type="button" class="pill" data-tx="scang">📷 Scan</button></div>
     <div class="tr-hits" id="tr-hits">${trPickHTML()}</div>
     <input id="tr-sq-give" type="search" placeholder="…or search TCGplayer" autocomplete="off"><div class="tr-hits" id="tr-sug-give">${trSugHTML("give")}</div></div>
-  <div class="tr-sec"><div class="tr-h"><b>You get</b><span class="mu">${TRD.get.length} card${TRD.get.length === 1 ? "" : "s"}</span></div>
+  <div class="tr-sec"><div class="tr-h"><b>Their cards</b><span class="mu">${TRD.get.length} card${TRD.get.length === 1 ? "" : "s"}</span></div>
     ${TRD.get.map(trRow).join("")}
     <div class="tr-add"><input id="tr-sq-get" type="search" placeholder="Search their card on TCGplayer" autocomplete="off"><button type="button" class="pill" data-tx="scan">📷 Scan</button></div>
     <div class="tr-hits" id="tr-sug-get">${trSugHTML("get")}</div></div>
@@ -211,7 +211,7 @@ async function trComplete() {
   const out = TRD.give.filter((c) => c.pid).map((c) => `${c.name} ×${trQ(c)}`), notOwned = TRD.give.filter((c) => !c.pid).length;
   const inn = TRD.get.map((c) => `${c.name}${c.grade ? " · " + shortGrade(c.grade) : " · " + (COND_CODE[c.cond] || c.cond)} ×${trQ(c)} · cost ${money(costEach(c))} each`);
   const pf = await modal({ title: "Complete this trade?",
-    text: `<b>Leaving your portfolio</b>${li(out)}${notOwned ? `<div class="mu" style="font-size:12.5px">${notOwned} card${notOwned === 1 ? " isn't" : "s aren't"} in your portfolio, so nothing to remove.</div>` : ""}<b>Coming in</b>${li(inn)}<div class="mu" style="font-size:12.5px">Their cards' cost is what you gave (${money(gave)}), shared by market value. You can undo this afterward. Add them to:</div>`,
+    text: `<b>Leaving your portfolio</b>${li(out)}${notOwned ? `<div class="mu" style="font-size:12.5px">${notOwned} card${notOwned === 1 ? " isn't" : "s aren't"} in your portfolio, so nothing to remove.</div>` : ""}<b>Coming in</b>${li(inn)}<div class="mu" style="font-size:12.5px">Their cards' cost is what you traded for them (${money(gave)}), shared by market value. You can undo this afterward. Add them to:</div>`,
     buttons: [...(pfs.length ? pfs : ["Trades"]).map((p, i) => ({ label: p, value: p, kind: i === 0 ? "primary" : "" })), ...(pfs.length && !pfs.includes("Trades") ? [{ label: "New: Trades", value: "Trades" }] : []), { label: "Cancel", value: null, kind: "plain" }] });
   if (pf == null) return;
   try { localStorage.setItem(UNDO_KEY, JSON.stringify({ at: Date.now(), source: "trade", P })); } catch {}
@@ -1492,7 +1492,7 @@ function sqBar() {
   const ready = scanQ.filter((x) => x.pick >= 0), sel = ready.filter((x) => x.sel);
   const selV = sel.reduce((a, x) => a + sqVal(x), 0);
   const selPay = sel.reduce((a, x) => a + (x.pxK === sqPxKey(x) ? sqOfferVal(x) : 0), 0);
-  if (sqTarget) { el.querySelector("[data-qa=add]").textContent = sqTarget === "tradeGive" ? (sel.length ? `Add ${sel.length} to what you give` : "Add to what you give") : sel.length ? `Add ${sel.length} card${sel.length === 1 ? "" : "s"} to what you get` : "Add to what you get"; const pg = el.querySelector(".pg"); if (pg) pg.style.display = "none"; }
+  if (sqTarget) { el.querySelector("[data-qa=add]").textContent = sqTarget === "tradeGive" ? (sel.length ? `Add ${sel.length} to your cards` : "Add to your cards") : sel.length ? `Add ${sel.length} to their cards` : "Add to their cards"; const pg = el.querySelector(".pg"); if (pg) pg.style.display = "none"; }
   else el.querySelector("[data-qa=add]").textContent = sel.length ? `Add ${sel.length} card${sel.length === 1 ? "" : "s"} to portfolio${selPay ? " · paying " + money(selPay) : selV ? " · " + money(selV) : ""}` : "Add to portfolio";
   // the whole list's TCGplayer market value, counting quantities
   const tv = $("sq-v");
