@@ -1211,7 +1211,7 @@ async function sqRead(it) {
   it.unsure = true;
 }
 async function sqFind(it, read) {
-  it.read = read; it.err = ""; it.note = "";
+  it.read = read; it.err = ""; it.note = ""; it.manual = false;
   try { const j = await getJSON("/api/scan-match?" + new URLSearchParams({ name: read.name || "", n: read.n || "", d: read.d || "" })); it.cards = j.cards || []; }
   catch (e) { it.cards = []; it.err = e.message; }
   it.pick = it.cards.length ? 0 : -1; if (!it.cards.length && !it.err) it.err = "No matching cards found. Tap Fix to search.";
@@ -1449,12 +1449,20 @@ function sqOwnFix(it) {
   const own = () => it.cards.map((c, i) => (sqMine(it, c).length ? i : -1)).filter((i) => i >= 0);
   const add = (x) => { if (it.cards.some((c) => c.id === "pf-" + x.id) || it.cards.some((y) => sqMine(it, y).some((m) => m.id === x.id))) return;
     it.cards.push({ id: "pf-" + x.id, tcgId: x.tcgId || null, name: x.name, number: String(x.num || "").split("/")[0], printedTotal: String(x.num || "").split("/")[1] || "", set: x.set || "", image: x.img || "", big: x.big || "", prints: x.var ? [x.var] : [], fromPf: true }); };
+  // the number printed on the card (as read) decides between cards with the same name
+  const r = it.read || {}, a = it.ai || {}, rn = new Set([r.n, a.number].filter(Boolean).map((n) => mNum(String(n).split("/")[0])).filter(Boolean));
+  const rnm = new Set([r.name, a.name_english].filter(Boolean).map(mName).filter(Boolean));
+  // how well a match fits what was read: the number counts most, then the name
+  const fit = (i) => (rn.size && rn.has(mNum(it.cards[i].number)) ? 2 : 0) + (rnm.size && rnm.has(mName(it.cards[i].name)) ? 1 : 0);
+  const full = (rn.size ? 2 : 0) + (rnm.size ? 1 : 0), agree = (i) => fit(i) === full;
   let o = own();
-  // nothing the scan matched is in your portfolio: search your portfolio with what was read (name and/or number)
-  if (!o.length) for (const x of sqPfSearch(it)) add(x);
+  // nothing the scan matched is in your portfolio, or only cards with a different number: search your portfolio
+  // with what was read (name and/or number)
+  if (!o.length || !o.some(agree)) for (const x of sqPfSearch(it)) add(x);
   o = own();
+  const best = o.reduce((b, i) => (b == null || fit(i) > fit(b) ? i : b), null);
   it.notMine = !o.length;
-  if (o.length && !o.includes(it.pick)) { it.pick = o[0]; it.pxK = null; it.err = ""; it.unsure = false; it.sel = true; }
+  if (o.length && (!o.includes(it.pick) || (!it.manual && fit(best) > fit(it.pick)))) { it.pick = best; it.pxK = null; it.err = ""; it.unsure = false; it.sel = true; it.pid = null; }
   if (it.notMine) it.sel = false;
   return o;
 }
@@ -1464,9 +1472,12 @@ const SQ_TOK_SKIP = new Set(["ex", "gx", "v", "vmax", "vstar", "the", "of", "and
 const sqToks = (s) => mName(s).split(" ").filter((w) => w.length > 2 && !SQ_TOK_SKIP.has(w));
 function sqPfSearch(it) {
   const r = it.read || {}, a = it.ai || {};
-  const names = [r.name, a.name_english, a.name, ...it.cards.filter((c) => !c.fromPf).map((c) => c.name)].filter(Boolean);
-  const nums = [r.n, a.number, ...it.cards.filter((c) => !c.fromPf).map((c) => c.number)].filter(Boolean).map((n) => mNum(String(n).split("/")[0])).filter(Boolean);
-  const tots = [r.d, a.set_total, ...it.cards.filter((c) => !c.fromPf).map((c) => c.printedTotal)].filter(Boolean).map((n) => mNum(n));
+  // what was read off the card comes first; the scan's own matches are only used for what wasn't read
+  // (they can be a different card with the same name, like Pikachu 025/165 for a Pikachu Libre 14/30)
+  const scan = it.cards.filter((c) => !c.fromPf), readAny = !!(r.name || a.name_english || a.name || r.n || a.number);
+  const names = readAny ? [r.name, a.name_english, a.name].filter(Boolean) : scan.map((c) => c.name);
+  const nums = (readAny ? [r.n, a.number].filter(Boolean) : scan.map((c) => c.number)).map((n) => mNum(String(n).split("/")[0])).filter(Boolean);
+  const tots = (readAny ? [r.d, a.set_total].filter(Boolean) : scan.map((c) => c.printedTotal).filter(Boolean)).map((n) => mNum(String(n)));
   const nm = new Set(names.map(mName).filter(Boolean)), tk = new Set(names.flatMap(sqToks));
   if (!nm.size && !nums.length) return [];
   const scored = owned(P.items).filter((x) => x.qty > 0).map((x) => {
@@ -1689,7 +1700,7 @@ document.addEventListener("click", (e) => {
   else if (d.qgpp) { sqGroupSetPct(+d.qgpp); sqSave(); }
   else if (d.qpp) { const it = sqItem(d.qid); if (it) { sqSetPct(it, +d.qpp); sqSave(); } }
   else if (d.qx) { scanQ = scanQ.filter((x) => x.id !== d.qx); sqPhotos.delete(d.qx); sqSave(); const el = $("sq-" + d.qx); if (el) el.remove(); if (!scanQ.length) sqRender(); else sqBar(); }
-  else if (d.qp != null) { const it = sqItem(sqView); if (it) { it.pick = +d.qp; it.unsure = false; it.err = ""; it.sel = true; sqSave(); } sqView = null; sqRender(); }
+  else if (d.qp != null) { const it = sqItem(sqView); if (it) { it.pick = +d.qp; it.manual = true; it.pid = null; it.unsure = false; it.err = ""; it.sel = true; sqSave(); } sqView = null; sqRender(); }
   else if (d.qa === "comps") { const it = sqItem(sqView), c = it && it.cards[it.pick]; if (!c) return; ov.remove(); syncScrollLock();
     $("q").value = `${c.name} ${/^\d+$/.test(c.number) && c.printedTotal ? c.number + "/" + c.printedTotal : c.number}`;
     const t = $("tb").querySelector('[data-t="ebay"]'); if (t && tab !== "ebay") t.click(); tcgQ = ""; load(); scrollTo({ top: 0, behavior: "smooth" }); }
