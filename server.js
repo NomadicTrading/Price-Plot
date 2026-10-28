@@ -517,11 +517,12 @@ async function ptcg(q, size) {
 const SEALED_RE = /\b(code card|booster|box|bundle|tin|deck|pack|blister|elite trainer|collection|case|display|premium|binder|portfolio|sleeves?|build & battle|stadium)\b/i;
 async function tcgScan(q, opts = {}) {
   const j = await tpPost("https://mp-search-api.tcgplayer.com/v1/search/request?" + new URLSearchParams({ q: q.slice(0, 120), isList: "false" }), {
-    algorithm: "sales_synonym_v2", from: 0, size: 24,
+    algorithm: "sales_synonym_v2", from: opts.from || 0, size: opts.size || 24,
     filters: { term: { productLineName: opts.lines || ["pokemon", "pokemon-japan"] }, range: {}, match: {} },
     listingSearch: { context: { cart: {} }, filters: { term: { sellerStatus: "Live", channelId: 0 }, range: { quantity: { gte: 1 } }, exclude: { channelExclusion: 0 } } },
     context: { cart: {}, shippingCountry: "US", userProfile: {} }, settings: { useFuzzySearch: true, didYouMean: {} }, sort: {},
   });
+  if (opts.raw) opts.raw.n = (((j.results || [])[0] || {}).results || []).length;
   const isSealed = (r) => /sealed/i.test(r.productTypeName || "") || (!r.customAttributes?.number && SEALED_RE.test(r.productName || ""));
   return (((j.results || [])[0] || {}).results || []).filter((r) => r.productId && (opts.sealed || (!/sealed/i.test(r.productTypeName || "") && !/\b(code card|booster|box|bundle|tin|deck|pack|blister)\b/i.test(r.productName || "")))).map((r) => {
     const id = String(Math.round(Number(r.productId))), sealed = isSealed(r), raw = sealed ? "" : String(r.customAttributes?.number || (/\s-\s([\w/]+)$/.exec(r.productName || "") || [])[1] || "");
@@ -587,18 +588,21 @@ app.get("/api/suggest", async (req, res) => {
     set: norm(String(req.query.set || "").slice(0, 60)).trim(), rarity: String(req.query.rarity || "").toLowerCase().slice(0, 40).trim(),
     print: String(req.query.print || "").toLowerCase().slice(0, 30).trim(), stype: STYPE[req.query.stype] ? req.query.stype : "" };
   if (R.stype) R.type = "sealed";
-  const key = [q.toLowerCase(), R.type, R.lang, R.set, R.rarity, R.print, R.stype].join("|"), hit = sugCache.get(key);
+  // pages of 12 TCGplayer results: the list loads the next page as you scroll
+  const page = Math.max(0, Math.min(40, Math.floor(+req.query.page || 0))), PER = 12;
+  const key = [q.toLowerCase(), R.type, R.lang, R.set, R.rarity, R.print, R.stype, page].join("|"), hit = sugCache.get(key);
   if (hit && hit.exp > Date.now()) return res.json(hit.data);
   // the kind of sealed product is added to the search when it isn't in it already, so TCGplayer returns those first
   const sq = R.stype && !STYPE[R.stype][0].test(q) ? `${q} ${STYPE[R.stype][1]}` : R.set && !norm(q).includes(R.set) ? `${q} ${R.set}` : q;
   const fits = (c) => (R.type !== "cards" || !c.sealed) && (R.type !== "sealed" || c.sealed) && (!R.lang || (R.lang === "jp" ? c.jp : !c.jp)) &&
     (!R.set || norm(c.set).includes(R.set)) && (!R.rarity || String(c.rarity || "").toLowerCase() === R.rarity) && (!R.stype || STYPE[R.stype][0].test(c.name));
-  let prods;
-  try { prods = (await tcgScan(sq, { sealed: R.type !== "cards", lines: R.lang === "en" ? ["pokemon"] : R.lang === "jp" ? ["pokemon-japan"] : undefined })).filter(fits).slice(0, 8); } catch (e) { return res.status(502).json({ error: e.message }); }
+  let prods; const raw = {};
+  try { prods = (await tcgScan(sq, { sealed: R.type !== "cards", lines: R.lang === "en" ? ["pokemon"] : R.lang === "jp" ? ["pokemon-japan"] : undefined, from: page * PER, size: PER, raw })).filter(fits); } catch (e) { return res.status(502).json({ error: e.message }); }
+  const more = raw.n >= PER;
   const ORDER = ["normal", "holofoil", "reverse holofoil", "1st edition", "1st edition holofoil", "unlimited", "unlimited holofoil"];
   const rank = (p) => { const i = ORDER.indexOf(p.toLowerCase()); return i < 0 ? 99 : i; };
   // price histories for the first 6 cards, together, giving up after 6 seconds (the card's overall price is used instead)
-  const hist = await Promise.all(prods.map((c, i) => i < 6 ? Promise.race([tpLatest(c.tcgId).catch(() => null), new Promise((ok) => setTimeout(() => ok(null), 6000))]) : null));
+  const hist = await Promise.all(prods.map((c, i) => i < PER ? Promise.race([tpLatest(c.tcgId).catch(() => null), new Promise((ok) => setTimeout(() => ok(null), 6000))]) : null));
   const items = [];
   prods.forEach((c, i) => {
     const base = { tcgId: c.tcgId, name: c.name, numberText: c.raw || "", number: c.number, printedTotal: c.printedTotal, set: c.set, image: c.image, rarity: c.rarity, jp: c.jp, ...(c.sealed ? { sealed: true } : {}) };
@@ -609,8 +613,8 @@ app.get("/api/suggest", async (req, res) => {
     if (prints.length) for (const r of prints) items.push({ ...base, print: r.print, nm: r.m });
     else items.push({ ...base, print: "", nm: c.market, overall: true });
   });
-  const data = { items: (R.print ? items.filter((x) => String(x.print || "").toLowerCase() === R.print) : items).slice(0, 14) };
-  if (items.length) { sugCache.set(key, { exp: Date.now() + 6 * 3600e3, data }); if (sugCache.size > 3000) sugCache.delete(sugCache.keys().next().value); }
+  const data = { items: R.print ? items.filter((x) => String(x.print || "").toLowerCase() === R.print) : items, more, page };
+  if (items.length || more) { sugCache.set(key, { exp: Date.now() + 6 * 3600e3, data }); if (sugCache.size > 3000) sugCache.delete(sugCache.keys().next().value); }
   res.json(data);
 });
 
@@ -650,7 +654,7 @@ app.get("/api/scan-match", async (req, res) => {
   const key = [name.toLowerCase(), n, d].join("|"), hit = scanCache.get(key);
   if (hit && hit.exp > Date.now()) return res.json(hit.data);
   const { list: all, errors, nn, words } = await matchCards(name, n, d);
-  const list = all.map((c) => ({ c, s: scoreCard(c, nn, d, words) })).sort((a, b) => b.s - a.s).slice(0, 8).map(({ c }) => c);
+  const list = all.map((c) => ({ c, s: scoreCard(c, nn, d, words) })).sort((a, b) => b.s - a.s).slice(0, 30).map(({ c }) => c);
   if (!list.length && errors.length) return res.status(502).json({ error: "The card lookup didn't answer. Try again in a moment.", detail: errors });
   const data = { cards: list };
   if (list.length) { scanCache.set(key, { exp: Date.now() + 864e5, data }); if (scanCache.size > 2000) scanCache.delete(scanCache.keys().next().value); }
@@ -789,7 +793,7 @@ app.post("/api/scan-ai", express.json({ limit: "4mb" }), async (req, res) => {
     if (stamp && /promo|prerelease|staff|stamp/i.test(c.name + " " + cs + " " + (c.rarity || ""))) x += 2;
     return x;
   };
-  const list = all.map((c) => ({ c, s: scoreCard(c, nn, d, words, extra) })).sort((a, b) => b.s - a.s).slice(0, 8).map(({ c }) => c);
+  const list = all.map((c) => ({ c, s: scoreCard(c, nn, d, words, extra) })).sort((a, b) => b.s - a.s).slice(0, 30).map(({ c }) => c);
   // the printing to preselect, from what the photo shows
   const fin = String(read.finish || ""), want = /1st/i.test(ed) ? (/^holo$/i.test(fin) ? "1st Edition Holofoil" : "1st Edition") : /reverse/i.test(fin) ? "Reverse Holofoil" : /^holo$/i.test(fin) ? (/unlimited/i.test(ed) ? "Unlimited Holofoil" : "Holofoil") : /non/i.test(fin) ? "Normal" : "";
   const g = read.graded && read.graded.company ? `${String(read.graded.company).toUpperCase()} ${read.graded.grade || ""}`.trim() : "";

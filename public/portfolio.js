@@ -18,7 +18,7 @@ let PFF = (() => { try { const f = JSON.parse(localStorage.getItem("pp_pffilter"
    The trade is saved on this device as you go, and Complete trade updates the portfolio (with Undo). */
 const TR_KEY = "pp_trade";
 const TR_GRADES = ["PSA 10", "PSA 9", "PSA 8", "PSA 7", "CGC 10", "CGC 9.5", "CGC 9", "BGS 10", "BGS 9.5", "BGS 9", "TAG 10", "TAG 9"];
-let tradeOpen = false, trFind = "", trSug = [], trSugT = 0, trSugSide = "";
+let tradeOpen = false, trFind = "", trSug = [], trSugT = 0, trSugSide = "", trSugQ = "", trSugPage = 0, trSugMore = false, trSugBusy = false, trPickN = 20;
 let TRD = (() => { try { const t = JSON.parse(localStorage.getItem(TR_KEY) || "null"); if (t && Array.isArray(t.give) && Array.isArray(t.get)) return t; } catch {} return null; })() || { give: [], get: [], pct: 80, cashPct: 70, cashIn: 0, cashOut: 0 };
 const trSave = () => { try { localStorage.setItem(TR_KEY, JSON.stringify(TRD)); } catch {} };
 const trQ = (c) => Math.max(1, Math.round(+c.qty || 1));
@@ -118,14 +118,31 @@ function trDraw() {
 function trPickHTML() {
   const w = trFind.toLowerCase().split(/\s+/).filter(Boolean);
   if (!w.length) return "";
-  const hits = owned(P.items).filter((x) => { const t = [x.name, x.set, x.num, x.var, x.grade, x.cond].join(" ").toLowerCase(); return w.every((k) => t.includes(k)); }).slice(0, 8);
+  const found = owned(P.items).filter((x) => { const t = [x.name, x.set, x.num, x.var, x.grade, x.cond].join(" ").toLowerCase(); return w.every((k) => t.includes(k)); });
+  const hits = found.slice(0, trPickN), rest = found.length - hits.length;
   return hits.length ? hits.map((x) => `<button type="button" class="tr-hit" data-tpick="${x.id}">${x.img ? `<img src="${esc(x.img)}" alt="" loading="lazy">` : `<span class="ph"></span>`}<span class="sug-m"><b>${esc(x.name)}</b><span>${esc([x.set, x.num, isGraded(x) ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond, x.var].filter(Boolean).join(" · "))} · you have ${x.qty}</span></span><span class="sug-v">${x.mkt == null && !(x.ovr > 0) ? "–" : money(unit(x))}</span></button>`).join("")
+    + (rest > 0 ? `<button type="button" class="sug-more" data-tpmore="1">Show more (${rest})</button>` : "")
     : `<div class="sug-n">No cards in your portfolio match.</div>`;
 }
 function trSugHTML(side) {
   if (trSugSide !== side) return "";
   if (trSug === null) return `<div class="sug-n">Looking on TCGplayer…</div>`;
-  return trSug.length ? trSug.map((s, i) => `<button type="button" class="tr-hit" data-tsug="${i}" data-tside="${side}">${s.image ? `<img src="${esc(s.image)}" alt="" loading="lazy">` : `<span class="ph"></span>`}<span class="sug-m"><b>${esc(s.name)}</b><span>${esc([s.numberText || s.number, s.set].filter(Boolean).join(" · "))}</span>${s.print ? `<i class="sug-p">${esc(s.print)}</i>` : ""}</span><span class="sug-v">${s.nm != null ? money(s.nm) : "–"}<small>${s.overall ? "market" : "NM"}</small></span></button>`).join("") : `<div class="sug-n">No TCGplayer matches.</div>`;
+  return trSug.length ? trSug.map((s, i) => `<button type="button" class="tr-hit" data-tsug="${i}" data-tside="${side}">${s.image ? `<img src="${esc(s.image)}" alt="" loading="lazy">` : `<span class="ph"></span>`}<span class="sug-m"><b>${esc(s.name)}</b><span>${esc([s.numberText || s.number, s.set].filter(Boolean).join(" · "))}</span>${s.print ? `<i class="sug-p">${esc(s.print)}</i>` : ""}</span><span class="sug-v">${s.nm != null ? money(s.nm) : "–"}<small>${s.overall ? "market" : "NM"}</small></span></button>`).join("") + (trSugMore ? `<button type="button" class="sug-more" data-tsmore="${side}">${trSugBusy ? "Loading more…" : "Show more"}</button>` : "") : `<div class="sug-n">No TCGplayer matches.</div>`;
+}
+// the next results in the trade's search lists load when the end of a list scrolls into view (or Show more is tapped)
+async function trSugMoreLoad(side) {
+  if (!trSugMore || trSugBusy || trSugSide !== side || !Array.isArray(trSug)) return;
+  const q = trSugQ; trSugBusy = true; let bx = $("tr-sug-" + side); if (bx) bx.innerHTML = trSugHTML(side);
+  try { for (let n = 0; n < 3 && trSugMore && q === trSugQ; n++) { const j = await getJSON("/api/suggest?" + new URLSearchParams({ q, page: String(trSugPage + 1) })); if (q !== trSugQ) break;
+      trSugPage = j.page ?? trSugPage + 1; trSugMore = !!j.more; const seen = new Set(trSug.map((x) => x.tcgId + "|" + x.print)); trSug.push(...(j.items || []).filter((x) => !seen.has(x.tcgId + "|" + x.print))); if ((j.items || []).length) break; } }
+  catch {} finally { trSugBusy = false; bx = $("tr-sug-" + side); if (bx && q === trSugQ) bx.innerHTML = trSugHTML(side); trWatchMore(); }
+}
+function trPickMore() { trPickN += 20; const h = $("tr-hits"); if (h) h.innerHTML = trPickHTML(); trWatchMore(); }
+let trMoreObs = null;
+function trWatchMore() {
+  if (!("IntersectionObserver" in window)) return;
+  if (!trMoreObs) trMoreObs = new IntersectionObserver((es) => { for (const e of es) if (e.isIntersecting) { const b = e.target; trMoreObs.unobserve(b); if (b.dataset.tsmore) trSugMoreLoad(b.dataset.tsmore); else if (b.dataset.tpmore) trPickMore(); } }, { rootMargin: "0px 0px 300px 0px" });
+  trMoreObs.disconnect(); document.querySelectorAll(".tr [data-tsmore], .tr [data-tpmore]").forEach((b) => trMoreObs.observe(b));
 }
 function renderTrade(box) {
   box.innerHTML = `<div class="tr">
@@ -205,6 +222,8 @@ document.addEventListener("click", (e) => {
   else if (d.tx === "scang") { sqTarget = "tradeGive"; sqOpen(); }
   else if (d.tx === "done") trComplete();
   else if (d.tpick) { const x = P.items.find((y) => y.id === d.tpick); if (x) { trAddFromPortfolio(x); trFind = ""; render(); } }
+  else if (d.tsmore) trSugMoreLoad(d.tsmore);
+  else if (d.tpmore) trPickMore();
   else if (d.tsug != null) { const s = trSug[+d.tsug]; if (s) { trAddFound(s, d.tside); trSug = []; trSugSide = ""; render(); } }
   else if (d.tdel) { TRD.give = TRD.give.filter((c) => c.id !== d.tdel); TRD.get = TRD.get.filter((c) => c.id !== d.tdel); trSave(); render(); }
   else if (d.tpp) { TRD.pct = +d.tpp; trSave(); const n = $("tr-pct"), r = $("tr-rg"); if (n) n.value = TRD.pct; if (r) r.value = TRD.pct; trDraw(); trRowsPct(); }
@@ -216,13 +235,15 @@ document.addEventListener("input", (e) => {
   const t = e.target; if (!t.closest || !t.closest(".tr")) return;
   if (t.id === "tr-pct" || t.id === "tr-rg") { if (t.value === "" || !Number.isFinite(+t.value)) return; TRD.pct = Math.max(0, Math.round(+t.value * 10) / 10); const o = t.id === "tr-pct" ? $("tr-rg") : $("tr-pct"); if (o) o.value = t.id === "tr-pct" ? Math.min(100, Math.round(TRD.pct)) : TRD.pct; trSave(); trDraw(); trRowsPct(); return; }
   if (t.id === "tr-cin" || t.id === "tr-cout" || t.id === "tr-cpct") { const v = Math.max(0, +t.value || 0); if (t.id === "tr-cin") TRD.cashIn = v; else if (t.id === "tr-cout") TRD.cashOut = v; else TRD.cashPct = v; trSave(); trDraw(); return; }
-  if (t.id === "tr-find") { trFind = t.value; const h = $("tr-hits"); if (h) h.innerHTML = trPickHTML(); return; }
+  if (t.id === "tr-find") { trFind = t.value; trPickN = 20; const h = $("tr-hits"); if (h) h.innerHTML = trPickHTML(); trWatchMore(); return; }
   if (t.id === "tr-sq-give" || t.id === "tr-sq-get") {
     const side = t.id === "tr-sq-give" ? "give" : "get", q = t.value.trim(); clearTimeout(trSugT);
     const box = $("tr-sug-" + side), other = $("tr-sug-" + (side === "give" ? "get" : "give")); if (other) other.innerHTML = "";
     if (q.length < 3) { trSug = []; trSugSide = ""; if (box) box.innerHTML = ""; return; }
     trSugSide = side; trSug = null; if (box) box.innerHTML = trSugHTML(side);
-    trSugT = setTimeout(async () => { try { const j = await getJSON("/api/suggest?q=" + encodeURIComponent(q)); if (trSugSide !== side || t.value.trim() !== q) return; trSug = j.items || []; } catch { trSug = []; } const bx = $("tr-sug-" + side); if (bx) bx.innerHTML = trSugHTML(side); }, 400);
+    trSugT = setTimeout(async () => { trSugQ = q; trSugPage = 0; trSugMore = false; trSugBusy = false;
+      try { const j = await getJSON("/api/suggest?q=" + encodeURIComponent(q)); if (trSugSide !== side || t.value.trim() !== q) return; trSug = j.items || []; trSugMore = !!j.more; } catch { trSug = []; }
+      const bx = $("tr-sug-" + side); if (bx) bx.innerHTML = trSugHTML(side); trWatchMore(); }, 400);
     return;
   }
   const c = [...TRD.give, ...TRD.get].find((x) => x.id === t.dataset.tid); if (!c) return;
@@ -1295,7 +1316,7 @@ async function sqRead(it) {
   it.unsure = true;
 }
 async function sqFind(it, read) {
-  it.read = read; it.err = ""; it.note = ""; it.manual = false; it.okPf = false;
+  it.read = read; it.err = ""; it.note = ""; it.manual = false; it.okPf = false; sqGridN = 12;
   try { const j = await getJSON("/api/scan-match?" + new URLSearchParams({ name: read.name || "", n: read.n || "", d: read.d || "" })); it.cards = j.cards || []; }
   catch (e) { it.cards = []; it.err = e.message; }
   it.pick = it.cards.length ? 0 : -1; if (!it.cards.length && !it.err) it.err = "No matching cards found. Tap Fix to search.";
@@ -1672,7 +1693,7 @@ function sqBar() {
 }
 function sqRender() {
   let ov = $("ppscan"); if (!ov) { ov = document.createElement("div"); ov.id = "ppscan"; ov.className = "ppm-ov"; document.body.appendChild(ov); }
-  if (sqView) return sqDetail(ov);
+  if (sqView) { sqDetail(ov); sqGridWatch(); return; }
   const pfs = sqPfs(), has = scanQ.length;
   ov.innerHTML = `<div class="ppm sqm" role="dialog" aria-modal="true" aria-labelledby="sc-t">
     <div class="sq-h"><h3 id="sc-t">${sqTarget === "select" ? "Find your cards" : sqTarget === "tradeGive" ? "Scan your cards" : sqTarget === "trade" ? "Scan their cards" : "Scan cards"}</h3><button type="button" class="ppm-x plain sq-close" data-qa="close">Close</button></div>
@@ -1693,6 +1714,8 @@ function sqRender() {
 function sqDetail(ov) {
   const it = sqItem(sqView); if (!it) { sqView = null; return sqRender(); }
   const own = sqOwnMode() ? sqOwnFix(it) : null;
+  // the matches show 12 at a time; more load as you scroll to the end
+  const gridAll = it.cards.map((_, i) => i).filter((i) => !(sqOwnMode() && !own.includes(i))), gridShow = new Set(gridAll.slice(0, sqGridN)), gridRest = gridAll.length - gridShow.size;
   const r = it.read || {}, a = it.ai, c = it.pick >= 0 ? it.cards[it.pick] : null;
   const saw = a && a.found !== false ? [a.name_english && a.name && a.name_english !== a.name ? `${a.name} (${a.name_english})` : a.name || a.name_english, a.number && (a.number + (a.set_total ? "/" + a.set_total : "")), a.set_name, a.language && a.language !== "English" ? a.language : "", a.edition && a.edition !== "Unlimited" ? a.edition : "", a.finish && a.finish !== "unknown" ? a.finish : "", a.stamp, it.grade].filter(Boolean).map(esc).join(" · ") : "";
   ov.innerHTML = `<div class="ppm sqm" role="dialog" aria-modal="true" aria-labelledby="sc-t">
@@ -1701,7 +1724,7 @@ function sqDetail(ov) {
     ${saw ? `<p class="sc-saw"><span class="mu">Read:</span> ${saw}${a._by ? ` <span class="mu">(${esc(String(a._by).split(" ")[0])}${a._secs ? ", " + (+a._secs).toFixed(1) + "s" : ""})</span>` : ""}</p>` : it.aiErr ? `<p class="sc-saw" style="color:var(--dn)">${esc(it.aiErr)}. Used basic text reading instead, which can't tell printings apart.</p>` : ""}
     ${c ? `<div class="ppm-b" style="margin:0 0 12px"><button type="button" class="ppm-x" data-qc="${it.id}">See comps for ${esc(c.name)}</button></div>` : ""}
     ${sqOwnMode() && !own.length ? `<p><b>None of the matches are cards in your portfolio.</b> <span class="mu">Search again below${sqTarget === "tradeGive" ? ", or use “Add from your portfolio” in the trade" : ""}.</span></p>`
-      : it.cards.length ? `<p class="mu">${sqOwnMode() ? "Tap your card (only cards in your portfolio):" : "Tap your card:"}</p><div class="sc-grid">${it.cards.map((x, i) => sqOwnMode() && !own.includes(i) ? "" : `<button type="button" data-qp="${i}"${i === it.pick ? ' class="best"' : ""}>${i === it.pick ? `<i class="sc-best">${a && i === 0 ? "Best match" : "Chosen"}</i>` : ""}<img src="${esc(x.image)}" alt="" loading="lazy"><b>${esc(x.name)}</b><span>${esc(x.set || "")} · ${esc(sqNum(x))}</span></button>`).join("")}</div>`
+      : it.cards.length ? `<p class="mu">${sqOwnMode() ? "Tap your card (only cards in your portfolio):" : "Tap your card:"}</p><div class="sc-grid">${it.cards.map((x, i) => (sqOwnMode() && !own.includes(i)) || !gridShow.has(i) ? "" : `<button type="button" data-qp="${i}"${i === it.pick ? ' class="best"' : ""}>${i === it.pick ? `<i class="sc-best">${a && i === 0 ? "Best match" : "Chosen"}</i>` : ""}<img src="${esc(x.image)}" alt="" loading="lazy"><b>${esc(x.name)}</b><span>${esc(x.set || "")} · ${esc(sqNum(x))}</span></button>`).join("")}</div>${gridRest > 0 ? `<button type="button" class="sug-more" data-qmore="1">Show more (${gridRest})</button>` : ""}`
       : `<p><b>${esc(it.err || "No matching cards found.")}</b></p>`}
     <form id="sq-search" class="cimp-c" style="margin-top:12px"><input name="q" value="${esc([r.name, r.n && (r.n + (r.d ? "/" + r.d : ""))].filter(Boolean).join(" "))}" placeholder="Name and number, e.g. Charizard 4/102" aria-label="Card name and number" style="letter-spacing:0;text-transform:none"><button type="submit" class="ppm-x">Search</button></form>
     <div class="ppm-b"><button type="button" class="ppm-x plain" data-qa="list">Back to list</button></div>
@@ -1715,6 +1738,13 @@ function sqToItem(it, pf) {
     // the TCGplayer price already looked up while scanning, so the portfolio shows it right away
     ...(!it.grade && c.tcgId && it.pxK === sqPxKey(it) && it.px > 0 ? { mkt: it.px, mktEst: !!it.pxEst, mktV: 2, pT: Date.now() } : {}) };
 }
+let sqGridN = 12, sqGridObs = null;
+function sqGridWatch() {
+  const ov = $("ppscan"), b = ov && ov.querySelector("[data-qmore]"); if (sqGridObs) sqGridObs.disconnect(); if (!b || !("IntersectionObserver" in window)) return;
+  sqGridObs = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { sqGridObs.disconnect(); sqGridMore(); } }, { root: ov.querySelector(".ppm"), rootMargin: "0px 0px 300px 0px" });
+  sqGridObs.observe(b);
+}
+function sqGridMore() { const m = $("ppscan") && $("ppscan").querySelector(".ppm"), st = m ? m.scrollTop : 0; sqGridN += 12; sqRender(); const m2 = $("ppscan") && $("ppscan").querySelector(".ppm"); if (m2) m2.scrollTop = st; }
 let sqTarget = null; // "trade" / "tradeGive" when the scanner was opened from the trade analyzer (their cards / your cards); "select" to select cards in the portfolio
 // condition changes made while finding your cards, saved to those copies in the portfolio
 function sqEdits() { return scanQ.filter((it) => it.pick >= 0 && it.pid && it.mcond && P.items.some((x) => x.id === it.pid && sqCopyCond(x) !== it.mcond)); }
@@ -1829,7 +1859,8 @@ document.addEventListener("click", (e) => {
       .then((v) => { if (v) { scanQ = scanQ.filter((x) => !(x.sel && x.pick >= 0)); sqSave(); sqRender(); } }); }
   else if (d.qa === "clear") modal({ title: "Clear the whole list?", text: "Cards you haven't added to your portfolio will be removed from this list.", buttons: [{ label: "Clear list", kind: "danger", value: 1 }, { label: "Cancel", kind: "plain" }] })
     .then((v) => { if (v) { scanQ = scanQ.filter((x) => x.st === "wait" || x.st === "reading"); sqSave(); sqRender(); } });
-  else if (d.qo) { sqView = d.qo; sqRender(); ov.querySelector(".ppm").scrollTop = 0; }
+  else if (d.qo) { sqView = d.qo; sqGridN = 12; sqRender(); ov.querySelector(".ppm").scrollTop = 0; }
+  else if (d.qmore) sqGridMore();
   else if (d.qc) sqComp(d.qc);
   else if (d.qok) { const it = sqItem(d.qok); if (it) { it.okPf = true; sqSave(); const n = ov.querySelector(`#sq-${it.id} .sq-chk`); if (n) n.remove(); } }
   else if (d.qown) { const it = sqItem(d.qid); if (it) { it.pid = d.qown; it.mcond = null; it.okPf = true; sqSave(); sqRow(it, true); ov.querySelectorAll(`[data-qown][data-qid="${it.id}"]`).forEach((m) => m.setAttribute("aria-pressed", String(m.dataset.qown === d.qown))); } }

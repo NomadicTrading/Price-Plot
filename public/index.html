@@ -265,7 +265,7 @@ label.pill{display:inline-block}
 .pf-tools{display:flex;align-items:center;gap:8px;margin-top:10px}.pf-tools .rf-b{padding:5px 12px;font-size:13.5px;min-height:36px;flex:none}.pf-tools #pfo{margin-left:auto;max-width:62%}.rf.pf-rf{margin:8px 0 2px}.pf-rf:empty{display:none}.rf{flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:-4px}.rf .pill{padding:5px 12px;font-size:13.5px;min-height:32px}.rf-c{background:var(--soft)}
 .rf-p{flex-basis:100%;display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px;border-radius:12px;background:var(--soft);margin-top:2px}.rf-p label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mut);min-width:0}.rf-p [hidden]{display:none!important}
 .rf-p select,.rf-p input{font:inherit;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:6px 8px;min-height:38px;width:100%;min-width:0}.rf-a{grid-column:1/-1;display:flex;justify-content:flex-end;gap:16px}
-.mg{max-width:460px;max-height:calc(100dvh - 32px)}.mg-s{margin:10px 0 2px;font-size:14px}.mg-l{margin:2px 0 0;padding-left:18px;font-size:13px;color:var(--mut)}.mg-l li{margin:2px 0}.mg-p{margin:8px 0;padding:8px 10px;border-radius:10px;background:var(--soft);font-size:13.5px}.mg-p select{margin-top:6px;width:100%;font:inherit;font-size:14px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:6px;min-height:36px}
+.sug-more{display:block;width:100%;padding:12px;margin-top:2px;border:0;border-radius:10px;background:var(--soft);color:var(--link);font:inherit;font-size:14px;font-weight:600;cursor:pointer}.mg{max-width:460px;max-height:calc(100dvh - 32px)}.mg-s{margin:10px 0 2px;font-size:14px}.mg-l{margin:2px 0 0;padding-left:18px;font-size:13px;color:var(--mut)}.mg-l li{margin:2px 0}.mg-p{margin:8px 0;padding:8px 10px;border-radius:10px;background:var(--soft);font-size:13.5px}.mg-p select{margin-top:6px;width:100%;font:inherit;font-size:14px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:6px;min-height:36px}
 .mg-more{margin:0 0 0 18px;font-size:13px}.mg-more>summary{cursor:pointer;color:var(--link);font-weight:600;padding:3px 0;list-style:none}.mg-more>summary::-webkit-details-marker{display:none}.mg-more[open]>summary{color:var(--mut)}.mg-more>.mg-l{margin:0;padding-left:0}
 .pfb{height:8px;border-radius:999px;background:var(--soft);overflow:hidden;margin:6px 0 10px}.pfb[hidden]{display:none}.pfb>i{display:block;height:100%;width:0;border-radius:999px;background:var(--blue);transition:width .3s ease}
 .mg-c{display:flex;gap:8px;align-items:flex-start;margin:8px 0 0;font-size:13.5px}.mg-c input{width:18px;height:18px;flex:none;margin-top:1px}
@@ -616,7 +616,7 @@ $("zr").onclick=()=>{view=null;draw()};
 
 /* Search bar suggestions: TCGplayer's matches as you type, one row per printing with its Near Mint price.
    Picking one fills in the card's name and number and searches; the TCGplayer tab opens on that printing. */
-let sugT=0,sugCtl=null,sugItems=[],sugAt=-1,sugQ="";
+let sugT=0,sugCtl=null,sugItems=[],sugAt=-1,sugQ="",sugMore=false,sugPage=0,sugBusy=false,sugPs=null;
 /* Refine: narrows the search suggestions (cards or sealed, language, set, rarity, printing, kind of sealed product). Remembered. */
 const RF_OPTS={type:[["","Cards & sealed"],["cards","Cards"],["sealed","Sealed"]],lang:[["","Any language"],["en","English"],["jp","Japanese"]],
  rarity:[["","Any rarity"],...["Common","Uncommon","Rare","Holo Rare","Double Rare","Ultra Rare","Illustration Rare","Special Illustration Rare","Hyper Rare","Secret Rare","Shiny Rare","ACE SPEC Rare","Promo"].map(x=>[x,x])],
@@ -644,13 +644,19 @@ rfDraw();
 const sugEl=$("sug");
 function sugHide(){sugEl.hidden=true;sugAt=-1;$("q").removeAttribute("aria-activedescendant")}
 function sugPlace(){const f=$("f"),r=$("rf"),under=r&&r.offsetHeight?r:f;sugEl.style.left=f.offsetLeft+"px";sugEl.style.top=(under.offsetTop+under.offsetHeight+6)+"px";sugEl.style.width=f.offsetWidth+"px"}
-function sugShow(html){sugEl.innerHTML=html;sugPlace();sugEl.hidden=false}
+function sugShow(html){const st=sugEl.hidden?0:sugEl.scrollTop;sugEl.innerHTML=html;sugPlace();sugEl.hidden=false;sugEl.scrollTop=st}
+// the next page of results, when the list is scrolled near its end (or Show more is tapped)
+async function sugMoreLoad(){if(!sugMore||sugBusy||!sugPs)return;const ps=sugPs;sugBusy=true;sugRender();
+ try{for(let n=0;n<3&&sugMore&&ps===sugPs;n++){const r=await fetch("/api/suggest?"+new URLSearchParams({...ps,page:String(sugPage+1)}));const j=await r.json();if(!r.ok||ps!==sugPs)break;
+  sugPage=j.page??sugPage+1;sugMore=!!j.more;const seen=new Set(sugItems.map(x=>x.tcgId+"|"+x.print));sugItems.push(...(j.items||[]).filter(x=>!seen.has(x.tcgId+"|"+x.print)));if((j.items||[]).length)break}}
+ catch{}finally{sugBusy=false;if(ps===sugPs&&!sugEl.hidden)sugRender()}}
+sugEl.addEventListener("scroll",()=>{if(sugEl.scrollTop+sugEl.clientHeight>sugEl.scrollHeight-120)sugMoreLoad()},{passive:true});
 function sugRender(){
  if(!sugItems.length)return sugShow(`<div class="sug-n">No TCGplayer matches${rfOn().length?" with your Refine settings ("+esc(rfOn().map(([k,v])=>rfLabel(k,v)).join(", "))+")":""}. Press Search to look on eBay anyway.</div>`);
  sugShow(sugItems.map((c,i)=>{const num=c.numberText||(c.number?c.number+(c.printedTotal&&/^\d+$/.test(c.number)?"/"+c.printedTotal:""):"");
   return `<button type="button" class="sug-r" role="option" id="sug-${i}" data-si="${i}" aria-selected="${i===sugAt}">${c.image?`<img src="${esc(safeUrl(c.image)||"")}" alt="" loading="lazy">`:'<span class="ph"></span>'}
   <span class="sug-m"><b>${esc(c.name)}</b><span>${esc([num?"#"+num:"",c.set].filter(Boolean).join(" · "))}</span>${c.sealed?`<i class="sug-p">Sealed</i>`:c.print?`<i class="sug-p">${esc(c.print)}</i>`:c.rarity?`<i class="sug-p">${esc(c.rarity)}</i>`:""}</span>
-  <span class="sug-v">${c.nm!=null?pf(c.nm):"–"}<small>${c.sealed?"sealed":c.overall?"market":"NM"}</small></span></button>`}).join(""))}
+  <span class="sug-v">${c.nm!=null?pf(c.nm):"–"}<small>${c.sealed?"sealed":c.overall?"market":"NM"}</small></span></button>`}).join("")+(sugMore?`<button type="button" class="sug-more" data-smore="1">${sugBusy?"Loading more…":"Show more"}</button>`:""))}
 function sugPick(i){const c=sugItems[i];if(!c)return;
  const num=c.numberText||(c.number?c.number+(c.printedTotal&&/^\d+$/.test(c.number)?"/"+c.printedTotal:""):"");
  $("q").value=[c.name,num].filter(Boolean).join(" ");sugQ=$("q").value;sugHide();
@@ -661,17 +667,18 @@ $("q").addEventListener("input",()=>{const q=$("q").value.trim();clearTimeout(su
  if(q.length<3||q===sugQ){sugHide();return}
  sugT=setTimeout(async()=>{sugCtl=new AbortController();const ctl=sugCtl;
   if(sugEl.hidden)sugShow('<div class="sug-n">Looking on TCGplayer…</div>');
-  try{const r=await fetch("/api/suggest?"+new URLSearchParams({q,...Object.fromEntries(rfOn())}),{signal:ctl.signal});const j=await r.json();
+  const ps={q,...Object.fromEntries(rfOn())};
+  try{const r=await fetch("/api/suggest?"+new URLSearchParams(ps),{signal:ctl.signal});const j=await r.json();
    if(ctl.signal.aborted||$("q").value.trim()!==q)return;
    if(!r.ok)return sugShow('<div class="sug-n">TCGplayer suggestions unavailable right now. Press Search to look on eBay.</div>');
-   sugItems=j.items||[];sugAt=-1;sugRender()}catch(e){if(e.name!=="AbortError")sugHide()}},350)});
+   sugItems=j.items||[];sugAt=-1;sugPs=ps;sugPage=0;sugMore=!!j.more;sugBusy=false;sugEl.scrollTop=0;sugRender()}catch(e){if(e.name!=="AbortError")sugHide()}},350)});
 $("q").addEventListener("keydown",e=>{if(sugEl.hidden||!sugItems.length)return;
  if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();const n=sugItems.length;sugAt=e.key==="ArrowDown"?(sugAt+1>=n?-1:sugAt+1):(sugAt-1<-1?n-1:sugAt-1);
   sugEl.querySelectorAll(".sug-r").forEach((b,i)=>b.setAttribute("aria-selected",i===sugAt));if(sugAt>=0){$("q").setAttribute("aria-activedescendant","sug-"+sugAt);$("sug-"+sugAt).scrollIntoView({block:"nearest"})}}
  else if(e.key==="Enter"&&sugAt>=0){e.preventDefault();sugPick(sugAt)}
  else if(e.key==="Escape")sugHide()});
 sugEl.addEventListener("mousedown",e=>e.preventDefault()); // keep the keyboard up on phones while choosing
-sugEl.addEventListener("click",e=>{const b=e.target.closest("[data-si]");if(b)sugPick(+b.dataset.si)});
+sugEl.addEventListener("click",e=>{if(e.target.closest("[data-smore]")){sugMoreLoad();return}const b=e.target.closest("[data-si]");if(b)sugPick(+b.dataset.si)});
 document.addEventListener("click",e=>{if(!sugEl.hidden&&!sugEl.contains(e.target)&&e.target!==$("q"))sugHide()});
 addEventListener("resize",()=>{if(!sugEl.hidden)sugPlace()});
 $("f").onsubmit=e=>{e.preventDefault();sugHide();tWant={id:"",set:""};clearTimeout(sugT);if(sugCtl)sugCtl.abort();tcgQ="";if(tab==="tcg"){loadTcg();return} // the eBay search waits until the eBay tab is opened
@@ -1031,5 +1038,5 @@ $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
-<script src="/portfolio.js?v=122"></script>
+<script src="/portfolio.js?v=123"></script>
 </body></html>
