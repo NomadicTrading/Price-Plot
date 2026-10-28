@@ -1857,8 +1857,17 @@ function selSync() {
   document.querySelectorAll("#pf .pr[data-id]").forEach((r) => { const on = selIds.has(r.dataset.id); r.classList.toggle("sel", selMode && on); const k = r.querySelector(".pr-ck"); if (k) k.setAttribute("aria-checked", String(on)); });
   const b = $("pfsel"); if (b) b.innerHTML = selBarHTML();
 }
-function selStart(id) { const was = selMode; selMode = true; if (id) selIds.add(id); editing = null; closeSwipes(); if (!was) render(); else selSync(); }
-function selEnd() { selMode = false; selIds.clear(); render(); }
+// redraw the portfolio while keeping a card at the same spot on screen (the one under your finger), so the page doesn't jump
+function pfKeep(id, draw) {
+  const at = (k) => k && document.querySelector(`#pf .pr[data-id="${CSS.escape(k)}"]`);
+  let r = at(id);
+  if (!r) r = [...document.querySelectorAll("#pf .pr[data-id]")].find((x) => x.getBoundingClientRect().bottom > 0);
+  const k = r && r.dataset.id, y0 = r ? r.getBoundingClientRect().top : null;
+  draw();
+  const r2 = at(k); if (r2 && y0 != null) { const dy = r2.getBoundingClientRect().top - y0; if (Math.abs(dy) > 0.5) scrollBy(0, dy); }
+}
+function selStart(id) { const was = selMode; selMode = true; if (id) selIds.add(id); editing = null; closeSwipes(); if (!was) pfKeep(id, render); else selSync(); }
+function selEnd() { selMode = false; selIds.clear(); pfKeep(null, render); }
 function selToggle(id) { if (selIds.has(id)) selIds.delete(id); else selIds.add(id); selSync(); }
 // press and hold
 let lp = null;
