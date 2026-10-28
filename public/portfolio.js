@@ -5,7 +5,7 @@
 const KEY = "pp_portfolio", HKEY = "pp_portfolio_hist";
 const CONDS = ["Near Mint", "Lightly Played", "Moderately Played", "Heavily Played", "Damaged"];
 const PAGE = 50;
-let P = readStore(), view = "all", sortBy = "value", findTxt = "", shown = PAGE, editing = null, pending = null;
+let P = readStore(), view = "all", sortBy = "value", findTxt = "", shown = PAGE, editing = null, pending = null, impOpen = false;
 /* ---------- trade analyzer ----------
    You give: cards from your portfolio (or found on TCGplayer), at their full market value.
    You get: the trader's cards (TCGplayer search or the scanner), counted at a trade % (list-wide, or per card).
@@ -271,7 +271,7 @@ function toItems(rows) {
   const head = rows[0].map((h) => String(h).toLowerCase().replace(/[^a-z0-9]/g, "")), idx = {};
   let asOf = null;
   head.forEach((h, i) => { if (h.startsWith("marketprice")) { idx.mkt = i; const m = /(\d{4})(\d{2})(\d{2})/.exec(h); if (m) asOf = m[1] + "-" + m[2] + "-" + m[3]; } else if (COLS[h] && idx[COLS[h]] == null) idx[COLS[h]] = i; });
-  if (idx.name == null) throw new Error("this doesn't look like a Collectr export (no Product Name column)");
+  if (idx.name == null) throw new Error("this doesn't look like a Collectr or Price Plot export (no Product Name column)");
   const g = (r, k) => (idx[k] == null ? "" : r[idx[k]]), s = (r, k) => { const v = g(r, k); return v instanceof Date ? v.toISOString().slice(0, 10) : String(v ?? "").trim(); };
   const items = rows.slice(1).map((r) => {
     const name = s(r, "name"); if (!name) return null;
@@ -554,8 +554,15 @@ function render() {
    <b>${view === "watch" ? w + " card" + (w === 1 ? "" : "s") : money(V.value)}</b>
    ${view !== "watch" && gl != null ? `<span style="color:var(${gl >= 0 ? "--up" : "--dn"});font-weight:600">${gl >= 0 ? "▲ +" : "▼ −"}${money(Math.abs(gl))} <span class="mu">on cards with a cost (${money(V.cost)} paid)</span></span>` : ""}</div>
    ${view !== "watch" ? `<div class="pst"><span><b>${V.n.toLocaleString()}</b> cards</span><span><b>${V.graded}</b> graded</span><span><b>${pfs.length}</b> portfolio${pfs.length === 1 ? "" : "s"}</span>${P.asOf ? `<span>Prices as of <b>${esc(P.asOf)}</b></span>` : ""}</div>` : ""}</div>
-  <div class="bar"><label class="pill on" for="pff">Import Collectr file</label><button class="pill" type="button" data-pa="clink">From a Collectr link</button><input id="pff" type="file" accept=".csv,.xlsx,.xls,text/csv" hidden>
-   <button class="pill" type="button" data-pa="add">+ Add card</button>${P.items.length ? `${canUndo() ? `<button class="pill" type="button" data-pa="undo">Undo last import</button>` : ""}<button class="pill" type="button" data-pa="export">Export CSV</button><button class="pill" type="button" data-pa="clear">Clear all</button>` : ""}<button class="pill" style="margin-left:auto" type="button" data-pa="trade">⇄ Trade${TRD.give.length + TRD.get.length ? ` (${TRD.give.length + TRD.get.length})` : ""}</button></div>
+  <div class="bar"><span class="imp"><button class="pill on" type="button" data-pa="imp" aria-haspopup="true" aria-expanded="${impOpen}">Import portfolio ▾</button>
+   <div class="imp-m" id="impm"${impOpen ? "" : " hidden"}><div class="imp-h">Import from</div>
+    <label class="imp-i" for="pff">Collectr file <span>.xlsx or .csv export</span></label>
+    <button class="imp-i" type="button" data-pa="clink">Collectr link <span>a shared portfolio link</span></button>
+    <label class="imp-i" for="pff2">CSV file <span>a Price Plot or Collectr CSV</span></label>
+    ${canUndo() ? `<button class="imp-i" type="button" data-pa="undo">Undo last import</button>` : ""}
+    ${P.items.length ? `<div class="imp-sep"></div><button class="imp-i" type="button" data-pa="export">Export as CSV</button><button class="imp-i imp-dn" type="button" data-pa="clear">Clear all</button>` : ""}</div></span>
+   <input id="pff" type="file" accept=".csv,.xlsx,.xls,text/csv" hidden><input id="pff2" type="file" accept=".csv,text/csv" hidden>
+   <button class="pill" type="button" data-pa="add">+ Add card</button><button class="pill" style="margin-left:auto" type="button" data-pa="trade">⇄ Trade${TRD.give.length + TRD.get.length ? ` (${TRD.give.length + TRD.get.length})` : ""}</button></div>
   ${cimpPanel()}<div class="sm" id="pfs">${pfText()}</div>${pfBarHTML()}<div id="pfi" class="pbx" hidden></div>
   ${editing === "new" ? `<div class="pbx">${form({ qty: 1 })}</div>` : ""}
   ${P.items.length ? `
@@ -1678,6 +1685,9 @@ function saveForm(fm) {
   }
   fillPrices();
 }
+function impMenu(open) { impOpen = !!open; const m = $("impm"), b = document.querySelector('[data-pa="imp"]'); if (!m) return; m.hidden = !open; if (b) b.setAttribute("aria-expanded", open ? "true" : "false"); }
+document.addEventListener("click", (e) => { const m = $("impm"); if (!m || m.hidden) return;
+  if (e.target.closest('[data-pa="imp"]')) return; if (!m.contains(e.target) || e.target.closest(".imp-i")) impMenu(false); }, true);
 document.addEventListener("click", (e) => {
   const box = $("pf"); if (!box || !box.contains(e.target)) return;
   const dot = e.target.closest && e.target.closest("[data-u]"); if (dot) { if (dot.dataset.u) openLink(dot.dataset.u); return; }
@@ -1704,6 +1714,7 @@ document.addEventListener("click", (e) => {
   else if (d.trash) askRemove(d.trash);
   else if (d.pa === "merge" || d.pa === "replace") applyImport(d.pa);
   else if (d.pa === "cancel") { pending = null; $("pfi").hidden = true; }
+  else if (d.pa === "imp") { const m = $("impm"); impMenu(m && m.hidden); }
   else if (d.pa === "clink") cimpSetup();
   else if (d.cx2) cimpAction(d.cx2);
   else if (d.pa === "add") { editing = "new"; render(); }
@@ -1714,7 +1725,7 @@ document.addEventListener("click", (e) => {
   else if (d.pa === "clear") { if (confirm("Remove every card from your portfolio on this device? Export a CSV first if you want a backup.")) { P = { items: [], asOf: null }; store(); try { localStorage.removeItem(HKEY); } catch {} render(); } }
 });
 document.addEventListener("change", (e) => {
-  if (e.target.id === "pff" && e.target.files[0]) onFile(e.target.files[0]);
+  if ((e.target.id === "pff" || e.target.id === "pff2") && e.target.files[0]) { onFile(e.target.files[0]); e.target.value = ""; }
   else if (e.target.id === "pfo") { sortBy = e.target.value; shown = PAGE; render(); }
 });
 document.addEventListener("input", (e) => {
