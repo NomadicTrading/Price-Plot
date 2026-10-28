@@ -1442,22 +1442,39 @@ function sqMinePick(it, mine) {
   const g = (it.grade || "").trim(), x = (g ? mine.find((y) => isGraded(y) && shortGrade(y.grade) === shortGrade(g)) : mine.find((y) => !isGraded(y) && (y.cond || "Near Mint") === (it.cond || "Near Mint"))) || mine[0];
   return (it.pid = x ? x.id : null);
 }
+// in the trade's "your cards" scanner only cards you own are offered: the scan's matches are narrowed to your portfolio,
+// and copies in your portfolio that fit what was read (name and number) are added as matches if the search missed them
+function sqOwnFix(it) {
+  if (!it.cards || it.st !== "ready") return [];
+  const r = it.read || {}, n = mName(r.name), k = mNum(r.n);
+  if (n) for (const x of owned(P.items)) {
+    if (!(x.qty > 0) || mName(x.name) !== n || (k && mNum(x.num) !== k) || it.cards.some((c) => c.id === "pf-" + x.id)) continue;
+    const c = { id: "pf-" + x.id, tcgId: x.tcgId || null, name: x.name, number: String(x.num || "").split("/")[0], printedTotal: String(x.num || "").split("/")[1] || "", set: x.set || "", image: x.img || "", big: x.big || "", prints: x.var ? [x.var] : [], fromPf: true };
+    if (!it.cards.some((y) => sqMine(it, y).some((m) => m.id === x.id))) it.cards.push(c);
+  }
+  const own = it.cards.map((c, i) => (sqMine(it, c).length ? i : -1)).filter((i) => i >= 0);
+  it.notMine = !own.length;
+  if (own.length && !own.includes(it.pick)) { it.pick = own[0]; it.pxK = null; it.err = ""; it.unsure = false; }
+  if (it.notMine) it.sel = false;
+  return own;
+}
 function sqMineHTML(it, c) {
   const mine = sqMine(it, c);
-  if (!mine.length) { it.pid = null; return `<div class="sq-mine"><span class="sq-st warn">Not in your portfolio</span><span class="mu">Adds with the condition below at TCGplayer's price.</span></div>`; }
+  if (!mine.length) { it.pid = null; return `<div class="sq-mine"><span class="sq-st warn">Not in your portfolio</span><span class="mu">None of the matches for this photo are cards you own. Tap Change to search, or remove it.</span></div>`; }
   const pid = sqMinePick(it, mine);
   const one = new Set(mine.map((x) => x.pf)).size < 2;
   return `<div class="sq-mine"><span class="mu">Your copy${mine.length > 1 ? " (tap one)" : ""}:</span>${mine.map((x) => `<button type="button" class="sq-mc" data-qown="${x.id}" data-qid="${it.id}" aria-pressed="${x.id === pid}">${esc(isGraded(x) ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond || "NM")}${x.var ? " · " + esc(x.var) : ""}${x.pf && !one ? " · " + esc(x.pf) : ""} · ×${x.qty}${x.mkt != null || x.ovr > 0 ? " · " + money(unit(x)) : ""}</button>`).join("")}<label class="sq-mq">Qty <input data-qf="qty" data-qid="${it.id}" type="number" min="1" step="1" inputmode="numeric" value="${it.qty || 1}" aria-label="Quantity"></label></div>`;
 }
 function sqPfs() { return [...new Set(P.items.filter((x) => x.qty > 0 && x.pf).map((x) => x.pf))].sort(); }
 function sqRowHTML(it) {
+  if (sqTarget === "tradeGive") sqOwnFix(it);
   const c = it.pick >= 0 ? it.cards[it.pick] : null, a = it.ai;
   const status = it.st === "wait" ? "Waiting…" : it.st === "reading" ? (it.note || "Reading the card…") : it.st === "error" ? it.err : it.err ? it.err : it.unsure ? "Check this match" : "";
   const prints = sqPrints(it, c);
   if (c && !it.print) it.print = prints[0];
   const busy = it.st === "wait" || it.st === "reading";
   return `<div class="sq-r${busy ? " busy" : ""}${it.st === "error" || (it.st === "ready" && !c) ? " bad" : ""}" id="sq-${it.id}">
-    <label class="sq-ck"><input type="checkbox" data-qk="${it.id}" ${it.sel ? "checked" : ""} ${c ? "" : "disabled"} aria-label="Select this card"></label>
+    <label class="sq-ck"><input type="checkbox" data-qk="${it.id}" ${it.sel ? "checked" : ""} ${c && !(sqTarget === "tradeGive" && it.notMine) ? "" : "disabled"} aria-label="Select this card"></label>
     <button type="button" class="sq-pics" data-qo="${it.id}" aria-label="Fix or change the match">${it.thumb ? `<img src="${it.thumb}" alt="">` : `<span class="sq-ph"></span>`}${c ? `<img src="${esc(c.image)}" alt="" loading="lazy">` : busy ? `<span class="sq-spin" aria-hidden="true"></span>` : ""}</button>
     <div class="sq-t">
       ${c ? `<b>${esc(c.name)}</b><div class="mu">${esc(c.set || "")} · ${esc(sqNum(c))}${a && a.language && a.language !== "English" ? " · " + esc(a.language) : ""}</div>` : `<b>${busy ? "Scanning…" : "No match yet"}</b>`}
@@ -1467,12 +1484,12 @@ function sqRowHTML(it) {
       ${sqSalesHTML(it, c)}
     </div>
     <div class="sq-a">${busy ? "" : `<button type="button" class="sq-b" data-qo="${it.id}">${c ? "Change" : "Fix"}</button>`}${c && !busy ? `<button type="button" class="sq-b" data-qc="${it.id}">Comp</button>` : ""}<button type="button" class="sq-x" data-qx="${it.id}" aria-label="Remove from list">✕</button></div>
-      ${c && sqTarget === "tradeGive" && sqMine(it, c).length ? sqMineHTML(it, c) : c ? `${sqTarget === "tradeGive" ? sqMineHTML(it, c) : ""}<div class="sq-f">
+      ${c && sqTarget === "tradeGive" ? sqMineHTML(it, c) : c ? `<div class="sq-f">
         <select data-qf="print" data-qid="${it.id}" aria-label="Printing">${prints.map((x) => `<option ${x === it.print ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>
         <select data-qf="cond" data-qid="${it.id}" aria-label="Condition">${CONDS.map((x) => `<option value="${x}" ${x === it.cond ? "selected" : ""}>${{ "Near Mint": "NM", "Lightly Played": "LP", "Moderately Played": "MP", "Heavily Played": "HP", Damaged: "DMG" }[x] || x}</option>`).join("")}</select>
         <input data-qf="qty" data-qid="${it.id}" type="number" min="1" step="1" inputmode="numeric" value="${it.qty || 1}" aria-label="Quantity">
       </div>` : ""}
-      ${busy || (sqTarget === "tradeGive" && it.pid) ? "" : sqShadowHTML(it, c)}
+      ${busy || sqTarget === "tradeGive" ? "" : sqShadowHTML(it, c)}
       ${sqTarget ? "" : sqOfferHTML(it, c)}
   </div>`;
 }
@@ -1530,6 +1547,7 @@ function sqRender() {
 }
 function sqDetail(ov) {
   const it = sqItem(sqView); if (!it) { sqView = null; return sqRender(); }
+  const own = sqTarget === "tradeGive" ? sqOwnFix(it) : null;
   const r = it.read || {}, a = it.ai, c = it.pick >= 0 ? it.cards[it.pick] : null;
   const saw = a && a.found !== false ? [a.name_english && a.name && a.name_english !== a.name ? `${a.name} (${a.name_english})` : a.name || a.name_english, a.number && (a.number + (a.set_total ? "/" + a.set_total : "")), a.set_name, a.language && a.language !== "English" ? a.language : "", a.edition && a.edition !== "Unlimited" ? a.edition : "", a.finish && a.finish !== "unknown" ? a.finish : "", a.stamp, it.grade].filter(Boolean).map(esc).join(" · ") : "";
   ov.innerHTML = `<div class="ppm sqm" role="dialog" aria-modal="true" aria-labelledby="sc-t">
@@ -1537,7 +1555,8 @@ function sqDetail(ov) {
     ${it.thumb ? `<img class="sc-photo" src="${it.thumb}" alt="Your photo">` : ""}
     ${saw ? `<p class="sc-saw"><span class="mu">Read:</span> ${saw}${a._by ? ` <span class="mu">(${esc(String(a._by).split(" ")[0])}${a._secs ? ", " + (+a._secs).toFixed(1) + "s" : ""})</span>` : ""}</p>` : it.aiErr ? `<p class="sc-saw" style="color:var(--dn)">${esc(it.aiErr)}. Used basic text reading instead, which can't tell printings apart.</p>` : ""}
     ${c ? `<div class="ppm-b" style="margin:0 0 12px"><button type="button" class="ppm-x" data-qc="${it.id}">See comps for ${esc(c.name)}</button></div>` : ""}
-    ${it.cards.length ? `<p class="mu">Tap your card:</p><div class="sc-grid">${it.cards.map((x, i) => `<button type="button" data-qp="${i}"${i === it.pick ? ' class="best"' : ""}>${i === it.pick ? `<i class="sc-best">${a && i === 0 ? "Best match" : "Chosen"}</i>` : ""}<img src="${esc(x.image)}" alt="" loading="lazy"><b>${esc(x.name)}</b><span>${esc(x.set || "")} · ${esc(sqNum(x))}</span></button>`).join("")}</div>`
+    ${sqTarget === "tradeGive" && !own.length ? `<p><b>None of the matches are cards in your portfolio.</b> <span class="mu">Search again below, or use “Add from your portfolio” in the trade.</span></p>`
+      : it.cards.length ? `<p class="mu">${sqTarget === "tradeGive" ? "Tap your card (only cards in your portfolio):" : "Tap your card:"}</p><div class="sc-grid">${it.cards.map((x, i) => sqTarget === "tradeGive" && !own.includes(i) ? "" : `<button type="button" data-qp="${i}"${i === it.pick ? ' class="best"' : ""}>${i === it.pick ? `<i class="sc-best">${a && i === 0 ? "Best match" : "Chosen"}</i>` : ""}<img src="${esc(x.image)}" alt="" loading="lazy"><b>${esc(x.name)}</b><span>${esc(x.set || "")} · ${esc(sqNum(x))}</span></button>`).join("")}</div>`
       : `<p><b>${esc(it.err || "No matching cards found.")}</b></p>`}
     <form id="sq-search" class="cimp-c" style="margin-top:12px"><input name="q" value="${esc([r.name, r.n && (r.n + (r.d ? "/" + r.d : ""))].filter(Boolean).join(" "))}" placeholder="Name and number, e.g. Charizard 4/102" aria-label="Card name and number" style="letter-spacing:0;text-transform:none"><button type="submit" class="ppm-x">Search</button></form>
     <div class="ppm-b"><button type="button" class="ppm-x plain" data-qa="list">Back to list</button></div>
@@ -1554,13 +1573,12 @@ function sqToItem(it, pf) {
 let sqTarget = null; // "trade" / "tradeGive" when the scanner was opened from the trade analyzer (their cards / your cards)
 function sqAddSelected(fm) {
   if (sqTarget === "tradeGive") {
-    const pick = scanQ.filter((x) => x.sel && x.pick >= 0); if (!pick.length) return;
+    const pick = scanQ.filter((x) => x.sel && x.pick >= 0 && sqMine(x, x.cards[x.pick]).length); if (!pick.length) return;
     let short = 0;
     for (const it of pick) { const c = it.cards[it.pick], want = Math.max(1, Math.round(+it.qty || 1)), mine = sqMine(it, c), x = mine.length ? P.items.find((y) => y.id === sqMinePick(it, mine)) : null;
       if (x) { const have = TRD.give.find((t) => t.pid === x.id), now = have ? have.qty : 0, q = Math.min(x.qty, now + want); if (now + want > x.qty) short++;
         if (have) have.qty = q; else TRD.give.push(trCard({ ...x, pid: x.id, qty: q, max: x.qty, grade: isGraded(x) ? x.grade : "" }, "give")); }
-      else { const priced = it.pxK === sqPxKey(it) && it.px > 0 && !it.grade;
-        TRD.give.push(trCard({ name: c.name, set: c.set, num: sqNum(c), var: it.print || "", cond: it.cond || "Near Mint", grade: it.grade || "", img: c.image, tcgId: c.tcgId, qty: want, px: priced ? it.px : null }, "give")); } }
+    }
     scanQ = scanQ.filter((x) => !pick.includes(x)); sqSave(); trSave(); sqTarget = null;
     const ov = $("ppscan"); if (ov) ov.remove(); tradeOpen = true; render();
     toast(`Added ${pick.length} of your card${pick.length === 1 ? "" : "s"} to the trade${short ? ` (${short} capped at what you own)` : ""}`); return;
@@ -1638,7 +1656,7 @@ document.addEventListener("click", (e) => {
   else if (d.qa === "cam") sqCamera();
   else if (d.qa === "lib") sqPicker(false);
   else if (d.qa === "list") { sqView = null; sqRender(); }
-  else if (d.qa === "all") { const ready = scanQ.filter((x) => x.pick >= 0), on = !(ready.length && ready.every((x) => x.sel)); ready.forEach((x) => (x.sel = on)); ov.querySelectorAll("[data-qk]").forEach((k) => { if (!k.disabled) k.checked = on; }); sqSave(); sqBar(); }
+  else if (d.qa === "all") { const ready = scanQ.filter((x) => x.pick >= 0 && !(sqTarget === "tradeGive" && x.notMine)), on = !(ready.length && ready.every((x) => x.sel)); ready.forEach((x) => (x.sel = on)); ov.querySelectorAll("[data-qk]").forEach((k) => { if (!k.disabled) k.checked = on; }); sqSave(); sqBar(); }
   else if (d.qa === "rmsel") { const n = scanQ.filter((x) => x.sel && x.pick >= 0).length; if (!n) return;
     modal({ title: `Remove ${n} card${n === 1 ? "" : "s"} from the list?`, text: "They won't be added to your portfolio.", buttons: [{ label: "Remove", kind: "danger", value: 1 }, { label: "Cancel", kind: "plain" }] })
       .then((v) => { if (v) { scanQ = scanQ.filter((x) => !(x.sel && x.pick >= 0)); sqSave(); sqRender(); } }); }
