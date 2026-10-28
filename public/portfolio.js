@@ -1211,7 +1211,7 @@ async function sqRead(it) {
   it.unsure = true;
 }
 async function sqFind(it, read) {
-  it.read = read; it.err = ""; it.note = ""; it.manual = false;
+  it.read = read; it.err = ""; it.note = ""; it.manual = false; it.okPf = false;
   try { const j = await getJSON("/api/scan-match?" + new URLSearchParams({ name: read.name || "", n: read.n || "", d: read.d || "" })); it.cards = j.cards || []; }
   catch (e) { it.cards = []; it.err = e.message; }
   it.pick = it.cards.length ? 0 : -1; if (!it.cards.length && !it.err) it.err = "No matching cards found. Tap Fix to search.";
@@ -1462,7 +1462,7 @@ function sqOwnFix(it) {
   o = own();
   const best = o.reduce((b, i) => (b == null || fit(i) > fit(b) ? i : b), null);
   it.notMine = !o.length;
-  if (o.length && (!o.includes(it.pick) || (!it.manual && fit(best) > fit(it.pick)))) { it.pick = best; it.pxK = null; it.err = ""; it.unsure = false; it.sel = true; it.pid = null; }
+  if (o.length && (!o.includes(it.pick) || (!it.manual && fit(best) > fit(it.pick)))) { it.pick = best; it.pxK = null; it.err = ""; it.unsure = false; it.sel = true; it.pid = null; it.okPf = false; }
   if (it.notMine) it.sel = false;
   return o;
 }
@@ -1495,7 +1495,7 @@ function sqMineHTML(it, c) {
   if (!mine.length) { it.pid = null; return `<div class="sq-mine"><span class="sq-st warn">Not in your portfolio</span><span class="mu">None of the matches for this photo are cards you own. Tap Change to search, or remove it.</span></div>`; }
   const pid = sqMinePick(it, mine);
   const one = new Set(mine.map((x) => x.pf)).size < 2;
-  return `<div class="sq-mine">${c.fromPf ? `<span class="sq-st warn">Found by searching your portfolio for what was read. Check it's the right card${it.cards.filter((y) => y.fromPf).length > 1 ? " (Change shows the others)" : ""}.</span>` : ""}<span class="mu">Your copy${mine.length > 1 ? " (tap one)" : ""}:</span>${mine.map((x) => `<button type="button" class="sq-mc" data-qown="${x.id}" data-qid="${it.id}" aria-pressed="${x.id === pid}">${esc(isGraded(x) ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond || "NM")}${x.var ? " · " + esc(x.var) : ""}${x.pf && !one ? " · " + esc(x.pf) : ""} · ×${x.qty}${x.mkt != null || x.ovr > 0 ? " · " + money(unit(x)) : ""}</button>`).join("")}<label class="sq-mq">Qty <input data-qf="qty" data-qid="${it.id}" type="number" min="1" step="1" inputmode="numeric" value="${it.qty || 1}" aria-label="Quantity"></label></div>`;
+  return `<div class="sq-mine">${c.fromPf && !it.okPf ? `<span class="sq-st warn sq-chk">Found by searching your portfolio for what was read. Check it's the right card${it.cards.filter((y) => y.fromPf).length > 1 ? " (Change shows the others)" : ""}. <button type="button" class="sq-ok" data-qok="${it.id}">Yes, that's it</button></span>` : ""}<span class="mu">Your copy${mine.length > 1 ? " (tap one)" : ""}:</span>${mine.map((x) => `<button type="button" class="sq-mc" data-qown="${x.id}" data-qid="${it.id}" aria-pressed="${x.id === pid}">${esc(isGraded(x) ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond || "NM")}${x.var ? " · " + esc(x.var) : ""}${x.pf && !one ? " · " + esc(x.pf) : ""} · ×${x.qty}${x.mkt != null || x.ovr > 0 ? " · " + money(unit(x)) : ""}</button>`).join("")}<label class="sq-mq">Qty <input data-qf="qty" data-qid="${it.id}" type="number" min="1" step="1" inputmode="numeric" value="${it.qty || 1}" aria-label="Quantity"></label></div>`;
 }
 function sqPfs() { return [...new Set(P.items.filter((x) => x.qty > 0 && x.pf).map((x) => x.pf))].sort(); }
 function sqRowHTML(it) {
@@ -1696,11 +1696,12 @@ document.addEventListener("click", (e) => {
     .then((v) => { if (v) { scanQ = scanQ.filter((x) => x.st === "wait" || x.st === "reading"); sqSave(); sqRender(); } });
   else if (d.qo) { sqView = d.qo; sqRender(); ov.querySelector(".ppm").scrollTop = 0; }
   else if (d.qc) sqComp(d.qc);
-  else if (d.qown) { const it = sqItem(d.qid); if (it) { it.pid = d.qown; sqSave(); ov.querySelectorAll(`[data-qown][data-qid="${it.id}"]`).forEach((m) => m.setAttribute("aria-pressed", String(m.dataset.qown === d.qown))); } }
+  else if (d.qok) { const it = sqItem(d.qok); if (it) { it.okPf = true; sqSave(); const n = ov.querySelector(`#sq-${it.id} .sq-chk`); if (n) n.remove(); } }
+  else if (d.qown) { const it = sqItem(d.qid); if (it) { it.pid = d.qown; it.okPf = true; sqSave(); const n = ov.querySelector(`#sq-${it.id} .sq-chk`); if (n) n.remove(); ov.querySelectorAll(`[data-qown][data-qid="${it.id}"]`).forEach((m) => m.setAttribute("aria-pressed", String(m.dataset.qown === d.qown))); } }
   else if (d.qgpp) { sqGroupSetPct(+d.qgpp); sqSave(); }
   else if (d.qpp) { const it = sqItem(d.qid); if (it) { sqSetPct(it, +d.qpp); sqSave(); } }
   else if (d.qx) { scanQ = scanQ.filter((x) => x.id !== d.qx); sqPhotos.delete(d.qx); sqSave(); const el = $("sq-" + d.qx); if (el) el.remove(); if (!scanQ.length) sqRender(); else sqBar(); }
-  else if (d.qp != null) { const it = sqItem(sqView); if (it) { it.pick = +d.qp; it.manual = true; it.pid = null; it.unsure = false; it.err = ""; it.sel = true; sqSave(); } sqView = null; sqRender(); }
+  else if (d.qp != null) { const it = sqItem(sqView); if (it) { it.pick = +d.qp; it.manual = true; it.okPf = true; it.pid = null; it.unsure = false; it.err = ""; it.sel = true; sqSave(); } sqView = null; sqRender(); }
   else if (d.qa === "comps") { const it = sqItem(sqView), c = it && it.cards[it.pick]; if (!c) return; ov.remove(); syncScrollLock();
     $("q").value = `${c.name} ${/^\d+$/.test(c.number) && c.printedTotal ? c.number + "/" + c.printedTotal : c.number}`;
     const t = $("tb").querySelector('[data-t="ebay"]'); if (t && tab !== "ebay") t.click(); tcgQ = ""; load(); scrollTo({ top: 0, behavior: "smooth" }); }
