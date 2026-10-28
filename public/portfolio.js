@@ -1446,24 +1446,45 @@ function sqMinePick(it, mine) {
 // and copies in your portfolio that fit what was read (name and number) are added as matches if the search missed them
 function sqOwnFix(it) {
   if (!it.cards || it.st !== "ready") return [];
-  const r = it.read || {}, n = mName(r.name), k = mNum(r.n);
-  if (n) for (const x of owned(P.items)) {
-    if (!(x.qty > 0) || mName(x.name) !== n || (k && mNum(x.num) !== k) || it.cards.some((c) => c.id === "pf-" + x.id)) continue;
-    const c = { id: "pf-" + x.id, tcgId: x.tcgId || null, name: x.name, number: String(x.num || "").split("/")[0], printedTotal: String(x.num || "").split("/")[1] || "", set: x.set || "", image: x.img || "", big: x.big || "", prints: x.var ? [x.var] : [], fromPf: true };
-    if (!it.cards.some((y) => sqMine(it, y).some((m) => m.id === x.id))) it.cards.push(c);
-  }
-  const own = it.cards.map((c, i) => (sqMine(it, c).length ? i : -1)).filter((i) => i >= 0);
-  it.notMine = !own.length;
-  if (own.length && !own.includes(it.pick)) { it.pick = own[0]; it.pxK = null; it.err = ""; it.unsure = false; }
+  const own = () => it.cards.map((c, i) => (sqMine(it, c).length ? i : -1)).filter((i) => i >= 0);
+  const add = (x) => { if (it.cards.some((c) => c.id === "pf-" + x.id) || it.cards.some((y) => sqMine(it, y).some((m) => m.id === x.id))) return;
+    it.cards.push({ id: "pf-" + x.id, tcgId: x.tcgId || null, name: x.name, number: String(x.num || "").split("/")[0], printedTotal: String(x.num || "").split("/")[1] || "", set: x.set || "", image: x.img || "", big: x.big || "", prints: x.var ? [x.var] : [], fromPf: true }); };
+  let o = own();
+  // nothing the scan matched is in your portfolio: search your portfolio with what was read (name and/or number)
+  if (!o.length) for (const x of sqPfSearch(it)) add(x);
+  o = own();
+  it.notMine = !o.length;
+  if (o.length && !o.includes(it.pick)) { it.pick = o[0]; it.pxK = null; it.err = ""; it.unsure = false; it.sel = true; }
   if (it.notMine) it.sel = false;
-  return own;
+  return o;
+}
+// your portfolio searched with what the scan read (and the scan's own matches): name and number together first,
+// then name with a partial number or the set size, then the name alone, then the number with the set size, then the number alone
+const SQ_TOK_SKIP = new Set(["ex", "gx", "v", "vmax", "vstar", "the", "of", "and", "lv", "x", "star", "prime", "break", "tag", "team"]);
+const sqToks = (s) => mName(s).split(" ").filter((w) => w.length > 2 && !SQ_TOK_SKIP.has(w));
+function sqPfSearch(it) {
+  const r = it.read || {}, a = it.ai || {};
+  const names = [r.name, a.name_english, a.name, ...it.cards.filter((c) => !c.fromPf).map((c) => c.name)].filter(Boolean);
+  const nums = [r.n, a.number, ...it.cards.filter((c) => !c.fromPf).map((c) => c.number)].filter(Boolean).map((n) => mNum(String(n).split("/")[0])).filter(Boolean);
+  const tots = [r.d, a.set_total, ...it.cards.filter((c) => !c.fromPf).map((c) => c.printedTotal)].filter(Boolean).map((n) => mNum(n));
+  const nm = new Set(names.map(mName).filter(Boolean)), tk = new Set(names.flatMap(sqToks));
+  if (!nm.size && !nums.length) return [];
+  const scored = owned(P.items).filter((x) => x.qty > 0).map((x) => {
+    const xn = mName(x.name), parts = String(x.num || "").split("/"), xk = mNum(parts[0]), xd = parts[1] ? mNum(parts[1]) : "";
+    const exact = nm.has(xn), tok = !exact && sqToks(x.name).some((w) => tk.has(w)), num = !!xk && nums.includes(xk), tot = !!xd && tots.includes(xd);
+    const sc = num && exact ? 10 : num && tok ? 8 : exact && tot ? 6 : exact ? 5 : num && tot ? 4 : tok && tot ? 3 : num ? 2 : 0;
+    return { x, sc };
+  }).filter((y) => y.sc > 0);
+  if (!scored.length) return [];
+  const top = Math.max(...scored.map((y) => y.sc));
+  return scored.filter((y) => y.sc === top).sort((p, q) => q.x.qty - p.x.qty).slice(0, 8).map((y) => y.x);
 }
 function sqMineHTML(it, c) {
   const mine = sqMine(it, c);
   if (!mine.length) { it.pid = null; return `<div class="sq-mine"><span class="sq-st warn">Not in your portfolio</span><span class="mu">None of the matches for this photo are cards you own. Tap Change to search, or remove it.</span></div>`; }
   const pid = sqMinePick(it, mine);
   const one = new Set(mine.map((x) => x.pf)).size < 2;
-  return `<div class="sq-mine"><span class="mu">Your copy${mine.length > 1 ? " (tap one)" : ""}:</span>${mine.map((x) => `<button type="button" class="sq-mc" data-qown="${x.id}" data-qid="${it.id}" aria-pressed="${x.id === pid}">${esc(isGraded(x) ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond || "NM")}${x.var ? " · " + esc(x.var) : ""}${x.pf && !one ? " · " + esc(x.pf) : ""} · ×${x.qty}${x.mkt != null || x.ovr > 0 ? " · " + money(unit(x)) : ""}</button>`).join("")}<label class="sq-mq">Qty <input data-qf="qty" data-qid="${it.id}" type="number" min="1" step="1" inputmode="numeric" value="${it.qty || 1}" aria-label="Quantity"></label></div>`;
+  return `<div class="sq-mine">${c.fromPf ? `<span class="sq-st warn">Found by searching your portfolio for what was read. Check it's the right card${it.cards.filter((y) => y.fromPf).length > 1 ? " (Change shows the others)" : ""}.</span>` : ""}<span class="mu">Your copy${mine.length > 1 ? " (tap one)" : ""}:</span>${mine.map((x) => `<button type="button" class="sq-mc" data-qown="${x.id}" data-qid="${it.id}" aria-pressed="${x.id === pid}">${esc(isGraded(x) ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond || "NM")}${x.var ? " · " + esc(x.var) : ""}${x.pf && !one ? " · " + esc(x.pf) : ""} · ×${x.qty}${x.mkt != null || x.ovr > 0 ? " · " + money(unit(x)) : ""}</button>`).join("")}<label class="sq-mq">Qty <input data-qf="qty" data-qid="${it.id}" type="number" min="1" step="1" inputmode="numeric" value="${it.qty || 1}" aria-label="Quantity"></label></div>`;
 }
 function sqPfs() { return [...new Set(P.items.filter((x) => x.qty > 0 && x.pf).map((x) => x.pf))].sort(); }
 function sqRowHTML(it) {
