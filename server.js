@@ -1001,10 +1001,33 @@ app.get("/api/tcgprints", async (req, res) => {
     res.json({ prints });
   } catch (e) { res.status(502).json({ error: e.message }); }
 });
+// Live condition prices for one TCGplayer product from JustTCG (the same source as the TCGplayer tab), used when
+// the page asks for live=1 (the trade analyzer). One request per product, remembered for 6 hours.
+const jtIdCache = new Map();
+async function jtById(tid) {
+  const hit = jtIdCache.get(tid); if (hit && hit.exp > Date.now()) return hit.list;
+  const saved = await kv.get("jtid:" + tid); if (saved && saved.exp > Date.now()) { jtIdCache.set(tid, saved); return saved.list; }
+  const j = await jtCards({ tcgplayerId: tid });
+  const card = (j.data || []).find((c) => c && String(c.tcgplayerId || "").replace(/\D/g, "") === tid);
+  const list = card ? (card.variants || []).filter((v) => v.price > 0).map((v) => ({ cond: tpCond(v.condition), print: String(v.printing || "Normal"), lang: String(v.language || "English"), m: +v.price })) : [];
+  const entry = { exp: Date.now() + 6 * 3600e3, list };
+  jtIdCache.set(tid, entry); if (jtIdCache.size > 3000) jtIdCache.delete(jtIdCache.keys().next().value);
+  await kv.set("jtid:" + tid, entry, 6 * 3600);
+  return list;
+}
 app.get("/api/tcgprice", async (req, res) => {
   const id = String(req.query.id || "").replace(/\D/g, "").slice(0, 12);
   if (!id) return res.status(400).json({ error: "Missing TCGplayer product id" });
   const cond = tpCond(req.query.cond) || "Near Mint", print = String(req.query.print || "").toLowerCase().trim(), jp = req.query.jp === "1";
+  if (req.query.live === "1" && JT_KEY && jtLeft !== 0) {
+    try {
+      const all = await jtById(id), lang = all.filter((r) => (jp ? /japan/i.test(r.lang) : /english/i.test(r.lang)));
+      const pool = lang.length ? lang : all, prints = [...new Set(pool.map((r) => r.print.toLowerCase()))];
+      const use = print && prints.includes(print) ? print : (pool.find((r) => r.cond === "Near Mint") || pool[0] || {}).print?.toLowerCase();
+      const exact = pool.find((r) => r.print.toLowerCase() === use && r.cond === cond);
+      if (exact) return res.json({ market: exact.m, cond, print: exact.print, est: false, live: true });
+    } catch (e) { console.error("tcgprice live:", e.message); }
+  }
   try {
     const rows = { list: await tpLatest(id) };
     const langOk = (r) => !r.lang || (jp ? /japan/i.test(r.lang) : /english/i.test(r.lang));

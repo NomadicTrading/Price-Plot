@@ -50,7 +50,7 @@ async function trPrice(c) {
   trDraw();
   try {
     if (!c.tcgId) { const j = await getJSON("/api/cardimg?" + new URLSearchParams({ name: c.name, set: c.set || "", num: c.num || "", cat: "Pokemon" })); if (j && j.tcgId) { c.tcgId = j.tcgId; if (!c.img && j.img) c.img = j.img; } }
-    if (c.tcgId) { const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: c.tcgId, cond: c.cond || "Near Mint", print: c.var || "", jp: /japan/i.test(c.set || "") ? "1" : "" })); if (c.pxK === k) { c.px = j.market > 0 ? j.market : null; c.pxNote = j.market > 0 ? (j.est ? "est." : "") : j.why || "no TCGplayer price"; } }
+    if (c.tcgId) { const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: c.tcgId, cond: c.cond || "Near Mint", print: c.var || "", jp: /japan/i.test(c.set || "") ? "1" : "", live: "1" })); if (c.pxK === k) { c.px = j.market > 0 ? j.market : null; c.pxNote = j.market > 0 ? (j.est ? "est." : "") : j.why || "no TCGplayer price"; } }
     else c.pxNote = "not found on TCGplayer";
   } catch { c.pxNote = "TCGplayer didn't answer"; }
   trSave(); trDraw();
@@ -143,7 +143,22 @@ function renderTrade(box) {
     <div class="tr-hits" id="tr-sug-get">${trSugHTML("get")}</div></div>
   <div class="bar"><button class="pill on" type="button" data-tx="done" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>Complete trade</button></div>
   <div class="sm">Your cards count at full market value; theirs at the trade % (set one card's own % in its box). The green or red number is where you stand: trade credit plus cash they add, minus your cards and cash you add. Graded cards use Collectr's price.</div></div>`;
-  for (const c of [...TRD.give, ...TRD.get]) { if (c.pxK !== [c.cond, c.var, c.grade].join("|") && !(c.pid && trEach(c) != null)) trPrice(c); trLoadPrints(c); }
+  for (const c of [...TRD.give, ...TRD.get]) { if (c.pxK !== [c.cond, c.var, c.grade].join("|") && !(c.pid && trEach(c) != null)) trPrice(c); trLoadPrints(c); trLive(c); }
+}
+// your portfolio cards in a trade get TCGplayer's live price; when it differs, your portfolio is updated to it
+// (raw cards only: graded cards keep Collectr's price). Checked at most every 6 hours per card.
+async function trLive(c) {
+  const x = c.pid && P.items.find((y) => y.id === c.pid);
+  if (!x || isGraded(x) || c.grade || !x.tcgId || (c.cond || "Near Mint") !== (x.cond || "Near Mint") || (c.var || "") !== (x.var || "")) return;
+  if (c.liveT && Date.now() - c.liveT < 6 * 3600e3) return;
+  c.liveT = Date.now(); trSave();
+  try {
+    const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: x.tcgId, cond: x.cond || "Near Mint", print: x.var || "", jp: isJp(x) ? "1" : "", live: "1" }));
+    if (j.market > 0 && (Math.abs((x.mkt ?? -1) - j.market) >= 0.005 || !!x.mktEst !== !!j.est || x.mktV !== 2)) {
+      x.mkt = j.market; x.mktEst = !!j.est; x.mktV = 2; x.pT = Date.now(); delete x.pWhy; delete x.mktSrc; store(); trDraw();
+      const pr = document.querySelector(`.tr [data-tid="${c.id}"][data-tf="own"]`); if (pr && !(c.own > 0)) pr.placeholder = (Math.round(unit(x) * 100) / 100).toFixed(2);
+    }
+  } catch { c.liveT = 0; }
 }
 // fill a card's Printing dropdown with what TCGplayer lists for it
 async function trLoadPrints(c) {
@@ -1239,7 +1254,7 @@ async function sqPrice(it) {
     let fb = null;
     if (!c.tcgId && !(cp && cp.tcgId)) { const j = await getJSON("/api/cardimg?" + new URLSearchParams({ name: c.name, set: c.set || "", num: sqNum(c), cat: "Pokemon" })); if (j.tcgId) c.tcgId = j.tcgId; else if (j.market > 0) fb = j.market; }
     const tid = (cp && cp.tcgId) || c.tcgId;
-    if (tid) { const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: tid, cond: it.cond || "Near Mint", print: it.print || "", jp: sqJp(it, c) ? "1" : "" })); px = j.market ?? null; est = !!j.est; cond = j.cond || ""; }
+    if (tid) { const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: tid, cond: it.cond || "Near Mint", print: it.print || "", jp: sqJp(it, c) ? "1" : "", ...(sqTarget ? { live: "1" } : {}) })); px = j.market ?? null; est = !!j.est; cond = j.cond || ""; }
     else if (fb) { px = fb; est = true; fbUsed = true; }
   } catch {}
   if (it.pxK !== k) return; // the condition, printing or match changed while this was loading
