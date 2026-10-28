@@ -6,6 +6,7 @@ const KEY = "pp_portfolio", HKEY = "pp_portfolio_hist";
 const CONDS = ["Near Mint", "Lightly Played", "Moderately Played", "Heavily Played", "Damaged"];
 const PAGE = 50;
 let P = readStore(), view = "all", sortBy = "value", findTxt = "", shown = PAGE, editing = null, pending = null, impOpen = false;
+let selMode = false, selJust = 0, selJustId = ""; const selIds = new Set(); // selecting several cards (press and hold a card)
 /* ---------- trade analyzer ----------
    Your cards: cards from your portfolio (or found on TCGplayer), at their full market value.
    Their cards: the trader's cards (TCGplayer search or the scanner), counted at a trade % (list-wide, or per card).
@@ -479,7 +480,7 @@ async function smartMerge(incoming, source, scopePfs, collectrPfs) {
 function undoImport() {
   let u = null; try { u = JSON.parse(localStorage.getItem(UNDO_KEY) || "null"); } catch {}
   if (!u || !u.P || !Array.isArray(u.P.items)) return toast("Nothing to undo");
-  P = u.P; try { localStorage.removeItem(UNDO_KEY); } catch {} store(); snap(); render(); toast("Undid the last import");
+  P = u.P; try { localStorage.removeItem(UNDO_KEY); } catch {} store(); snap(); render(); toast(/^bulk/.test(u.source || "") ? "Undid the change" : u.source === "trade" ? "Undid the trade" : "Undid the last import");
 }
 const canUndo = () => { try { const u = JSON.parse(localStorage.getItem(UNDO_KEY) || "null"); return !!(u && Date.now() - u.at < 14 * 864e5); } catch { return false; } };
 async function applyImport(how) {
@@ -515,11 +516,11 @@ function rowHTML(x) {
   const g = isGraded(x), line = view === "watch" ? unit(x) : unit(x) * x.qty, gain = x.cost > 0 && x.qty ? (unit(x) - x.cost) * x.qty : null;
   const meta = [x.set, x.num, x.var && x.var !== "Normal" ? x.var : "", x.cat && x.cat !== "Pokemon" ? x.cat : ""].filter(Boolean).map(esc).join(" · ");
   if (editing === x.id) return `<div class="pr" data-id="${x.id}">${form(x)}</div>`;
-  return `<div class="pr" data-id="${x.id}"><button class="prx" type="button" data-trash="${x.id}" tabindex="-1" aria-label="Remove ${esc(x.name)}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></button><div class="prc">${thumb(x)}<div class="pm"><b>${esc(x.name)}</b> <span class="cg ${g ? "gr" : ""}">${esc(g ? shortGrade(x.grade) : x.cond || "")}</span>
+  return `<div class="pr${selMode ? " selm" : ""}${selMode && selIds.has(x.id) ? " sel" : ""}" data-id="${x.id}"><button class="prx" type="button" data-trash="${x.id}" tabindex="-1" aria-label="Remove ${esc(x.name)}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></button><div class="prc">${selMode ? `<span class="pr-ck" role="checkbox" aria-checked="${selIds.has(x.id)}" aria-label="Select ${esc(x.name)}"></span>` : ""}${thumb(x)}<div class="pm"><b>${esc(x.name)}</b> <span class="cg ${g ? "gr" : ""}">${esc(g ? shortGrade(x.grade) : x.cond || "")}</span>
   <div class="mu">${meta}${view === "all" && x.pf ? ` · <i>${esc(x.pf)}</i>` : ""}</div>
   <div class="mu">${view === "watch" ? "" : x.qty + " × "}${x.mkt == null && !(x.ovr > 0) ? "—" : money(unit(x)) + (view !== "watch" && x.qty > 1 ? " = " + money(line) : "")}${x.ovr > 0 ? ` <span title="Your own price, set in Collectr or here">(your price)</span>` : x.mkt == null ? (pfq.includes(x) || pfRunning ? " (looking up price…)" : " (no price)") : x.mktV !== 2 && !isGraded(x) ? ` <span title="Collectr's price until TCGplayer's is found">(Collectr${pfq.includes(x) || (pfRunning && !x.pTry) ? " · looking up TCGplayer…" : x.pWhy ? " · " + esc(x.pWhy) : ""})</span>` : x.mktEst ? ` <span title="No recent ${esc(x.cond || "")} sales on TCGplayer, so this is the Near Mint price with the usual discount for this condition">(est.)</span>` : ""}</div>${gain != null ? `<div class="mu pr-g">vs. ${money(x.cost)} paid · <span style="color:var(${gain >= 0 ? "--up" : "--dn"});font-weight:600;white-space:nowrap">${gain >= 0 ? "+" : "−"}${money(Math.abs(gain))} (${gain >= 0 ? "+" : "−"}${Math.abs((gain / (x.cost * x.qty)) * 100).toFixed(1)}%)</span></div>` : ""}
   ${x.notes ? `<div class="mu">${esc(x.notes)}</div>` : ""}</div>
-  <div class="pv"><b>${x.mkt == null && !(x.ovr > 0) ? "—" : money(unit(x))}</b><div><button class="pill sm2" type="button" data-cmp="${x.id}">Comp</button><button class="pill sm2" type="button" data-ed="${x.id}">Edit</button></div></div></div></div>`;
+  <div class="pv"><b>${x.mkt == null && !(x.ovr > 0) ? "—" : money(unit(x))}</b>${selMode ? "" : `<div><button class="pill sm2" type="button" data-cmp="${x.id}">Comp</button><button class="pill sm2" type="button" data-ed="${x.id}">Edit</button></div>`}</div></div></div>`;
 }
 // "Paid each" with a small % box beside it: the % is of the card's market price. Typing either one fills in the other.
 function costField(x) {
@@ -571,14 +572,14 @@ function form(x) {
 }
 // the card list under the search box: its count, the rows shown so far and the Show more button
 function listHTML(list) {
-  return `<div class="sm">${list.length.toLocaleString()} ${list.length === 1 ? "entry" : "entries"}${findTxt.trim() ? " match" : ""}</div>
+  return `<div class="sm">${list.length.toLocaleString()} ${list.length === 1 ? "entry" : "entries"}${findTxt.trim() ? " match" : ""}${selMode ? "" : ` · <span class="mu">press and hold a card to select several</span>`}</div>
   <div id="pfl2">${list.slice(0, shown).map(rowHTML).join("")}</div>
   ${list.length > shown ? `<button class="pill" type="button" data-pa="more" style="margin-top:10px">Show ${Math.min(PAGE, list.length - shown)} more</button>` : ""}`;
 }
 // redraw only the list, leaving the search box (and everything above it) untouched, so typing doesn't move the page
 function renderList() {
   const box = $("pflist"); if (!box || detail || editing) return render();
-  const list = filtered(); box.innerHTML = listHTML(list); fetchImgs(list.slice(0, shown)); watchMore();
+  const list = filtered(); box.innerHTML = listHTML(list); fetchImgs(list.slice(0, shown)); watchMore(); selSync();
 }
 function render() {
   const box = $("pf"); if (!box) return;
@@ -606,9 +607,9 @@ function render() {
   ${P.items.length ? `
   ${view === "all" ? `<div class="pch">${chart()}</div>` : ""}
   <div class="tk" id="pfv">${[["all", "All"], ...pfs.map((p) => [p, p]), ...(w ? [["watch", "Watchlist (" + w + ")"]] : [])].map(([k, l]) => `<button class="pill" type="button" data-pv="${esc(k)}" aria-pressed="${k === view}">${esc(l)}${k !== "all" && k !== "watch" ? ` <span class="mu">${money(totals(o.filter((x) => (x.pf || "Unsorted") === k)).value)}</span>` : ""}</button>`).join("")}</div>
-  <div class="bar"><input id="pfq" type="search" placeholder="Filter by name, set, number…" value="${esc(findTxt)}" autocomplete="off">
+  <div class="bar"><input id="pfq" type="search" placeholder="Filter by name, set, number…" value="${esc(findTxt)}" autocomplete="off"><button class="pill pf-scan" type="button" data-ps="scan" aria-label="Scan cards to select them in your portfolio">📷</button>
    <select id="pfo" aria-label="Sort">${[["value", "Total value: high to low"], ["low", "Total value: low to high"], ["unit", "Individual value: high to low"], ["unitlow", "Individual value: low to high"], ["gain", "Gain"], ["name", "Name"], ["added", "Recently added"]].map(([k, l]) => `<option value="${k}" ${k === sortBy ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-  <div id="pflist">${listHTML(list)}</div>`
+  <div id="pflist">${listHTML(list)}</div>${selMode ? `<div id="pfsel" class="pfsel">${selBarHTML()}</div>` : ""}`
   : `<p class="sm">Your portfolio is empty. Import a Collectr export (in Collectr: Portfolio → ⋯ → Export, then open the emailed file here), or add cards one at a time. Everything stays saved on this device.</p>`}`;
   if (P.items.length) fetchImgs(list.slice(0, shown));
   watchMore();
@@ -907,7 +908,7 @@ document.addEventListener("pointerup", swLift, true); document.addEventListener(
 document.addEventListener("touchstart", (e) => { if (e.touches.length > 1) swCancel(); }, { passive: true, capture: true });
 const closeSwipes = (except) => document.querySelectorAll("#pf .pr.open").forEach((r) => r !== except && r.classList.remove("open"));
 document.addEventListener("pointerdown", (e) => {
-  const c = e.target.closest && e.target.closest("#pf .prc"); if (!c || e.button > 0 || swFingers.size > 1 || e.target.closest("button,a,input,select,label")) return;
+  const c = e.target.closest && e.target.closest("#pf .prc"); if (!c || selMode || e.button > 0 || swFingers.size > 1 || e.target.closest("button,a,input,select,label")) return;
   const row = c.parentNode; sw = { id: e.pointerId, row, c, x: e.clientX, y: e.clientY, base: row.classList.contains("open") ? -84 : 0, on: false };
 });
 document.addEventListener("pointermove", (e) => {
@@ -1278,7 +1279,7 @@ async function sqPrice(it) {
     let fb = null;
     if (!c.tcgId && !(cp && cp.tcgId)) { const j = await getJSON("/api/cardimg?" + new URLSearchParams({ name: c.name, set: c.set || "", num: sqNum(c), cat: "Pokemon" })); if (j.tcgId) c.tcgId = j.tcgId; else if (j.market > 0) fb = j.market; }
     const tid = (cp && cp.tcgId) || c.tcgId;
-    if (tid) { const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: tid, cond: it.cond || "Near Mint", print: it.print || "", jp: sqJp(it, c) ? "1" : "", ...(sqTarget ? { live: "1" } : {}) })); px = j.market ?? null; est = !!j.est; cond = j.cond || ""; live = !!j.live; }
+    if (tid) { const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: tid, cond: it.cond || "Near Mint", print: it.print || "", jp: sqJp(it, c) ? "1" : "", ...(sqTarget === "trade" || sqTarget === "tradeGive" ? { live: "1" } : {}) })); px = j.market ?? null; est = !!j.est; cond = j.cond || ""; live = !!j.live; }
     else if (fb) { px = fb; est = true; fbUsed = true; }
   } catch {}
   if (it.pxK !== k) return; // the condition, printing or match changed while this was loading
@@ -1546,7 +1547,7 @@ function sqMineHTML(it, c) {
   const pid = sqMinePick(it, mine);
   const one = new Set(mine.map((x) => x.pf)).size < 2, cp = mine.find((x) => x.id === pid), cpc = sqCopyCond(cp), cur = it.mcond || cpc;
   const csel = `<select class="sq-mcd" data-qf="mcond" data-qid="${it.id}" aria-label="Condition for the trade">${[...CONDS, ...TR_GRADES].map((o) => `<option value="${o}" ${o === cur ? "selected" : ""}>${COND_CODE[o] || o}</option>`).join("")}</select>`;
-  return `<div class="sq-mine">${c.fromPf && !it.okPf ? `<span class="sq-st warn sq-chk">Found by searching your portfolio for what was read. Check it's the right card${it.cards.filter((y) => y.fromPf).length > 1 ? " (Change shows the others)" : ""}. <button type="button" class="sq-ok" data-qok="${it.id}">Yes, that's it</button></span>` : ""}<span class="mu">Your copy${mine.length > 1 ? " (tap one)" : ""}:</span>${mine.map((x) => `<button type="button" class="sq-mc" data-qown="${x.id}" data-qid="${it.id}" aria-pressed="${x.id === pid}">${esc(isGraded(x) ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond || "NM")}${x.var ? " · " + esc(x.var) : ""}${x.pf && !one ? " · " + esc(x.pf) : ""} · ×${x.qty}${x.mkt != null || x.ovr > 0 ? " · " + money(unit(x)) : ""}</button>`).join("")}<span class="sq-mrow">${csel}<label class="sq-mq">Qty <input data-qf="qty" data-qid="${it.id}" type="number" min="1" step="1" inputmode="numeric" value="${it.qty || 1}" aria-label="Quantity"></label></span></div>`;
+  return `<div class="sq-mine">${c.fromPf && !it.okPf ? `<span class="sq-st warn sq-chk">Found by searching your portfolio for what was read. Check it's the right card${it.cards.filter((y) => y.fromPf).length > 1 ? " (Change shows the others)" : ""}. <button type="button" class="sq-ok" data-qok="${it.id}">Yes, that's it</button></span>` : ""}<span class="mu">Your copy${mine.length > 1 ? " (tap one)" : ""}:</span>${mine.map((x) => `<button type="button" class="sq-mc" data-qown="${x.id}" data-qid="${it.id}" aria-pressed="${x.id === pid}">${esc(isGraded(x) ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond || "NM")}${x.var ? " · " + esc(x.var) : ""}${x.pf && !one ? " · " + esc(x.pf) : ""} · ×${x.qty}${x.mkt != null || x.ovr > 0 ? " · " + money(unit(x)) : ""}</button>`).join("")}${sqTarget === "select" ? "" : `<span class="sq-mrow">${csel}<label class="sq-mq">Qty <input data-qf="qty" data-qid="${it.id}" type="number" min="1" step="1" inputmode="numeric" value="${it.qty || 1}" aria-label="Quantity"></label></span>`}</div>`;
 }
 // the TCGplayer price shown for one of your cards follows the copy you're trading: its condition (or the one
 // picked in the dropdown) and its printing
@@ -1561,14 +1562,14 @@ function sqMineSync(it) {
 const sqCopyCond = (x) => (!x ? "Near Mint" : isGraded(x) ? shortGrade(x.grade) : x.cond || "Near Mint");
 function sqPfs() { return [...new Set(P.items.filter((x) => x.qty > 0 && x.pf).map((x) => x.pf))].sort(); }
 function sqRowHTML(it) {
-  if (sqTarget === "tradeGive") { sqOwnFix(it); sqMineSync(it); }
+  if (sqOwnMode()) { sqOwnFix(it); sqMineSync(it); }
   const c = it.pick >= 0 ? it.cards[it.pick] : null, a = it.ai;
   const status = it.st === "wait" ? "Waiting…" : it.st === "reading" ? (it.note || "Reading the card…") : it.st === "error" ? it.err : it.err ? it.err : it.unsure ? "Check this match" : "";
   const prints = sqPrints(it, c);
   if (c && !it.print) it.print = prints[0];
   const busy = it.st === "wait" || it.st === "reading";
   return `<div class="sq-r${busy ? " busy" : ""}${it.st === "error" || (it.st === "ready" && !c) ? " bad" : ""}" id="sq-${it.id}">
-    <label class="sq-ck"><input type="checkbox" data-qk="${it.id}" ${it.sel ? "checked" : ""} ${c && !(sqTarget === "tradeGive" && it.notMine) ? "" : "disabled"} aria-label="Select this card"></label>
+    <label class="sq-ck"><input type="checkbox" data-qk="${it.id}" ${it.sel ? "checked" : ""} ${c && !(sqOwnMode() && it.notMine) ? "" : "disabled"} aria-label="Select this card"></label>
     <button type="button" class="sq-pics" data-qo="${it.id}" aria-label="Fix or change the match">${it.thumb ? `<img src="${it.thumb}" alt="">` : `<span class="sq-ph"></span>`}${c ? `<img src="${esc(c.image)}" alt="" loading="lazy">` : busy ? `<span class="sq-spin" aria-hidden="true"></span>` : ""}</button>
     <div class="sq-t">
       ${c ? `<b>${esc(c.name)}</b><div class="mu">${esc(c.set || "")} · ${esc(sqNum(c))}${a && a.language && a.language !== "English" ? " · " + esc(a.language) : ""}</div>` : `<b>${busy ? "Scanning…" : "No match yet"}</b>`}
@@ -1578,12 +1579,12 @@ function sqRowHTML(it) {
       ${sqSalesHTML(it, c)}
     </div>
     <div class="sq-a">${busy ? "" : `<button type="button" class="sq-b" data-qo="${it.id}">${c ? "Change" : "Fix"}</button>`}${c && !busy ? `<button type="button" class="sq-b" data-qc="${it.id}">Comp</button>` : ""}<button type="button" class="sq-x" data-qx="${it.id}" aria-label="Remove from list">✕</button></div>
-      ${c && sqTarget === "tradeGive" ? sqMineHTML(it, c) : c ? `<div class="sq-f">
+      ${c && sqOwnMode() ? sqMineHTML(it, c) : c ? `<div class="sq-f">
         <select data-qf="print" data-qid="${it.id}" aria-label="Printing">${prints.map((x) => `<option ${x === it.print ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>
         <select data-qf="cond" data-qid="${it.id}" aria-label="Condition">${CONDS.map((x) => `<option value="${x}" ${x === it.cond ? "selected" : ""}>${{ "Near Mint": "NM", "Lightly Played": "LP", "Moderately Played": "MP", "Heavily Played": "HP", Damaged: "DMG" }[x] || x}</option>`).join("")}</select>
         <input data-qf="qty" data-qid="${it.id}" type="number" min="1" step="1" inputmode="numeric" value="${it.qty || 1}" aria-label="Quantity">
       </div>` : ""}
-      ${busy || sqTarget === "tradeGive" ? "" : sqShadowHTML(it, c)}
+      ${busy || sqOwnMode() ? "" : sqShadowHTML(it, c)}
       ${sqTarget ? "" : sqOfferHTML(it, c)}
   </div>`;
 }
@@ -1603,7 +1604,7 @@ function sqBar() {
   const ready = scanQ.filter((x) => x.pick >= 0), sel = ready.filter((x) => x.sel);
   const selV = sel.reduce((a, x) => a + sqVal(x), 0);
   const selPay = sel.reduce((a, x) => a + (x.pxK === sqPxKey(x) ? sqOfferVal(x) : 0), 0);
-  if (sqTarget) { el.querySelector("[data-qa=add]").textContent = sqTarget === "tradeGive" ? (sel.length ? `Add ${sel.length} of your cards` : "Add your cards") : sel.length ? `Add ${sel.length} of their cards` : "Add their cards"; const pg = el.querySelector(".pg"); if (pg) pg.style.display = "none"; }
+  if (sqTarget) { el.querySelector("[data-qa=add]").textContent = sqTarget === "select" ? (sel.length ? `Select ${sel.length} in your portfolio` : "Select in your portfolio") : sqTarget === "tradeGive" ? (sel.length ? `Add ${sel.length} of your cards` : "Add your cards") : sel.length ? `Add ${sel.length} of their cards` : "Add their cards"; const pg = el.querySelector(".pg"); if (pg) pg.style.display = "none"; }
   else el.querySelector("[data-qa=add]").textContent = sel.length ? `Add ${sel.length} card${sel.length === 1 ? "" : "s"} to portfolio${selPay ? " · paying " + money(selPay) : selV ? " · " + money(selV) : ""}` : "Add to portfolio";
   // the whole list's TCGplayer market value, counting quantities
   const tv = $("sq-v");
@@ -1624,7 +1625,7 @@ function sqRender() {
   if (sqView) return sqDetail(ov);
   const pfs = sqPfs(), has = scanQ.length;
   ov.innerHTML = `<div class="ppm sqm" role="dialog" aria-modal="true" aria-labelledby="sc-t">
-    <div class="sq-h"><h3 id="sc-t">${sqTarget === "tradeGive" ? "Scan your cards" : sqTarget === "trade" ? "Scan their cards" : "Scan cards"}</h3><button type="button" class="ppm-x plain sq-close" data-qa="close">Close</button></div>
+    <div class="sq-h"><h3 id="sc-t">${sqTarget === "select" ? "Find your cards" : sqTarget === "tradeGive" ? "Scan your cards" : sqTarget === "trade" ? "Scan their cards" : "Scan cards"}</h3><button type="button" class="ppm-x plain sq-close" data-qa="close">Close</button></div>
     <div class="sq-go"><button type="button" class="ppm-x primary" data-qa="cam">📷 Take photos</button><button type="button" class="ppm-x" data-qa="lib">🖼 Choose photos</button></div>
     ${has ? `<div class="sq-top"><span class="mu">${scanQ.length} card${scanQ.length === 1 ? "" : "s"}</span> <span class="mu" id="sq-n"></span><span style="flex:1"></span><button type="button" class="cs-back" data-qa="all">Select all</button></div>
       <div class="sq-top sq-top2"><button type="button" class="cs-back" data-qa="rmsel">Remove from list</button><span style="flex:1"></span><button type="button" class="cs-back sq-dl" data-qa="clear">Clear list</button></div>
@@ -1641,7 +1642,7 @@ function sqRender() {
 }
 function sqDetail(ov) {
   const it = sqItem(sqView); if (!it) { sqView = null; return sqRender(); }
-  const own = sqTarget === "tradeGive" ? sqOwnFix(it) : null;
+  const own = sqOwnMode() ? sqOwnFix(it) : null;
   const r = it.read || {}, a = it.ai, c = it.pick >= 0 ? it.cards[it.pick] : null;
   const saw = a && a.found !== false ? [a.name_english && a.name && a.name_english !== a.name ? `${a.name} (${a.name_english})` : a.name || a.name_english, a.number && (a.number + (a.set_total ? "/" + a.set_total : "")), a.set_name, a.language && a.language !== "English" ? a.language : "", a.edition && a.edition !== "Unlimited" ? a.edition : "", a.finish && a.finish !== "unknown" ? a.finish : "", a.stamp, it.grade].filter(Boolean).map(esc).join(" · ") : "";
   ov.innerHTML = `<div class="ppm sqm" role="dialog" aria-modal="true" aria-labelledby="sc-t">
@@ -1649,8 +1650,8 @@ function sqDetail(ov) {
     ${it.thumb ? `<img class="sc-photo" src="${it.thumb}" alt="Your photo">` : ""}
     ${saw ? `<p class="sc-saw"><span class="mu">Read:</span> ${saw}${a._by ? ` <span class="mu">(${esc(String(a._by).split(" ")[0])}${a._secs ? ", " + (+a._secs).toFixed(1) + "s" : ""})</span>` : ""}</p>` : it.aiErr ? `<p class="sc-saw" style="color:var(--dn)">${esc(it.aiErr)}. Used basic text reading instead, which can't tell printings apart.</p>` : ""}
     ${c ? `<div class="ppm-b" style="margin:0 0 12px"><button type="button" class="ppm-x" data-qc="${it.id}">See comps for ${esc(c.name)}</button></div>` : ""}
-    ${sqTarget === "tradeGive" && !own.length ? `<p><b>None of the matches are cards in your portfolio.</b> <span class="mu">Search again below, or use “Add from your portfolio” in the trade.</span></p>`
-      : it.cards.length ? `<p class="mu">${sqTarget === "tradeGive" ? "Tap your card (only cards in your portfolio):" : "Tap your card:"}</p><div class="sc-grid">${it.cards.map((x, i) => sqTarget === "tradeGive" && !own.includes(i) ? "" : `<button type="button" data-qp="${i}"${i === it.pick ? ' class="best"' : ""}>${i === it.pick ? `<i class="sc-best">${a && i === 0 ? "Best match" : "Chosen"}</i>` : ""}<img src="${esc(x.image)}" alt="" loading="lazy"><b>${esc(x.name)}</b><span>${esc(x.set || "")} · ${esc(sqNum(x))}</span></button>`).join("")}</div>`
+    ${sqOwnMode() && !own.length ? `<p><b>None of the matches are cards in your portfolio.</b> <span class="mu">Search again below${sqTarget === "tradeGive" ? ", or use “Add from your portfolio” in the trade" : ""}.</span></p>`
+      : it.cards.length ? `<p class="mu">${sqOwnMode() ? "Tap your card (only cards in your portfolio):" : "Tap your card:"}</p><div class="sc-grid">${it.cards.map((x, i) => sqOwnMode() && !own.includes(i) ? "" : `<button type="button" data-qp="${i}"${i === it.pick ? ' class="best"' : ""}>${i === it.pick ? `<i class="sc-best">${a && i === 0 ? "Best match" : "Chosen"}</i>` : ""}<img src="${esc(x.image)}" alt="" loading="lazy"><b>${esc(x.name)}</b><span>${esc(x.set || "")} · ${esc(sqNum(x))}</span></button>`).join("")}</div>`
       : `<p><b>${esc(it.err || "No matching cards found.")}</b></p>`}
     <form id="sq-search" class="cimp-c" style="margin-top:12px"><input name="q" value="${esc([r.name, r.n && (r.n + (r.d ? "/" + r.d : ""))].filter(Boolean).join(" "))}" placeholder="Name and number, e.g. Charizard 4/102" aria-label="Card name and number" style="letter-spacing:0;text-transform:none"><button type="submit" class="ppm-x">Search</button></form>
     <div class="ppm-b"><button type="button" class="ppm-x plain" data-qa="list">Back to list</button></div>
@@ -1664,8 +1665,15 @@ function sqToItem(it, pf) {
     // the TCGplayer price already looked up while scanning, so the portfolio shows it right away
     ...(!it.grade && c.tcgId && it.pxK === sqPxKey(it) && it.px > 0 ? { mkt: it.px, mktEst: !!it.pxEst, mktV: 2, pT: Date.now() } : {}) };
 }
-let sqTarget = null; // "trade" / "tradeGive" when the scanner was opened from the trade analyzer (their cards / your cards)
+let sqTarget = null; // "trade" / "tradeGive" when the scanner was opened from the trade analyzer (their cards / your cards); "select" to select cards in the portfolio
+function sqOwnMode() { return sqTarget === "tradeGive" || sqTarget === "select"; }
 function sqAddSelected(fm) {
+  if (sqTarget === "select") {
+    const pick = scanQ.filter((x) => x.sel && x.pick >= 0 && sqMine(x, x.cards[x.pick]).length); if (!pick.length) return;
+    for (const it of pick) { const mine = sqMine(it, it.cards[it.pick]), id = sqMinePick(it, mine); if (id) selIds.add(id); }
+    scanQ = scanQ.filter((x) => !pick.includes(x)); sqSave(); sqTarget = null;
+    const ov = $("ppscan"); if (ov) ov.remove(); tradeOpen = false; detail = null; selMode = false; selStart(); toast(`Selected ${pick.length} card${pick.length === 1 ? "" : "s"}`); return;
+  }
   if (sqTarget === "tradeGive") {
     const pick = scanQ.filter((x) => x.sel && x.pick >= 0 && sqMine(x, x.cards[x.pick]).length); if (!pick.length) return;
     let short = 0;
@@ -1751,7 +1759,7 @@ document.addEventListener("click", (e) => {
   else if (d.qa === "cam") sqCamera();
   else if (d.qa === "lib") sqPicker(false);
   else if (d.qa === "list") { sqView = null; sqRender(); }
-  else if (d.qa === "all") { const ready = scanQ.filter((x) => x.pick >= 0 && !(sqTarget === "tradeGive" && x.notMine)), on = !(ready.length && ready.every((x) => x.sel)); ready.forEach((x) => (x.sel = on)); ov.querySelectorAll("[data-qk]").forEach((k) => { if (!k.disabled) k.checked = on; }); sqSave(); sqBar(); }
+  else if (d.qa === "all") { const ready = scanQ.filter((x) => x.pick >= 0 && !(sqOwnMode() && x.notMine)), on = !(ready.length && ready.every((x) => x.sel)); ready.forEach((x) => (x.sel = on)); ov.querySelectorAll("[data-qk]").forEach((k) => { if (!k.disabled) k.checked = on; }); sqSave(); sqBar(); }
   else if (d.qa === "rmsel") { const n = scanQ.filter((x) => x.sel && x.pick >= 0).length; if (!n) return;
     modal({ title: `Remove ${n} card${n === 1 ? "" : "s"} from the list?`, text: "They won't be added to your portfolio.", buttons: [{ label: "Remove", kind: "danger", value: 1 }, { label: "Cancel", kind: "plain" }] })
       .then((v) => { if (v) { scanQ = scanQ.filter((x) => !(x.sel && x.pick >= 0)); sqSave(); sqRender(); } }); }
@@ -1837,6 +1845,112 @@ function saveForm(fm) {
   }
   fillPrices();
 }
+/* ---------- selecting several cards: press and hold a card, then tap others; edit or remove them together ---------- */
+function selBarHTML() {
+  const n = selIds.size, shownN = filtered().length, cards = P.items.filter((x) => selIds.has(x.id)).reduce((a, x) => a + (x.qty || 0), 0);
+  return `<div class="pfsel-t"><b>${n} selected</b>${n ? ` <span class="mu">${cards} card${cards === 1 ? "" : "s"}</span>` : ""}<span style="flex:1"></span>
+    <button type="button" class="cs-back" data-ps="all">${shownN && filtered().every((x) => selIds.has(x.id)) ? "Select none" : `Select all ${shownN.toLocaleString()}`}</button><button type="button" class="cs-back" data-ps="done">Done</button></div>
+    <div class="pfsel-b"><button class="pill" type="button" data-ps="scan">📷 Scan</button><button class="pill on" type="button" data-ps="edit" ${n ? "" : "disabled"}>Edit ${n || ""}</button><button class="pill dl" type="button" data-ps="rm" ${n ? "" : "disabled"}>Remove</button></div>`;
+}
+// update the checkmarks and the bar without redrawing the page
+function selSync() {
+  document.querySelectorAll("#pf .pr[data-id]").forEach((r) => { const on = selIds.has(r.dataset.id); r.classList.toggle("sel", selMode && on); const k = r.querySelector(".pr-ck"); if (k) k.setAttribute("aria-checked", String(on)); });
+  const b = $("pfsel"); if (b) b.innerHTML = selBarHTML();
+}
+function selStart(id) { const was = selMode; selMode = true; if (id) selIds.add(id); editing = null; closeSwipes(); if (!was) render(); else selSync(); }
+function selEnd() { selMode = false; selIds.clear(); render(); }
+function selToggle(id) { if (selIds.has(id)) selIds.delete(id); else selIds.add(id); selSync(); }
+// press and hold
+let lp = null;
+document.addEventListener("pointerdown", (e) => {
+  const c = e.target.closest && e.target.closest("#pf .prc"); if (!c || e.button > 0 || e.target.closest("button,a,input,select,label")) return;
+  const row = c.closest(".pr[data-id]"); if (!row || editing === row.dataset.id) return;
+  clearTimeout(lp && lp.t);
+  lp = { id: e.pointerId, x: e.clientX, y: e.clientY, row, t: setTimeout(() => {
+    if (!lp || swFingers.size > 1 || (sw && sw.on)) return; const id = lp.row.dataset.id; lp = null; sw = null;
+    selJust = Date.now(); selJustId = id; try { navigator.vibrate && navigator.vibrate(15); } catch {}
+    if (selMode) selToggle(id); else selStart(id);
+  }, 450) };
+});
+const lpOff = (e) => { if (lp && (!e || e.pointerId === lp.id)) { clearTimeout(lp.t); lp = null; } };
+document.addEventListener("pointermove", (e) => { if (lp && e.pointerId === lp.id && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 10) lpOff(e); });
+document.addEventListener("pointerup", lpOff); document.addEventListener("pointercancel", lpOff);
+document.addEventListener("contextmenu", (e) => { if (e.target.closest && e.target.closest("#pf .prc")) e.preventDefault(); });
+// a copy of the portfolio from just before a change made to many cards at once, for Undo
+function selBackup(what) { try { localStorage.setItem(UNDO_KEY, JSON.stringify({ at: Date.now(), source: what, P })); } catch {} }
+async function selRemove() {
+  const pick = P.items.filter((x) => selIds.has(x.id)); if (!pick.length) return;
+  const ok = await modal({ title: `Remove ${pick.length} item${pick.length === 1 ? "" : "s"} from your portfolio?`, text: esc(pick.slice(0, 5).map((x) => x.name).join(", ") + (pick.length > 5 ? ` and ${pick.length - 5} more` : "")), buttons: [{ label: "Remove", value: true, kind: "danger" }, { label: "Keep", value: false, kind: "primary" }] });
+  if (!ok) return;
+  selBackup("bulk remove"); P.items = P.items.filter((x) => !selIds.has(x.id)); store(); snap(); selMode = false; selIds.clear(); render();
+  toast(`Removed ${pick.length} item${pick.length === 1 ? "" : "s"}`, { label: "Undo", run: undoImport });
+}
+// the edit sheet for the selected cards: every field starts as "Keep", so only what you change is changed
+function selEdit() {
+  const pick = P.items.filter((x) => selIds.has(x.id)); if (!pick.length) return;
+  const pfs = [...new Set(P.items.map((y) => y.pf).filter(Boolean))].sort();
+  const keep = `<option value="">Keep as is</option>`, opt = (v, l) => `<option value="${esc(v)}">${esc(l ?? v)}</option>`;
+  const common = (k) => { const v = new Set(pick.map((x) => x[k] || "")); return v.size === 1 ? [...v][0] : null; };
+  const ov = document.createElement("div"); ov.className = "ppm-ov"; ov.id = "pfbulk";
+  ov.innerHTML = `<div class="ppm be" role="dialog" aria-modal="true" aria-labelledby="be-t"><button type="button" class="pe-x" data-be="x" aria-label="Close without saving">✕</button>
+    <h3 id="be-t">Edit ${pick.length} item${pick.length === 1 ? "" : "s"}</h3>
+    <div class="be-pics">${pick.slice(0, 8).map((x) => x.img ? `<img src="${esc(x.img)}" alt="">` : `<span></span>`).join("")}${pick.length > 8 ? `<b>+${pick.length - 8}</b>` : ""}</div>
+    <form id="be-f" class="pe"><div class="pg">
+      <label>Condition<select name="cond">${keep}${CONDS.map((c) => opt(c)).join("")}</select></label>
+      <label>Printing<select name="var">${keep}${PRINTS_ANY.map((c) => opt(c)).join("")}</select></label>
+      <label>Grade<select name="grade">${keep}${opt("Ungraded", "Raw (not graded)")}${TR_GRADES.map((g) => opt(g)).join("")}</select></label>
+      <label>Portfolio<select name="pf" data-be="pf">${keep}${pfs.map((p) => opt(p)).join("")}<option value="__new">+ New portfolio…</option></select></label>
+      <label class="pfnew" hidden>New portfolio name<input name="pfNew" placeholder="e.g. Binder 2" autocomplete="off"></label>
+      <label>Paid each<select name="costHow" data-be="how">${keep}${opt("amt", "Set an amount ($ each)")}${opt("pct", "Set a % of each card's market price")}${opt("clear", "Clear what was paid")}</select></label>
+      <label class="be-v" data-for="costHow" hidden><span>Amount</span><input name="costV" type="number" min="0" step="any" inputmode="decimal"></label>
+      <label>Your price each<select name="ovrHow" data-be="how">${keep}${opt("amt", "Set an amount ($ each)")}${opt("clear", "Clear (use the market price)")}</select></label>
+      <label class="be-v" data-for="ovrHow" hidden><span>Amount ($ each)</span><input name="ovrV" type="number" min="0" step="any" inputmode="decimal"></label>
+      <label>Quantity<select name="qtyHow" data-be="how">${keep}${opt("set", "Set each to")}</select></label>
+      <label class="be-v" data-for="qtyHow" hidden><span>Quantity each</span><input name="qtyV" type="number" min="0" step="1" inputmode="numeric"></label>
+      <label>Notes<select name="noteHow" data-be="how">${keep}${opt("set", "Replace with")}${opt("add", "Add to the end")}${opt("clear", "Clear")}</select></label>
+      <label class="be-v" data-for="noteHow" hidden><span>Note</span><input name="noteV" autocomplete="off"></label>
+    </div>
+    ${common("pf") != null ? "" : ""}<div class="sm be-sum" id="be-sum">Nothing changes until you pick something.</div>
+    <div class="bar"><button class="pill on" type="submit">Save</button><button class="pill" type="button" data-be="x">Cancel</button></div></form></div>`;
+  document.body.appendChild(ov); syncScrollLock();
+  const f = ov.querySelector("#be-f"), close = () => { ov.remove(); syncScrollLock(); };
+  const summary = () => { const d = Object.fromEntries(new FormData(f)), ch = [];
+    if (d.cond) ch.push("condition → " + (COND_CODE[d.cond] || d.cond)); if (d.var) ch.push("printing → " + d.var); if (d.grade) ch.push("grade → " + (d.grade === "Ungraded" ? "raw" : d.grade));
+    if (d.pf) ch.push("portfolio → " + (d.pf === "__new" ? d.pfNew || "new" : d.pf));
+    if (d.costHow) ch.push(d.costHow === "clear" ? "paid cleared" : d.costHow === "pct" ? `paid → ${d.costV || "?"}% of market` : `paid → $${d.costV || "?"}`);
+    if (d.ovrHow) ch.push(d.ovrHow === "clear" ? "your price cleared" : `your price → $${d.ovrV || "?"}`);
+    if (d.qtyHow) ch.push(`quantity → ${d.qtyV || "?"}`); if (d.noteHow) ch.push(d.noteHow === "clear" ? "notes cleared" : d.noteHow === "add" ? "note added" : "notes replaced");
+    $("be-sum").textContent = ch.length ? `${pick.length === 1 ? "Changes" : pick.length === 2 ? "Changes for both" : `Changes for all ${pick.length}`}: ${ch.join(", ")}.` : "Nothing changes until you pick something."; };
+  ov.addEventListener("change", (e) => { const t = e.target;
+    if (t.dataset.be === "how") { const v = f.querySelector(`.be-v[data-for="${t.name}"]`); if (v) { v.hidden = !t.value || t.value === "clear"; if (!v.hidden) { v.querySelector("span").textContent = t.value === "pct" ? "Percent of market (%)" : t.name === "costHow" || t.name === "ovrHow" ? "Amount ($ each)" : v.querySelector("span").textContent; v.querySelector("input").focus(); } } }
+    if (t.dataset.be === "pf") { const b = f.querySelector(".pfnew"); b.hidden = t.value !== "__new"; if (!b.hidden) b.querySelector("input").focus(); }
+    summary(); });
+  ov.addEventListener("input", summary);
+  ov.addEventListener("click", (e) => { if (e.target === ov || (e.target.closest && e.target.closest('[data-be="x"]'))) close(); });
+  f.addEventListener("submit", (e) => { e.preventDefault();
+    const d = Object.fromEntries(new FormData(f)), n = (v) => (v === "" || v == null ? null : Number(v));
+    if (d.pf === "__new") { d.pf = String(d.pfNew || "").trim(); if (!d.pf) { toast("Type a name for the new portfolio"); f.querySelector('[name="pfNew"]').focus(); return; } }
+    for (const [how, v, lab] of [["costHow", "costV", "what was paid"], ["ovrHow", "ovrV", "your price"], ["qtyHow", "qtyV", "the quantity"]])
+      if (d[how] && d[how] !== "clear" && !(n(d[v]) >= 0)) { toast(`Type ${lab}`); f.querySelector(`[name="${v}"]`).focus(); return; }
+    if (!(d.cond || d.var || d.grade || d.pf || d.costHow || d.ovrHow || d.qtyHow || d.noteHow)) return close();
+    selBackup("bulk edit");
+    let noMkt = 0;
+    for (const x of pick) {
+      const was = [x.cond, x.var, isGraded(x) ? shortGrade(x.grade) : ""].join("|");
+      if (d.cond) x.cond = d.cond; if (d.var) x.var = d.var; if (d.grade) x.grade = d.grade; if (d.pf) x.pf = d.pf;
+      if (d.costHow === "clear") x.cost = 0; else if (d.costHow === "amt") x.cost = Math.round(n(d.costV) * 100) / 100;
+      else if (d.costHow === "pct") { const mk = unit(x); if (mk > 0) x.cost = Math.round(mk * n(d.costV)) / 100; else noMkt++; }
+      if (d.ovrHow === "clear") x.ovr = 0; else if (d.ovrHow === "amt") x.ovr = Math.round(n(d.ovrV) * 100) / 100;
+      if (d.qtyHow === "set") x.qty = Math.max(0, Math.round(n(d.qtyV)));
+      if (d.noteHow === "clear") x.notes = ""; else if (d.noteHow === "set") x.notes = String(d.noteV || "").trim(); else if (d.noteHow === "add") x.notes = [x.notes, String(d.noteV || "").trim()].filter(Boolean).join("; ");
+      // a new condition, printing or grade needs a new price: raw cards get TCGplayer's on the next price check
+      if ([x.cond, x.var, isGraded(x) ? shortGrade(x.grade) : ""].join("|") !== was) { delete x.pT; delete x.pTry; delete x.mktLive; delete x.pWhy; if (!isGraded(x)) x.mktV = 1; }
+    }
+    store(); snap(); close(); selMode = false; selIds.clear(); render(); fillPrices();
+    toast(`Updated ${pick.length} item${pick.length === 1 ? "" : "s"}${noMkt ? ` (${noMkt} without a market price kept what was paid)` : ""}`, { label: "Undo", run: undoImport });
+  });
+  const first = f.querySelector("select"); if (first) first.focus();
+}
 function impMenu(open) { impOpen = !!open; const m = $("impm"), b = document.querySelector('[data-pa="imp"]'); if (!m) return; m.hidden = !open; if (b) b.setAttribute("aria-expanded", open ? "true" : "false"); }
 document.addEventListener("click", (e) => { const m = $("impm"); if (!m || m.hidden) return;
   if (e.target.closest('[data-pa="imp"]')) return; if (!m.contains(e.target) || e.target.closest(".imp-i")) impMenu(false); }, true);
@@ -1846,8 +1960,11 @@ document.addEventListener("click", (e) => {
   if (Date.now() - swJust < 400) return;
   const btn = e.target.closest("button");
   const openRow = document.querySelector("#pf .pr.open"); if (openRow && !(btn && btn.dataset.trash)) { closeSwipes(); return; }
-  if (!btn) { const row = !e.target.closest("a,input,select,label,form") && e.target.closest(".pr[data-id]"); if (row && editing !== row.dataset.id) openDetail(row.dataset.id); return; }
+  { const r = e.target.closest(".pr[data-id]"); if (r && r.dataset.id === selJustId && Date.now() - selJust < 1500) { selJustId = ""; return; } } // the release after a press and hold
+  if (!btn) { const row = !e.target.closest("a,input,select,label,form") && e.target.closest(".pr[data-id]"); if (row && selMode) selToggle(row.dataset.id); else if (row && editing !== row.dataset.id) openDetail(row.dataset.id); return; }
   const d = btn.dataset;
+  if (d.ps) { if (d.ps === "done") selEnd(); else if (d.ps === "all") { const l = filtered(), all = l.length && l.every((x) => selIds.has(x.id)); l.forEach((x) => (all ? selIds.delete(x.id) : selIds.add(x.id))); selSync(); }
+    else if (d.ps === "edit") selEdit(); else if (d.ps === "rm") selRemove(); else if (d.ps === "scan") { sqTarget = "select"; sqOpen(); } return; }
   if (d.czr) { cSet({ x0: -Infinity, x1: Infinity, y0: -Infinity, y1: Infinity }); return; }
   if (d.dr) { drng = d.dr; cview = null; render(); return; }
   if (d.dc) { dsel = d.dc; cview = null; render(); return; }
@@ -1930,7 +2047,7 @@ let qt; document.addEventListener("input", (e) => { if (e.target.id !== "pfq") r
 // while the search box is in use, the list keeps at least a screen of height, so fewer matches don't shrink the page under it
 document.addEventListener("focusin", (e) => { if (e.target.id === "pfq") { const b = $("pflist"); if (b) b.style.minHeight = innerHeight + "px"; } });
 document.addEventListener("focusout", (e) => { if (e.target.id === "pfq") { const b = $("pflist"); if (b) b.style.minHeight = ""; } });
-document.addEventListener("submit", (e) => { if (e.target.classList?.contains("pe")) { e.preventDefault(); saveForm(e.target); } });
+document.addEventListener("submit", (e) => { if (e.target.classList?.contains("pe") && e.target.id !== "be-f") { e.preventDefault(); saveForm(e.target); } });
 render();
 setTimeout(fillPrices, 1500);
 })();
