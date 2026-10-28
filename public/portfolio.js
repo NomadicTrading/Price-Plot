@@ -1492,7 +1492,7 @@ function sqBar() {
   const ready = scanQ.filter((x) => x.pick >= 0), sel = ready.filter((x) => x.sel);
   const selV = sel.reduce((a, x) => a + sqVal(x), 0);
   const selPay = sel.reduce((a, x) => a + (x.pxK === sqPxKey(x) ? sqOfferVal(x) : 0), 0);
-  if (sqTarget) { el.querySelector("[data-qa=add]").textContent = sqTarget === "tradeGive" ? (sel.length ? `Add ${sel.length} to your cards` : "Add to your cards") : sel.length ? `Add ${sel.length} to their cards` : "Add to their cards"; const pg = el.querySelector(".pg"); if (pg) pg.style.display = "none"; }
+  if (sqTarget) { el.querySelector("[data-qa=add]").textContent = sqTarget === "tradeGive" ? (sel.length ? `Add ${sel.length} of your cards` : "Add your cards") : sel.length ? `Add ${sel.length} of their cards` : "Add their cards"; const pg = el.querySelector(".pg"); if (pg) pg.style.display = "none"; }
   else el.querySelector("[data-qa=add]").textContent = sel.length ? `Add ${sel.length} card${sel.length === 1 ? "" : "s"} to portfolio${selPay ? " · paying " + money(selPay) : selV ? " · " + money(selV) : ""}` : "Add to portfolio";
   // the whole list's TCGplayer market value, counting quantities
   const tv = $("sq-v");
