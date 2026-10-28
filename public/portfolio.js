@@ -145,6 +145,28 @@ function renderTrade(box) {
   <div class="sm">Your cards count at full market value; theirs at the trade % (set one card's own % in its box). The green or red number is where you stand: trade credit plus cash they add, minus your cards and cash you add. Graded cards use Collectr's price.</div></div>`;
   for (const c of [...TRD.give, ...TRD.get]) { if (c.pxK !== [c.cond, c.var, c.grade].join("|") && !(c.pid && trEach(c) != null)) trPrice(c); trLoadPrints(c); trLive(c); }
 }
+// a live price found for one copy goes to every copy of the same card, condition and printing in all your portfolios
+// (no extra lookups: it's the same TCGplayer price). Graded copies and prices you typed in are left alone.
+function pfSetLive(x, px, est, live) {
+  const same = (y) => y === x || (!isGraded(y) && !(y.ovr > 0) && (y.cond || "Near Mint") === (x.cond || "Near Mint") && mVar(y.var) === mVar(x.var) &&
+    mName(y.name) === mName(x.name) && mNum(y.num) === mNum(x.num) &&
+    ((y.tcgId && x.tcgId && String(y.tcgId) === String(x.tcgId)) || mSetWords(y.set).join(" ") === mSetWords(x.set).join(" ")));
+  const differs = P.items.some((y) => same(y) && (Math.abs((y.mkt ?? -1) - px) >= 0.005 || !!y.mktEst !== !!est || y.mktV !== 2));
+  if (!differs) return 0;
+  let n = 0;
+  for (const y of P.items) if (same(y)) { y.mkt = px; y.mktEst = !!est; y.mktV = 2; y.pT = Date.now(); if (live) y.mktLive = Date.now(); else delete y.mktLive; if (!y.tcgId && x.tcgId) y.tcgId = x.tcgId; delete y.pWhy; delete y.mktSrc; n++; }
+  store(); return n;
+}
+// on load: copies of a card that has a live price from the last day take that price too (nothing is looked up)
+function pfSpreadLive() {
+  let n = 0;
+  const live = P.items.filter((x) => x.mktLive && Date.now() - x.mktLive < 864e5 && x.mkt > 0 && !isGraded(x) && !(x.ovr > 0)).sort((a, b) => b.mktLive - a.mktLive);
+  const done = new Set();
+  for (const x of live) { if (done.has(x)) continue; const t = x.mktLive; n += pfSetLive(x, x.mkt, x.mktEst, true); x.mktLive = t;
+    for (const y of P.items) if (y.mktLive >= Date.now() - 1000) { y.mktLive = t; done.add(y); } }
+  if (n) { store(); if (!detail && !editing && !tradeOpen) render(); else trDraw(); }
+}
+setTimeout(pfSpreadLive, 0);
 // your portfolio cards in a trade get TCGplayer's live price; when it differs, your portfolio is updated to it
 // (raw cards only: graded cards keep Collectr's price). Checked at most every 6 hours per card.
 async function trLive(c) {
@@ -154,8 +176,8 @@ async function trLive(c) {
   c.liveT = Date.now(); trSave();
   try {
     const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: x.tcgId, cond: x.cond || "Near Mint", print: x.var || "", jp: isJp(x) ? "1" : "", live: "1" }));
-    if (j.market > 0 && (Math.abs((x.mkt ?? -1) - j.market) >= 0.005 || !!x.mktEst !== !!j.est || x.mktV !== 2)) {
-      x.mkt = j.market; x.mktEst = !!j.est; x.mktV = 2; x.pT = Date.now(); if (j.live) x.mktLive = Date.now(); delete x.pWhy; delete x.mktSrc; store(); trDraw();
+    if (j.market > 0 && pfSetLive(x, j.market, j.est, j.live)) {
+      trDraw();
       const pr = document.querySelector(`.tr [data-tid="${c.id}"][data-tf="own"]`); if (pr && !(c.own > 0)) pr.placeholder = (Math.round(unit(x) * 100) / 100).toFixed(2);
     }
   } catch { c.liveT = 0; }
@@ -1261,8 +1283,9 @@ async function sqPrice(it) {
   } catch {}
   if (it.pxK !== k) return; // the condition, printing or match changed while this was loading
   if (same && !(px > 0) && (cp.ovr > 0 || cp.mkt != null)) return showCopy(); // TCGplayer had nothing: your copy's price
-  if (same && px > 0 && !fbUsed && (Math.abs((cp.mkt ?? -1) - px) >= 0.005 || !!cp.mktEst !== est || cp.mktV !== 2)) {
-    cp.mkt = px; cp.mktEst = est; cp.mktV = 2; cp.pT = Date.now(); if (live) cp.mktLive = Date.now(); delete cp.pWhy; delete cp.mktSrc; if (!cp.tcgId && c.tcgId) cp.tcgId = c.tcgId; store(); trDraw();
+  if (same && px > 0 && !fbUsed) {
+    if (!cp.tcgId && c.tcgId) cp.tcgId = c.tcgId;
+    if (pfSetLive(cp, px, est, live)) trDraw();
   }
   it.px = px; it.pxEst = est; it.pxCond = cond; sqSave();
   if (!sqView) sqRow(it); else sqBar();
