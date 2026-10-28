@@ -1228,20 +1228,25 @@ async function sqPrice(it) {
   if (!it.print) it.print = sqPrints(it, c)[0];
   const k = sqPxKey(it); if (it.pxK === k) return;
   it.pxK = k; it.px = undefined; it.pxEst = false; it.pxCond = "";
-  // one of your cards in the trade: the price is your copy's (the same number the trade uses), or, in another
-  // condition, TCGplayer's price for your copy's product
-  const cp = sqTarget === "tradeGive" && it.pid ? P.items.find((x) => x.id === it.pid) : null;
-  if (cp && (!it.mcond || it.mcond === sqCopyCond(cp)) && (cp.ovr > 0 || cp.mkt != null)) { it.px = unit(cp); it.pxEst = !!cp.mktEst && !(cp.ovr > 0); it.pxCond = ""; sqSave(); if (!sqView) sqRow(it); else sqBar(); return; }
-  let px = null, est = false, cond = "";
+  // one of your cards in the trade: TCGplayer's live price for your copy's product, condition and printing.
+  // When it differs from what your portfolio has, your portfolio is updated to it. Graded copies keep Collectr's price.
+  const cp = sqTarget === "tradeGive" && it.pid ? P.items.find((x) => x.id === it.pid) : null, same = cp && (!it.mcond || it.mcond === sqCopyCond(cp));
+  const showCopy = () => { it.px = unit(cp); it.pxEst = !!cp.mktEst && !(cp.ovr > 0); it.pxCond = ""; sqSave(); if (!sqView) sqRow(it); else sqBar(); };
+  if (same && isGraded(cp)) { if (cp.ovr > 0 || cp.mkt != null) showCopy(); else { it.px = null; sqSave(); if (!sqView) sqRow(it); } return; }
+  let px = null, est = false, cond = "", fbUsed = false;
   try {
     // cards matched through pokemontcg.io don't carry a TCGplayer product id yet: find it the same way card pictures are found
     let fb = null;
-    if (!c.tcgId) { const j = await getJSON("/api/cardimg?" + new URLSearchParams({ name: c.name, set: c.set || "", num: sqNum(c), cat: "Pokemon" })); if (j.tcgId) c.tcgId = j.tcgId; else if (j.market > 0) fb = j.market; }
+    if (!c.tcgId && !(cp && cp.tcgId)) { const j = await getJSON("/api/cardimg?" + new URLSearchParams({ name: c.name, set: c.set || "", num: sqNum(c), cat: "Pokemon" })); if (j.tcgId) c.tcgId = j.tcgId; else if (j.market > 0) fb = j.market; }
     const tid = (cp && cp.tcgId) || c.tcgId;
     if (tid) { const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: tid, cond: it.cond || "Near Mint", print: it.print || "", jp: sqJp(it, c) ? "1" : "" })); px = j.market ?? null; est = !!j.est; cond = j.cond || ""; }
-    else if (fb) { px = fb; est = true; }
+    else if (fb) { px = fb; est = true; fbUsed = true; }
   } catch {}
   if (it.pxK !== k) return; // the condition, printing or match changed while this was loading
+  if (same && !(px > 0) && (cp.ovr > 0 || cp.mkt != null)) return showCopy(); // TCGplayer had nothing: your copy's price
+  if (same && px > 0 && !fbUsed && (Math.abs((cp.mkt ?? -1) - px) >= 0.005 || !!cp.mktEst !== est || cp.mktV !== 2)) {
+    cp.mkt = px; cp.mktEst = est; cp.mktV = 2; cp.pT = Date.now(); delete cp.pWhy; delete cp.mktSrc; if (!cp.tcgId && c.tcgId) cp.tcgId = c.tcgId; store(); trDraw();
+  }
   it.px = px; it.pxEst = est; it.pxCond = cond; sqSave();
   if (!sqView) sqRow(it); else sqBar();
 }
