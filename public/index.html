@@ -262,13 +262,16 @@ label.pill{display:inline-block}
 .ed-f select,.ed-f input,.ed-af select,.ed-af input{font:inherit;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:6px 8px;min-height:38px;width:100%;min-width:0}
 .ed-f .ed-cost{grid-column:1/2}.ed-f .ed-pc{grid-column:3/4;grid-row:2}.ed-f .ed-pf{grid-column:2/3;grid-row:2}
 .ed-all{margin:4px 0 10px}.ed-all[open]{padding-bottom:10px}.ed-all>:not(summary){margin-left:10px;margin-right:10px}.ed-af{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0 10px}.ed-af [hidden]{display:none!important}.ed-hint{font-size:12.5px}.ed-bar .sq-add{width:100%}
+.rf{flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:-4px}.rf .pill{padding:5px 12px;font-size:13.5px;min-height:32px}.rf-c{background:var(--soft)}
+.rf-p{flex-basis:100%;display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px;border-radius:12px;background:var(--soft);margin-top:2px}.rf-p label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mut);min-width:0}.rf-p [hidden]{display:none!important}
+.rf-p select,.rf-p input{font:inherit;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:6px 8px;min-height:38px;width:100%;min-width:0}.rf-a{grid-column:1/-1;display:flex;justify-content:flex-end;gap:16px}
 .mg{max-width:460px;max-height:calc(100dvh - 32px)}.mg-s{margin:10px 0 2px;font-size:14px}.mg-l{margin:2px 0 0;padding-left:18px;font-size:13px;color:var(--mut)}.mg-l li{margin:2px 0}.mg-p{margin:8px 0;padding:8px 10px;border-radius:10px;background:var(--soft);font-size:13.5px}.mg-p select{margin-top:6px;width:100%;font:inherit;font-size:14px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:6px;min-height:36px}
 .mg-more{margin:0 0 0 18px;font-size:13px}.mg-more>summary{cursor:pointer;color:var(--link);font-weight:600;padding:3px 0;list-style:none}.mg-more>summary::-webkit-details-marker{display:none}.mg-more[open]>summary{color:var(--mut)}.mg-more>.mg-l{margin:0;padding-left:0}
 .pfb{height:8px;border-radius:999px;background:var(--soft);overflow:hidden;margin:6px 0 10px}.pfb[hidden]{display:none}.pfb>i{display:block;height:100%;width:0;border-radius:999px;background:var(--blue);transition:width .3s ease}
 .mg-c{display:flex;gap:8px;align-items:flex-start;margin:8px 0 0;font-size:13.5px}.mg-c input{width:18px;height:18px;flex:none;margin-top:1px}
 </style></head><body>
 <header><div class="wrap hd"><a class="brand" href="/" aria-label="Price Plot home"><img src="/brand/icon-small.svg" width="36" height="36" alt=""><span>Price<span class="pp-dot">·</span>Plot</span></a><div class="seg thm" id="thm" role="group" aria-label="Light or dark mode"><button type="button" data-th="light">Light</button><button type="button" data-th="dark">Dark</button></div>
-<form id="f"><button class="cam" id="camb" type="button" aria-label="Search with your camera" title="Search with your camera"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg></button><input id="q" type="search" placeholder="Search a card, e.g. charizard 4/102 base set" aria-label="Search listings" autocomplete="off" enterkeyhint="search" autofocus><button class="go" type="submit">Search</button></form><div id="sug" class="sug" role="listbox" aria-label="Cards on TCGplayer" hidden></div></div></header>
+<form id="f"><button class="cam" id="camb" type="button" aria-label="Search with your camera" title="Search with your camera"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg></button><input id="q" type="search" placeholder="Search a card, e.g. charizard 4/102 base set" aria-label="Search listings" autocomplete="off" enterkeyhint="search" autofocus><button class="go" type="submit">Search</button></form><div class="rf" id="rf"></div><div id="sug" class="sug" role="listbox" aria-label="Cards on TCGplayer" hidden></div></div></header>
 <main class="wrap">
 <div class="seg tabs" id="tb" role="group" aria-label="Data source"><button type="button" data-t="pf" aria-pressed="false">Portfolio</button><button type="button" data-t="tcg" aria-pressed="false">TCGplayer</button><button type="button" data-t="ebay" aria-pressed="true">eBay</button></div>
 <div class="bar" id="sv"></div>
@@ -278,7 +281,7 @@ label.pill{display:inline-block}
 <div class="bar fs" id="cd" role="group" aria-label="Condition"></div>
 <div class="bar fs" id="fn" role="group" aria-label="Finish"></div>
 <div class="bar fs">
-<button class="pill" id="tS" type="button" aria-pressed="true">Sold</button><button class="pill" id="tA" type="button" aria-pressed="true">For sale</button><span class="sep"></span><button class="pill" id="tU" type="button" aria-pressed="true">No condition listed</button><button class="pill" id="tR" type="button" aria-pressed="true">Hide unrelated</button>
+<button class="pill" id="tS" type="button" aria-pressed="true">Sold</button><button class="pill" id="tA" type="button" aria-pressed="true">For sale</button><span class="sep"></span><button class="pill" id="tU" type="button" aria-pressed="true">No condition listed</button><button class="pill" id="tR" type="button" aria-pressed="true">Hide unrelated</button><button class="pill" id="tL" type="button" aria-pressed="true" title="Lots, bundles, bulk and multi-card listings (x10, 5 cards…)">Hide lots</button>
 </div>
 <div class="py fs" id="pw2"><span class="pl">Price</span><div class="dr" id="pd" role="group" aria-label="Price range"></div><b id="pt"></b></div>
 <details class="mf" id="mf"><summary>More filters</summary>
@@ -334,6 +337,10 @@ function dual(id,cb){const el=$(id),st={min:0,max:100,step:1,lo:0,hi:100};let h=
  el.addEventListener("pointermove",mv);const end=()=>{h=null};el.addEventListener("pointerup",end);el.addEventListener("pointercancel",end);
  st.paint();return st}
 let data=[],prints=[],pre=[],show={S:true,A:true,U:true,R:true,P:true},cset=new Set(),fmode="any",mode="all",rsel="90",vm="trend",live=false,view=null,full=null,G={},scrub=null,SPAN=90,ser=[],yr={lo:0,hi:0,min:0,max:0},psel=new Set(),axis=null;
+let noLots=(()=>{try{return localStorage.getItem("pp_nolots")!=="0"}catch{return true}})();
+// a listing for more than one card: lots, bundles, bulk, "x10", "5 cards", playsets, binders
+const LOT_RE=/\b(lots?|bundles?|bulk|playsets?|binder|job ?lot|collection lot|grab ?bags?|mystery|random|repack|set of \d+|\d+\s?(?:cards|card lot|pcs|pieces|count)|x\s?\d{1,3}|\d{1,3}\s?x(?![a-z\d]))\b/i;
+const isLot=x=>LOT_RE.test(x.title||"");
 let lmode="any",emode="any",smode="any",shipOn=false,outl=false,dedupe=true,bad=new Set(),pr={min:0,max:0,a:0,b:200},expRows=[];
 const ydr=dual("yd",s=>{yr.lo=s.lo;yr.hi=s.hi;ytxt();view=null;scrub=null;draw()}),pdr=dual("pd",s=>{pr.a=s.lo;pr.b=s.hi;ptxt();view=null;scrub=null;draw()});
 const MODES=[["all","All"],["raw","Raw"],["PSA","PSA"],["BGS","Beckett"],["CGC","CGC"],["TAG","TAG"]];
@@ -403,7 +410,7 @@ const edOk=x=>emode==="any"||(emode==="none"?!x.ed:x.ed===emode);
 const fmtOk=x=>smode==="any"||x.type==="Sold"||(smode==="offer"?!!x.offer:x.fmt===smode);
 const pv=i=>pr.min+(pr.max-pr.min)*Math.pow(i/200,2);
 const priceOk=x=>(!pr.a||x.price>=pv(pr.a))&&(pr.b>=200||x.price<=pv(pr.b));
-const pass=x=>gradeOk(x)&&condOk(x)&&finOk(x)&&printOk(x)&&langOk(x)&&edOk(x)&&fmtOk(x)&&priceOk(x)&&!(x.seller&&bad.has(x.seller))&&(show.U||x.grader||x.cond)&&(!show.R||x.rel!==false);
+const pass=x=>gradeOk(x)&&condOk(x)&&finOk(x)&&printOk(x)&&langOk(x)&&edOk(x)&&fmtOk(x)&&priceOk(x)&&!(x.seller&&bad.has(x.seller))&&(show.U||x.grader||x.cond)&&(!show.R||x.rel!==false)&&!(noLots&&isLot(x));
 
 function sample(q){let s=[...q].reduce((a,c)=>a+c.charCodeAt(0),7);const r=()=>(s=(s*1664525+1013904223)%4294967296)/4294967296,b=50+r()*300,G=[null,null,"PSA","BGS","CGC","TAG"];
 const mk=(type,d)=>{const g=G[Math.floor(r()*6)],n=g?[10,9.5,9,8][Math.floor(r()*4)]:null,m=g?(n===10?3:n>=9?1.6:1.1):1,cn=g?null:[null,null,"NM","NM","LP","MP","HP"][Math.floor(r()*7)];
@@ -494,7 +501,8 @@ function draw(){
  const sp=inR.filter(x=>x.type==="Sold");
  const hidN=data.filter(x=>x.rel===false).length;
  $("hid").textContent=show.R&&hidN?`${hidN} listing${hidN===1?"":"s"} hidden as unrelated to your search. Turn off "Hide unrelated" to see them.`:"";
- $("hid").textContent=[$("hid").textContent,dupN?`${dupN} duplicate${dupN===1?"":"s"} hidden.`:"",outN?`${outN} price outlier${outN===1?"":"s"} hidden.`:""].filter(Boolean).join(" ");
+ const lotN=noLots?data.filter(x=>x.d<=R&&isLot(x)).length:0;
+ $("hid").textContent=[$("hid").textContent,lotN?`${lotN} lot${lotN===1?"":"s"} or bundle${lotN===1?"":"s"} hidden.`:"",dupN?`${dupN} duplicate${dupN===1?"":"s"} hidden.`:"",outN?`${outN} price outlier${outN===1?"":"s"} hidden.`:""].filter(Boolean).join(" ");
  /* fit the chart to the span of data that is actually available */
  const dmax=sPts.reduce((a,x)=>Math.max(a,x.d),0);
  const S=Math.max(7,Math.min(R,Math.ceil(dmax*1.04)+1));SPAN=S;
@@ -609,12 +617,36 @@ $("zr").onclick=()=>{view=null;draw()};
 /* Search bar suggestions: TCGplayer's matches as you type, one row per printing with its Near Mint price.
    Picking one fills in the card's name and number and searches; the TCGplayer tab opens on that printing. */
 let sugT=0,sugCtl=null,sugItems=[],sugAt=-1,sugQ="";
+/* Refine: narrows the search suggestions (cards or sealed, language, set, rarity, printing, kind of sealed product). Remembered. */
+const RF_OPTS={type:[["","Cards & sealed"],["cards","Cards"],["sealed","Sealed"]],lang:[["","Any language"],["en","English"],["jp","Japanese"]],
+ rarity:[["","Any rarity"],...["Common","Uncommon","Rare","Holo Rare","Double Rare","Ultra Rare","Illustration Rare","Special Illustration Rare","Hyper Rare","Secret Rare","Shiny Rare","ACE SPEC Rare","Promo"].map(x=>[x,x])],
+ print:[["","Any printing"],...["Normal","Holofoil","Reverse Holofoil","1st Edition Holofoil","1st Edition","Unlimited Holofoil","Unlimited"].map(x=>[x,x])],
+ stype:[["","Any sealed"],["box","Booster Box"],["etb","Elite Trainer Box"],["bundle","Booster Bundle"],["tin","Tin"],["collection","Collection / Premium"],["pack","Pack / Blister"],["case","Case"]]};
+let RF=(()=>{try{return JSON.parse(localStorage.getItem("pp_refine")||"{}")||{}}catch{return {}}})(),rfOpen=false;
+const rfOn=()=>Object.entries(RF).filter(([k,v])=>v&&(k!=="stype"||RF.type==="sealed"));
+const rfLabel=(k,v)=>k==="set"?"Set: "+v:(RF_OPTS[k].find(o=>o[0]===v)||[,v])[1];
+function rfDraw(){const on=rfOn();
+ $("rf").innerHTML=`<button type="button" class="pill rf-b" data-rf="toggle" aria-expanded="${rfOpen}">Refine${on.length?` · ${on.length}`:""} ▾</button>${on.map(([k,v])=>`<button type="button" class="pill rf-c" data-rfx="${k}" aria-label="Remove ${esc(rfLabel(k,v))}">${esc(rfLabel(k,v))} ✕</button>`).join("")}
+ ${rfOpen?`<div class="rf-p">${["type","lang","rarity","print"].map(k=>`<label><span>${{type:"Type",lang:"Language",rarity:"Rarity",print:"Printing"}[k]}</span><select data-rfk="${k}">${RF_OPTS[k].map(([v,l])=>`<option value="${esc(v)}" ${v===(RF[k]||"")?"selected":""}>${esc(l)}</option>`).join("")}</select></label>`).join("")}
+  <label ${RF.type==="sealed"?"":"hidden"}><span>Sealed product</span><select data-rfk="stype">${RF_OPTS.stype.map(([v,l])=>`<option value="${esc(v)}" ${v===(RF.stype||"")?"selected":""}>${esc(l)}</option>`).join("")}</select></label>
+  <label><span>Set</span><input data-rfk="set" value="${esc(RF.set||"")}" placeholder="e.g. Evolving Skies" autocomplete="off"></label>
+  <div class="rf-a">${on.length?`<button type="button" class="cs-back" data-rf="clear">Clear all</button>`:""}<button type="button" class="cs-back" data-rf="toggle">Done</button></div></div>`:""}`}
+function rfSet(k,v){if(v)RF[k]=v;else delete RF[k];if(k==="type"&&v!=="sealed")delete RF.stype;try{localStorage.setItem("pp_refine",JSON.stringify(RF))}catch{}rfDraw();rfRerun()}
+// run the suggestions again for what's typed
+function rfRerun(){const q=$("q").value.trim();if(q.length<3)return;sugQ="";$("q").dispatchEvent(new Event("input"))}
+$("rf").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+ if(b.dataset.rf==="toggle"){rfOpen=!rfOpen;rfDraw();if(rfOpen){const s=$("rf").querySelector("select");if(s)s.focus()}}
+ else if(b.dataset.rf==="clear"){RF={};try{localStorage.removeItem("pp_refine")}catch{}rfDraw();rfRerun()}
+ else if(b.dataset.rfx)rfSet(b.dataset.rfx,"")});
+$("rf").addEventListener("change",e=>{const k=e.target.dataset.rfk;if(k)rfSet(k,e.target.value.trim())});
+$("rf").addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.dataset.rfk==="set"){e.preventDefault();rfSet("set",e.target.value.trim())}});
+rfDraw();
 const sugEl=$("sug");
 function sugHide(){sugEl.hidden=true;sugAt=-1;$("q").removeAttribute("aria-activedescendant")}
-function sugPlace(){const f=$("f");sugEl.style.left=f.offsetLeft+"px";sugEl.style.top=(f.offsetTop+f.offsetHeight+6)+"px";sugEl.style.width=f.offsetWidth+"px"}
+function sugPlace(){const f=$("f"),r=$("rf"),under=r&&r.offsetHeight?r:f;sugEl.style.left=f.offsetLeft+"px";sugEl.style.top=(under.offsetTop+under.offsetHeight+6)+"px";sugEl.style.width=f.offsetWidth+"px"}
 function sugShow(html){sugEl.innerHTML=html;sugPlace();sugEl.hidden=false}
 function sugRender(){
- if(!sugItems.length)return sugShow('<div class="sug-n">No TCGplayer matches. Press Search to look on eBay anyway.</div>');
+ if(!sugItems.length)return sugShow(`<div class="sug-n">No TCGplayer matches${rfOn().length?" with your Refine settings ("+esc(rfOn().map(([k,v])=>rfLabel(k,v)).join(", "))+")":""}. Press Search to look on eBay anyway.</div>`);
  sugShow(sugItems.map((c,i)=>{const num=c.numberText||(c.number?c.number+(c.printedTotal&&/^\d+$/.test(c.number)?"/"+c.printedTotal:""):"");
   return `<button type="button" class="sug-r" role="option" id="sug-${i}" data-si="${i}" aria-selected="${i===sugAt}">${c.image?`<img src="${esc(safeUrl(c.image)||"")}" alt="" loading="lazy">`:'<span class="ph"></span>'}
   <span class="sug-m"><b>${esc(c.name)}</b><span>${esc([num?"#"+num:"",c.set].filter(Boolean).join(" · "))}</span>${c.sealed?`<i class="sug-p">Sealed</i>`:c.print?`<i class="sug-p">${esc(c.print)}</i>`:c.rarity?`<i class="sug-p">${esc(c.rarity)}</i>`:""}</span>
@@ -629,7 +661,7 @@ $("q").addEventListener("input",()=>{const q=$("q").value.trim();clearTimeout(su
  if(q.length<3||q===sugQ){sugHide();return}
  sugT=setTimeout(async()=>{sugCtl=new AbortController();const ctl=sugCtl;
   if(sugEl.hidden)sugShow('<div class="sug-n">Looking on TCGplayer…</div>');
-  try{const r=await fetch("/api/suggest?q="+encodeURIComponent(q),{signal:ctl.signal});const j=await r.json();
+  try{const r=await fetch("/api/suggest?"+new URLSearchParams({q,...Object.fromEntries(rfOn())}),{signal:ctl.signal});const j=await r.json();
    if(ctl.signal.aborted||$("q").value.trim()!==q)return;
    if(!r.ok)return sugShow('<div class="sug-n">TCGplayer suggestions unavailable right now. Press Search to look on eBay.</div>');
    sugItems=j.items||[];sugAt=-1;sugRender()}catch(e){if(e.name!=="AbortError")sugHide()}},350)});
@@ -978,6 +1010,7 @@ $("tX").onclick=()=>{bad.clear();updBad();draw()};
 $("tP").onclick=e=>{shipOn=!shipOn;e.target.setAttribute("aria-pressed",shipOn);tag();initPrice();view=null;scrub=null;draw()};
 $("tO").onclick=e=>{outl=!outl;e.target.setAttribute("aria-pressed",outl);view=null;draw()};
 $("tD").onclick=e=>{dedupe=!dedupe;e.target.setAttribute("aria-pressed",dedupe);draw()};
+$("tL").setAttribute("aria-pressed",noLots);$("tL").onclick=e=>{noLots=!noLots;try{localStorage.setItem("pp_nolots",noLots?"1":"0")}catch{}e.target.setAttribute("aria-pressed",noLots);view=null;draw()};
 function csvText(){const c=v=>{v=v==null?"":String(v);if(/^[=+\-@\t\r]/.test(v))v="'"+v;return /[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
  const rows=[["type","date","price","listed_price","shipping","grader","grade","condition","finish","language","edition","format","best_offer","seller","title","url"]];
  for(const x of expRows)rows.push([x.type,new Date(Date.now()-x.d*864e5).toISOString().slice(0,10),x.price,x.p0,x.ship,x.grader,x.grade,x.cond,x.f2,x.lang,x.ed,x.fmt,x.offer?"yes":"",x.seller,x.title,x.url]);

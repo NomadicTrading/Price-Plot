@@ -518,7 +518,7 @@ const SEALED_RE = /\b(code card|booster|box|bundle|tin|deck|pack|blister|elite t
 async function tcgScan(q, opts = {}) {
   const j = await tpPost("https://mp-search-api.tcgplayer.com/v1/search/request?" + new URLSearchParams({ q: q.slice(0, 120), isList: "false" }), {
     algorithm: "sales_synonym_v2", from: 0, size: 24,
-    filters: { term: { productLineName: ["pokemon", "pokemon-japan"] }, range: {}, match: {} },
+    filters: { term: { productLineName: opts.lines || ["pokemon", "pokemon-japan"] }, range: {}, match: {} },
     listingSearch: { context: { cart: {} }, filters: { term: { sellerStatus: "Live", channelId: 0 }, range: { quantity: { gte: 1 } }, exclude: { channelExclusion: 0 } } },
     context: { cart: {}, shippingCountry: "US", userProfile: {} }, settings: { useFuzzySearch: true, didYouMean: {} }, sort: {},
   });
@@ -577,13 +577,24 @@ const scoreCard = (c, nn, d, words, extra) => {
 // Search bar suggestions: TCGplayer's matches for what's typed, one row per printing with its Near Mint market price.
 // Printing prices come from each card's price history (remembered 24 hours), looked up for the top few cards only.
 const sugCache = new Map();
+// Refine options from the search box: type (cards / sealed), lang (en / jp), set, rarity, print, stype (kind of sealed product)
+const STYPE = { box: [/booster box/i, "booster box"], etb: [/elite trainer box/i, "elite trainer box"], bundle: [/bundle/i, "booster bundle"], tin: [/\btins?\b/i, "tin"],
+  collection: [/collection|premium|super premium/i, "collection"], pack: [/\bpacks?\b|blister|sleeved/i, "booster pack"], case: [/\bcase\b/i, "case"] };
 app.get("/api/suggest", async (req, res) => {
   const q = String(req.query.q || "").replace(/\s+/g, " ").trim().slice(0, 80);
   if (q.length < 3) return res.json({ items: [] });
-  const key = q.toLowerCase(), hit = sugCache.get(key);
+  const R = { type: ["cards", "sealed"].includes(req.query.type) ? req.query.type : "", lang: ["en", "jp"].includes(req.query.lang) ? req.query.lang : "",
+    set: norm(String(req.query.set || "").slice(0, 60)).trim(), rarity: String(req.query.rarity || "").toLowerCase().slice(0, 40).trim(),
+    print: String(req.query.print || "").toLowerCase().slice(0, 30).trim(), stype: STYPE[req.query.stype] ? req.query.stype : "" };
+  if (R.stype) R.type = "sealed";
+  const key = [q.toLowerCase(), R.type, R.lang, R.set, R.rarity, R.print, R.stype].join("|"), hit = sugCache.get(key);
   if (hit && hit.exp > Date.now()) return res.json(hit.data);
+  // the kind of sealed product is added to the search when it isn't in it already, so TCGplayer returns those first
+  const sq = R.stype && !STYPE[R.stype][0].test(q) ? `${q} ${STYPE[R.stype][1]}` : R.set && !norm(q).includes(R.set) ? `${q} ${R.set}` : q;
+  const fits = (c) => (R.type !== "cards" || !c.sealed) && (R.type !== "sealed" || c.sealed) && (!R.lang || (R.lang === "jp" ? c.jp : !c.jp)) &&
+    (!R.set || norm(c.set).includes(R.set)) && (!R.rarity || String(c.rarity || "").toLowerCase() === R.rarity) && (!R.stype || STYPE[R.stype][0].test(c.name));
   let prods;
-  try { prods = (await tcgScan(q, { sealed: true })).slice(0, 8); } catch (e) { return res.status(502).json({ error: e.message }); }
+  try { prods = (await tcgScan(sq, { sealed: R.type !== "cards", lines: R.lang === "en" ? ["pokemon"] : R.lang === "jp" ? ["pokemon-japan"] : undefined })).filter(fits).slice(0, 8); } catch (e) { return res.status(502).json({ error: e.message }); }
   const ORDER = ["normal", "holofoil", "reverse holofoil", "1st edition", "1st edition holofoil", "unlimited", "unlimited holofoil"];
   const rank = (p) => { const i = ORDER.indexOf(p.toLowerCase()); return i < 0 ? 99 : i; };
   // price histories for the first 6 cards, together, giving up after 6 seconds (the card's overall price is used instead)
@@ -598,7 +609,7 @@ app.get("/api/suggest", async (req, res) => {
     if (prints.length) for (const r of prints) items.push({ ...base, print: r.print, nm: r.m });
     else items.push({ ...base, print: "", nm: c.market, overall: true });
   });
-  const data = { items: items.slice(0, 14) };
+  const data = { items: (R.print ? items.filter((x) => String(x.print || "").toLowerCase() === R.print) : items).slice(0, 14) };
   if (items.length) { sugCache.set(key, { exp: Date.now() + 6 * 3600e3, data }); if (sugCache.size > 3000) sugCache.delete(sugCache.keys().next().value); }
   res.json(data);
 });
