@@ -593,7 +593,9 @@ function render() {
    <b>${view === "watch" ? w + " card" + (w === 1 ? "" : "s") : money(V.value)}</b>
    ${view !== "watch" && gl != null ? `<span style="color:var(${gl >= 0 ? "--up" : "--dn"});font-weight:600">${gl >= 0 ? "▲ +" : "▼ −"}${money(Math.abs(gl))} <span class="mu">on cards with a cost (${money(V.cost)} paid)</span></span>` : ""}</div>
    ${view !== "watch" ? `<div class="pst"><span><b>${V.n.toLocaleString()}</b> cards</span><span><b>${V.graded}</b> graded</span><span><b>${pfs.length}</b> portfolio${pfs.length === 1 ? "" : "s"}</span>${P.asOf ? `<span>Prices as of <b>${esc(P.asOf)}</b></span>` : ""}</div>` : ""}</div>
-  <div class="bar"><span class="imp"><button class="pill on" type="button" data-pa="imp" aria-haspopup="true" aria-expanded="${impOpen}">Import portfolio ▾</button>
+${P.items.length ? `
+  <div class="tk" id="pfv">${[["all", "All"], ...pfs.map((p) => [p, p]), ...(w ? [["watch", "Watchlist (" + w + ")"]] : [])].map(([k, l]) => `<button class="pill" type="button" data-pv="${esc(k)}" aria-pressed="${k === view}">${esc(l)}${k !== "all" && k !== "watch" ? ` <span class="mu">${money(totals(o.filter((x) => (x.pf || "Unsorted") === k)).value)}</span>` : ""}</button>`).join("")}</div>
+` : ""}  <div class="bar"><span class="imp"><button class="pill on" type="button" data-pa="imp" aria-haspopup="true" aria-expanded="${impOpen}">Import portfolio ▾</button>
    <div class="imp-m" id="impm"${impOpen ? "" : " hidden"}><div class="imp-h">Import from</div>
     <label class="imp-i" for="pff">Collectr file <span>.xlsx or .csv export</span></label>
     <button class="imp-i" type="button" data-pa="clink">Collectr link <span>a shared portfolio link</span></button>
@@ -606,7 +608,6 @@ function render() {
   ${editing === "new" ? `<div class="pbx">${form({ qty: 1 })}</div>` : ""}
   ${P.items.length ? `
   ${view === "all" ? `<div class="pch">${chart()}</div>` : ""}
-  <div class="tk" id="pfv">${[["all", "All"], ...pfs.map((p) => [p, p]), ...(w ? [["watch", "Watchlist (" + w + ")"]] : [])].map(([k, l]) => `<button class="pill" type="button" data-pv="${esc(k)}" aria-pressed="${k === view}">${esc(l)}${k !== "all" && k !== "watch" ? ` <span class="mu">${money(totals(o.filter((x) => (x.pf || "Unsorted") === k)).value)}</span>` : ""}</button>`).join("")}</div>
   <div class="bar"><input id="pfq" type="search" placeholder="Filter by name, set, number…" value="${esc(findTxt)}" autocomplete="off"><button class="pill pf-scan" type="button" data-ps="scan" aria-label="Scan cards to select them in your portfolio">📷</button>
    <select id="pfo" aria-label="Sort">${[["value", "Total value: high to low"], ["low", "Total value: low to high"], ["unit", "Individual value: high to low"], ["unitlow", "Individual value: low to high"], ["gain", "Gain"], ["name", "Name"], ["added", "Recently added"]].map(([k, l]) => `<option value="${k}" ${k === sortBy ? "selected" : ""}>${l}</option>`).join("")}</select></div>
   <div id="pflist">${listHTML(list)}</div>${selMode ? `<div id="pfsel" class="pfsel">${selBarHTML()}</div>` : ""}`
