@@ -136,7 +136,7 @@ function renderTrade(box) {
     ${TRD.give.map(trRow).join("")}
     <input id="tr-find" type="search" placeholder="Add from your portfolio: name, set, number…" value="${esc(trFind)}" autocomplete="off">
     <div class="tr-hits" id="tr-hits">${trPickHTML()}</div>
-    <div class="tr-add"><input id="tr-sq-give" type="search" placeholder="…or search TCGplayer" autocomplete="off"></div><div class="tr-hits" id="tr-sug-give">${trSugHTML("give")}</div></div>
+    <div class="tr-add"><input id="tr-sq-give" type="search" placeholder="…or search TCGplayer" autocomplete="off"><button type="button" class="pill" data-tx="scang">📷 Scan</button></div><div class="tr-hits" id="tr-sug-give">${trSugHTML("give")}</div></div>
   <div class="tr-sec"><div class="tr-h"><b>You get</b><span class="mu">${TRD.get.length} card${TRD.get.length === 1 ? "" : "s"}</span></div>
     ${TRD.get.map(trRow).join("")}
     <div class="tr-add"><input id="tr-sq-get" type="search" placeholder="Search their card on TCGplayer" autocomplete="off"><button type="button" class="pill" data-tx="scan">📷 Scan</button></div>
@@ -162,6 +162,7 @@ document.addEventListener("click", (e) => {
   else if (d.tx === "clear") modal({ title: "Clear this trade?", text: "Both sides and the cash are emptied. Your portfolio isn't changed.", buttons: [{ label: "Clear", value: true, kind: "danger" }, { label: "Keep", value: false, kind: "primary" }] })
     .then((v) => { if (v) { TRD = { give: [], get: [], pct: TRD.pct, cashPct: TRD.cashPct, cashIn: 0, cashOut: 0 }; trSave(); render(); } });
   else if (d.tx === "scan") { sqTarget = "trade"; sqOpen(); }
+  else if (d.tx === "scang") { sqTarget = "tradeGive"; sqOpen(); }
   else if (d.tx === "done") trComplete();
   else if (d.tpick) { const x = P.items.find((y) => y.id === d.tpick); if (x) { trAddFromPortfolio(x); trFind = ""; render(); } }
   else if (d.tsug != null) { const s = trSug[+d.tsug]; if (s) { trAddFound(s, d.tside); trSug = []; trSugSide = ""; render(); } }
@@ -1430,6 +1431,24 @@ function sqSetOffer(it, amt, from) {
 
 // --- the list window ---
 function sqOpen() { sqView = null; sqRender(); }
+// scanning your own cards for a trade: the scan finds the card, your portfolio says which copy (condition, grade, printing, value)
+function sqMine(it, c) {
+  const n = mName(c.name), k = mNum(sqNum(c));
+  return owned(P.items).filter((x) => x.qty > 0 && mName(x.name) === n && mNum(x.num) === k && (!x.tcgId || !c.tcgId || String(x.tcgId) === String(c.tcgId)))
+    .sort((a, b) => b.qty - a.qty);
+}
+function sqMinePick(it, mine) {
+  if (it.pid && mine.some((x) => x.id === it.pid)) return it.pid;
+  const g = (it.grade || "").trim(), x = (g ? mine.find((y) => isGraded(y) && shortGrade(y.grade) === shortGrade(g)) : mine.find((y) => !isGraded(y) && (y.cond || "Near Mint") === (it.cond || "Near Mint"))) || mine[0];
+  return (it.pid = x ? x.id : null);
+}
+function sqMineHTML(it, c) {
+  const mine = sqMine(it, c);
+  if (!mine.length) { it.pid = null; return `<div class="sq-mine"><span class="sq-st warn">Not in your portfolio</span><span class="mu">Adds with the condition below at TCGplayer's price.</span></div>`; }
+  const pid = sqMinePick(it, mine);
+  const one = new Set(mine.map((x) => x.pf)).size < 2;
+  return `<div class="sq-mine"><span class="mu">Your copy${mine.length > 1 ? " (tap one)" : ""}:</span>${mine.map((x) => `<button type="button" class="sq-mc" data-qown="${x.id}" data-qid="${it.id}" aria-pressed="${x.id === pid}">${esc(isGraded(x) ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond || "NM")}${x.var ? " · " + esc(x.var) : ""}${x.pf && !one ? " · " + esc(x.pf) : ""} · ×${x.qty}${x.mkt != null || x.ovr > 0 ? " · " + money(unit(x)) : ""}</button>`).join("")}<label class="sq-mq">Qty <input data-qf="qty" data-qid="${it.id}" type="number" min="1" step="1" inputmode="numeric" value="${it.qty || 1}" aria-label="Quantity"></label></div>`;
+}
 function sqPfs() { return [...new Set(P.items.filter((x) => x.qty > 0 && x.pf).map((x) => x.pf))].sort(); }
 function sqRowHTML(it) {
   const c = it.pick >= 0 ? it.cards[it.pick] : null, a = it.ai;
@@ -1448,13 +1467,13 @@ function sqRowHTML(it) {
       ${sqSalesHTML(it, c)}
     </div>
     <div class="sq-a">${busy ? "" : `<button type="button" class="sq-b" data-qo="${it.id}">${c ? "Change" : "Fix"}</button>`}${c && !busy ? `<button type="button" class="sq-b" data-qc="${it.id}">Comp</button>` : ""}<button type="button" class="sq-x" data-qx="${it.id}" aria-label="Remove from list">✕</button></div>
-      ${c ? `<div class="sq-f">
+      ${c && sqTarget === "tradeGive" && sqMine(it, c).length ? sqMineHTML(it, c) : c ? `${sqTarget === "tradeGive" ? sqMineHTML(it, c) : ""}<div class="sq-f">
         <select data-qf="print" data-qid="${it.id}" aria-label="Printing">${prints.map((x) => `<option ${x === it.print ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>
         <select data-qf="cond" data-qid="${it.id}" aria-label="Condition">${CONDS.map((x) => `<option value="${x}" ${x === it.cond ? "selected" : ""}>${{ "Near Mint": "NM", "Lightly Played": "LP", "Moderately Played": "MP", "Heavily Played": "HP", Damaged: "DMG" }[x] || x}</option>`).join("")}</select>
         <input data-qf="qty" data-qid="${it.id}" type="number" min="1" step="1" inputmode="numeric" value="${it.qty || 1}" aria-label="Quantity">
       </div>` : ""}
-      ${busy ? "" : sqShadowHTML(it, c)}
-      ${sqOfferHTML(it, c)}
+      ${busy || (sqTarget === "tradeGive" && it.pid) ? "" : sqShadowHTML(it, c)}
+      ${sqTarget ? "" : sqOfferHTML(it, c)}
   </div>`;
 }
 // replace just one row, so typing in another box isn't interrupted
@@ -1473,7 +1492,7 @@ function sqBar() {
   const ready = scanQ.filter((x) => x.pick >= 0), sel = ready.filter((x) => x.sel);
   const selV = sel.reduce((a, x) => a + sqVal(x), 0);
   const selPay = sel.reduce((a, x) => a + (x.pxK === sqPxKey(x) ? sqOfferVal(x) : 0), 0);
-  if (sqTarget === "trade") { el.querySelector("[data-qa=add]").textContent = sel.length ? `Add ${sel.length} card${sel.length === 1 ? "" : "s"} to the trade` : "Add to the trade"; const pg = el.querySelector(".pg"); if (pg) pg.hidden = true; }
+  if (sqTarget) { el.querySelector("[data-qa=add]").textContent = sqTarget === "tradeGive" ? (sel.length ? `Add ${sel.length} to what you give` : "Add to what you give") : sel.length ? `Add ${sel.length} card${sel.length === 1 ? "" : "s"} to what you get` : "Add to what you get"; const pg = el.querySelector(".pg"); if (pg) pg.style.display = "none"; }
   else el.querySelector("[data-qa=add]").textContent = sel.length ? `Add ${sel.length} card${sel.length === 1 ? "" : "s"} to portfolio${selPay ? " · paying " + money(selPay) : selV ? " · " + money(selV) : ""}` : "Add to portfolio";
   // the whole list's TCGplayer market value, counting quantities
   const tv = $("sq-v");
@@ -1494,12 +1513,12 @@ function sqRender() {
   if (sqView) return sqDetail(ov);
   const pfs = sqPfs(), has = scanQ.length;
   ov.innerHTML = `<div class="ppm sqm" role="dialog" aria-modal="true" aria-labelledby="sc-t">
-    <div class="sq-h"><h3 id="sc-t">Scan cards</h3><button type="button" class="ppm-x plain sq-close" data-qa="close">Close</button></div>
+    <div class="sq-h"><h3 id="sc-t">${sqTarget === "tradeGive" ? "Scan your cards" : sqTarget === "trade" ? "Scan their cards" : "Scan cards"}</h3><button type="button" class="ppm-x plain sq-close" data-qa="close">Close</button></div>
     <div class="sq-go"><button type="button" class="ppm-x primary" data-qa="cam">📷 Take photos</button><button type="button" class="ppm-x" data-qa="lib">🖼 Choose photos</button></div>
     ${has ? `<div class="sq-top"><span class="mu">${scanQ.length} card${scanQ.length === 1 ? "" : "s"}</span> <span class="mu" id="sq-n"></span><span style="flex:1"></span><button type="button" class="cs-back" data-qa="all">Select all</button></div>
       <div class="sq-top sq-top2"><button type="button" class="cs-back" data-qa="rmsel">Remove from list</button><span style="flex:1"></span><button type="button" class="cs-back sq-dl" data-qa="clear">Clear list</button></div>
       <div class="sq-v" id="sq-v"></div>
-      ${sqGroupHTML()}
+      ${sqTarget ? "" : sqGroupHTML()}
       <div class="sq-list">${scanQ.map(sqRowHTML).join("")}</div>
       <form id="sq-bar" class="sq-bar"><div class="pg">${pfField(sqDefaults.pf && (pfs.includes(sqDefaults.pf) || !pfs.length) ? sqDefaults.pf : pfs[0] || "", pfs)}
         <label>Condition for selected<select data-qa="cond"><option value="">Keep each</option>${CONDS.map((x) => `<option>${x}</option>`).join("")}</select></label></div>
@@ -1532,8 +1551,20 @@ function sqToItem(it, pf) {
     // the TCGplayer price already looked up while scanning, so the portfolio shows it right away
     ...(!it.grade && c.tcgId && it.pxK === sqPxKey(it) && it.px > 0 ? { mkt: it.px, mktEst: !!it.pxEst, mktV: 2, pT: Date.now() } : {}) };
 }
-let sqTarget = null; // "trade" when the scanner was opened from the trade analyzer
+let sqTarget = null; // "trade" / "tradeGive" when the scanner was opened from the trade analyzer (their cards / your cards)
 function sqAddSelected(fm) {
+  if (sqTarget === "tradeGive") {
+    const pick = scanQ.filter((x) => x.sel && x.pick >= 0); if (!pick.length) return;
+    let short = 0;
+    for (const it of pick) { const c = it.cards[it.pick], want = Math.max(1, Math.round(+it.qty || 1)), mine = sqMine(it, c), x = mine.length ? P.items.find((y) => y.id === sqMinePick(it, mine)) : null;
+      if (x) { const have = TRD.give.find((t) => t.pid === x.id), now = have ? have.qty : 0, q = Math.min(x.qty, now + want); if (now + want > x.qty) short++;
+        if (have) have.qty = q; else TRD.give.push(trCard({ ...x, pid: x.id, qty: q, max: x.qty, grade: isGraded(x) ? x.grade : "" }, "give")); }
+      else { const priced = it.pxK === sqPxKey(it) && it.px > 0 && !it.grade;
+        TRD.give.push(trCard({ name: c.name, set: c.set, num: sqNum(c), var: it.print || "", cond: it.cond || "Near Mint", grade: it.grade || "", img: c.image, tcgId: c.tcgId, qty: want, px: priced ? it.px : null }, "give")); } }
+    scanQ = scanQ.filter((x) => !pick.includes(x)); sqSave(); trSave(); sqTarget = null;
+    const ov = $("ppscan"); if (ov) ov.remove(); tradeOpen = true; render();
+    toast(`Added ${pick.length} of your card${pick.length === 1 ? "" : "s"} to the trade${short ? ` (${short} capped at what you own)` : ""}`); return;
+  }
   if (sqTarget === "trade") {
     const pick = scanQ.filter((x) => x.sel && x.pick >= 0); if (!pick.length) return;
     for (const it of pick) { const c = it.cards[it.pick], priced = it.pxK === sqPxKey(it) && it.px > 0 && !it.grade;
@@ -1615,6 +1646,7 @@ document.addEventListener("click", (e) => {
     .then((v) => { if (v) { scanQ = scanQ.filter((x) => x.st === "wait" || x.st === "reading"); sqSave(); sqRender(); } });
   else if (d.qo) { sqView = d.qo; sqRender(); ov.querySelector(".ppm").scrollTop = 0; }
   else if (d.qc) sqComp(d.qc);
+  else if (d.qown) { const it = sqItem(d.qid); if (it) { it.pid = d.qown; sqSave(); ov.querySelectorAll(`[data-qown][data-qid="${it.id}"]`).forEach((m) => m.setAttribute("aria-pressed", String(m.dataset.qown === d.qown))); } }
   else if (d.qgpp) { sqGroupSetPct(+d.qgpp); sqSave(); }
   else if (d.qpp) { const it = sqItem(d.qid); if (it) { sqSetPct(it, +d.qpp); sqSave(); } }
   else if (d.qx) { scanQ = scanQ.filter((x) => x.id !== d.qx); sqPhotos.delete(d.qx); sqSave(); const el = $("sq-" + d.qx); if (el) el.remove(); if (!scanQ.length) sqRender(); else sqBar(); }

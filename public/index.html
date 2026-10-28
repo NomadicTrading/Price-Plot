@@ -218,7 +218,7 @@ label.pill{display:inline-block}
 .sq-pb[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .sq-go{display:block;grid-column:auto;margin:0 0 8px}.sq-go[hidden]{display:none}.sq-gn{font-size:12px}
 .sq-f select,.sq-f input{font:inherit;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:6px 6px;min-height:36px;width:100%;min-width:0}
-.sq-g{font-size:12px;margin-top:3px}
+.sq-g{font-size:12px;margin-top:3px}.sq-mine{grid-column:2/-1;margin-top:2px;font-size:12.5px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}.sq-mine>.mu,.sq-mine>.sq-st{flex-basis:100%}.sq-mq{display:flex;align-items:center;gap:5px;margin-left:auto;color:var(--mut)}.sq-mq input{width:58px;font:inherit;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:6px 8px}.sq-mc{font:inherit;font-size:12.5px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:999px;padding:4px 10px;cursor:pointer}.sq-mc[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .sq-a{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 .sq-b{font:inherit;font-size:13px;font-weight:600;color:var(--link);background:none;border:1px solid var(--line);border-radius:999px;padding:5px 10px;min-height:32px;cursor:pointer}
 .sq-x{font:inherit;font-size:15px;color:var(--mut);background:none;border:0;min-width:36px;min-height:36px;cursor:pointer}
@@ -969,5 +969,5 @@ $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
-<script src="/portfolio.js?v=94"></script>
+<script src="/portfolio.js?v=95"></script>
 </body></html>
