@@ -519,10 +519,10 @@ function pffHTML() {
   const on = pffOn(), sets = [...new Set(owned(P.items).map((x) => x.set).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const sel = (k) => `<label><span>${PFF_NAMES[k]}</span><select data-pff="${k}">${PFF_OPTS[k].map(([v, l]) => `<option value="${esc(v)}" ${v === (PFF[k] || "") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
   return `<div class="rf pf-rf"><button type="button" class="pill rf-b" data-pffo="1" aria-expanded="${pffOpen}">Filter${on.length ? ` · ${on.length}` : ""} ▾</button>${on.map(([k, v]) => `<button type="button" class="pill rf-c" data-pffx="${k}" aria-label="Remove filter ${esc(pffLabel(k, v))}">${esc(pffLabel(k, v))} ✕</button>`).join("")}
-  ${pffOpen ? `<div class="rf-p">${sel("kind")}${sel("cond")}${sel("lang")}
+  ${pffOpen ? `<div class="rf-p">${sel("kind")}${sel("lang")}
     <label><span>Value each from $</span><input data-pff="vmin" type="number" min="0" step="any" inputmode="decimal" value="${esc(PFF.vmin ?? "")}" placeholder="0"></label>
     <label><span>to $</span><input data-pff="vmax" type="number" min="0" step="any" inputmode="decimal" value="${esc(PFF.vmax ?? "")}" placeholder="Any"></label>
-    <label><span>Set</span><select data-pff="set"><option value="">Any set</option>${sets.map((t) => `<option ${t === PFF.set ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
+    ${sel("cond")}<label><span>Set</span><select data-pff="set"><option value="">Any set</option>${sets.map((t) => `<option ${t === PFF.set ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
     <div class="rf-a">${on.length ? `<button type="button" class="cs-back" data-pffc="1">Clear all</button>` : ""}<button type="button" class="cs-back" data-pffo="1">Done</button></div></div>` : ""}</div>`;
 }
 function filtered() {
