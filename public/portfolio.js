@@ -1773,8 +1773,9 @@ document.addEventListener("change", (e) => {
   const t = e.target; if (!t.closest || !t.closest("#ppscan")) return;
   if (t.dataset.qk) { const it = sqItem(t.dataset.qk); if (it) it.sel = t.checked; sqSave(); sqBar(); }
   else if (t.dataset.qf === "mcond") { const it = sqItem(t.dataset.qid); if (!it) return; const c = it.cards[it.pick], mine = c ? sqMine(it, c) : [];
-    // a copy you own in that condition is used as is; otherwise your chosen copy is traded as that condition
-    const m = mine.find((x) => sqCopyCond(x) === t.value);
+    // the selected copy stays selected (a 1st Edition card doesn't turn into your Unlimited one): only another copy of
+    // the same printing that's already in that condition is used instead; otherwise your copy is priced in that condition
+    const cur = mine.find((x) => x.id === it.pid), m = cur && mine.find((x) => sqCopyCond(x) === t.value && mVar(x.var) === mVar(cur.var) && String(x.tcgId || "") === String(cur.tcgId || ""));
     if (m) { it.pid = m.id; it.mcond = null; } else it.mcond = t.value;
     it.okPf = true; sqSave(); sqRow(it, true); }
   else if (t.dataset.qf) { const it = sqItem(t.dataset.qid); if (!it) return; if (t.dataset.qf === "qty") it.qty = Math.max(1, Math.round(+t.value || 1)); else it[t.dataset.qf] = t.value; sqSave();
