@@ -513,17 +513,20 @@ async function ptcg(q, size) {
 }
 // Second source for the scanner: TCGplayer's own search, which finds "49/82"-style numbers directly and covers more
 // cards (Japanese included). Matches carry their TCGplayer product id, so prices are exact.
-async function tcgScan(q) {
+// sealed products (booster boxes, Elite Trainer Boxes, bundles, tins, packs...) are left out unless opts.sealed is set
+const SEALED_RE = /\b(code card|booster|box|bundle|tin|deck|pack|blister|elite trainer|collection|case|display|premium|binder|portfolio|sleeves?|build & battle|stadium)\b/i;
+async function tcgScan(q, opts = {}) {
   const j = await tpPost("https://mp-search-api.tcgplayer.com/v1/search/request?" + new URLSearchParams({ q: q.slice(0, 120), isList: "false" }), {
     algorithm: "sales_synonym_v2", from: 0, size: 24,
     filters: { term: { productLineName: ["pokemon", "pokemon-japan"] }, range: {}, match: {} },
     listingSearch: { context: { cart: {} }, filters: { term: { sellerStatus: "Live", channelId: 0 }, range: { quantity: { gte: 1 } }, exclude: { channelExclusion: 0 } } },
     context: { cart: {}, shippingCountry: "US", userProfile: {} }, settings: { useFuzzySearch: true, didYouMean: {} }, sort: {},
   });
-  return (((j.results || [])[0] || {}).results || []).filter((r) => r.productId && !/\b(code card|booster|box|bundle|tin|deck|pack|blister)\b/i.test(r.productName || "")).map((r) => {
-    const id = String(Math.round(Number(r.productId))), raw = String(r.customAttributes?.number || (/\s-\s([\w/]+)$/.exec(r.productName || "") || [])[1] || "");
+  const isSealed = (r) => /sealed/i.test(r.productTypeName || "") || (!r.customAttributes?.number && SEALED_RE.test(r.productName || ""));
+  return (((j.results || [])[0] || {}).results || []).filter((r) => r.productId && (opts.sealed || (!/sealed/i.test(r.productTypeName || "") && !/\b(code card|booster|box|bundle|tin|deck|pack|blister)\b/i.test(r.productName || "")))).map((r) => {
+    const id = String(Math.round(Number(r.productId))), sealed = isSealed(r), raw = sealed ? "" : String(r.customAttributes?.number || (/\s-\s([\w/]+)$/.exec(r.productName || "") || [])[1] || "");
     const [num, tot] = raw.split("/");
-    return { raw, market: Number(r.marketPrice) > 0 ? Number(r.marketPrice) : null, jp: /japan/i.test(r.productLineName || ""), id: "tcg-" + id, tcgId: id, name: String(r.productName || "").replace(/\s-\s[\w/]+$/, "").trim(), number: num || "", set: r.setName || "", printedTotal: tot ? +tot || tot : null, year: null,
+    return { raw, sealed, market: Number(r.marketPrice) > 0 ? Number(r.marketPrice) : null, jp: /japan/i.test(r.productLineName || ""), id: "tcg-" + id, tcgId: id, name: String(r.productName || "").replace(/\s-\s[\w/]+$/, "").trim(), number: num || "", set: r.setName || "", printedTotal: tot ? +tot || tot : null, year: null,
       image: `https://tcgplayer-cdn.tcgplayer.com/product/${id}_200w.jpg`, big: `https://tcgplayer-cdn.tcgplayer.com/product/${id}_400w.jpg`, rarity: r.rarity || r.customAttributes?.rarityDbName || "",
       prints: ["Normal", "Holofoil", "Reverse Holofoil", "1st Edition", "1st Edition Holofoil", "Unlimited", "Unlimited Holofoil"] };
   });
@@ -580,15 +583,16 @@ app.get("/api/suggest", async (req, res) => {
   const key = q.toLowerCase(), hit = sugCache.get(key);
   if (hit && hit.exp > Date.now()) return res.json(hit.data);
   let prods;
-  try { prods = (await tcgScan(q)).slice(0, 8); } catch (e) { return res.status(502).json({ error: e.message }); }
+  try { prods = (await tcgScan(q, { sealed: true })).slice(0, 8); } catch (e) { return res.status(502).json({ error: e.message }); }
   const ORDER = ["normal", "holofoil", "reverse holofoil", "1st edition", "1st edition holofoil", "unlimited", "unlimited holofoil"];
   const rank = (p) => { const i = ORDER.indexOf(p.toLowerCase()); return i < 0 ? 99 : i; };
   // price histories for the first 6 cards, together, giving up after 6 seconds (the card's overall price is used instead)
   const hist = await Promise.all(prods.map((c, i) => i < 6 ? Promise.race([tpLatest(c.tcgId).catch(() => null), new Promise((ok) => setTimeout(() => ok(null), 6000))]) : null));
   const items = [];
   prods.forEach((c, i) => {
-    const base = { tcgId: c.tcgId, name: c.name, numberText: c.raw || "", number: c.number, printedTotal: c.printedTotal, set: c.set, image: c.image, rarity: c.rarity, jp: c.jp };
-    const rows = (hist[i] || []).filter((r) => r.cond === "Near Mint" && (!r.lang || (c.jp ? /japan/i.test(r.lang) : /english/i.test(r.lang))));
+    const base = { tcgId: c.tcgId, name: c.name, numberText: c.raw || "", number: c.number, printedTotal: c.printedTotal, set: c.set, image: c.image, rarity: c.rarity, jp: c.jp, ...(c.sealed ? { sealed: true } : {}) };
+    // sealed products have no condition on TCGplayer (they're listed as unopened)
+    const rows = (hist[i] || []).filter((r) => (c.sealed ? !r.cond || r.cond === "Near Mint" : r.cond === "Near Mint") && (!r.lang || (c.jp ? /japan/i.test(r.lang) : /english/i.test(r.lang))));
     const byPrint = new Map(); for (const r of rows) if (!byPrint.has(r.print) || r.t > byPrint.get(r.print).t) byPrint.set(r.print, r);
     const prints = [...byPrint.values()].sort((a, b) => rank(a.print) - rank(b.print));
     if (prints.length) for (const r of prints) items.push({ ...base, print: r.print, nm: r.m });

@@ -561,7 +561,7 @@ function form(x) {
   return `<form class="pe" data-fid="${x.id || ""}"><button type="button" class="pe-x" data-cx="1" aria-label="Close without saving">✕</button>
   ${x.id ? `<div class="pe-h"><button type="button" class="pe-pic" data-zm="${x.id}" aria-label="Enlarge the picture of ${esc(x.name)}" ${pic ? "" : "disabled"}>${pic ? `<img src="${esc(x.img || pic)}" alt="">` : ""}</button>
     <div class="pe-hm"><b>${esc(x.name)}</b>${esc([x.set, x.num].filter(Boolean).join(" · "))}</div></div>` : ""}<div class="pg">${f("name", "Card name", x.name, "text", "required")}${f("set", "Set", x.set)}${f("num", "Number", x.num)}${printField(x)}
-  <label>Condition<select name="cond">${CONDS.map((c) => `<option ${c === (x.cond || "Near Mint") ? "selected" : ""}>${c}</option>`).join("")}</select></label>
+  <label>Condition<select name="cond">${[...CONDS, "Sealed", ...(x.cond && !CONDS.includes(x.cond) && x.cond !== "Sealed" ? [x.cond] : [])].map((c) => `<option ${c === (x.cond || "Near Mint") ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
   ${f("grade", "Grade (blank if raw)", isGraded(x) ? x.grade : "", "text", 'placeholder="e.g. PSA 10"')}
   ${f("qty", "Quantity", x.qty ?? 1, "number", 'min="0" step="1" inputmode="numeric"')}${costField(x)}
   ${f("ovr", "Your price each ($)", x.ovr || "", "number", `min="0" step="any" inputmode="decimal" placeholder="${x.mkt != null ? "Market " + money(x.mkt) : "Value per card"}"`)}
@@ -1945,7 +1945,7 @@ function edPriceHTML(x, d) {
 }
 function edRowHTML(x) {
   const d = ED.d.get(x.id), g = edGr(d), cur = g || d.cond || "Near Mint", mk = edPrice(x, d);
-  const conds = [...CONDS, ...TR_GRADES, ...(g && !TR_GRADES.includes(g) ? [g] : [])];
+  const conds = [...CONDS, ...(d.cond === "Sealed" ? ["Sealed"] : []), ...TR_GRADES, ...(g && !TR_GRADES.includes(g) ? [g] : [])];
   const prints = printsCache.get(String(x.tcgId)) || (x.tcgId ? (d.var ? [d.var] : []) : PRINTS_ANY);
   const pfs = [...new Set(P.items.map((y) => y.pf).filter(Boolean))].sort();
   const pc = mk > 0 && d.cost > 0 ? String(Math.round((d.cost / mk) * 1000) / 10) : "";
@@ -2039,7 +2039,7 @@ function edApply() {
 }
 function edSet(id, f, v) {
   const x = P.items.find((y) => y.id === id), d = ED && ED.d.get(id); if (!x || !d) return;
-  if (f === "cond") { if (TR_GRADES.includes(v) || (!CONDS.includes(v) && v)) { d.grade = v; } else { d.cond = v; d.grade = ""; } }
+  if (f === "cond") { if (TR_GRADES.includes(v) || (!CONDS.includes(v) && v !== "Sealed" && v)) { d.grade = v; } else { d.cond = v; d.grade = ""; } }
   else if (f === "var") d.var = v; else if (f === "pf") d.pf = v;
   else if (f === "qty") d.qty = Math.max(0, Math.round(+v || 0));
   else if (f === "cost") { d.cost = +v > 0 ? Math.round(+v * 100) / 100 : 0; }

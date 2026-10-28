@@ -617,13 +617,13 @@ function sugRender(){
  if(!sugItems.length)return sugShow('<div class="sug-n">No TCGplayer matches. Press Search to look on eBay anyway.</div>');
  sugShow(sugItems.map((c,i)=>{const num=c.numberText||(c.number?c.number+(c.printedTotal&&/^\d+$/.test(c.number)?"/"+c.printedTotal:""):"");
   return `<button type="button" class="sug-r" role="option" id="sug-${i}" data-si="${i}" aria-selected="${i===sugAt}">${c.image?`<img src="${esc(safeUrl(c.image)||"")}" alt="" loading="lazy">`:'<span class="ph"></span>'}
-  <span class="sug-m"><b>${esc(c.name)}</b><span>${esc([num?"#"+num:"",c.set].filter(Boolean).join(" · "))}</span>${c.print?`<i class="sug-p">${esc(c.print)}</i>`:c.rarity?`<i class="sug-p">${esc(c.rarity)}</i>`:""}</span>
-  <span class="sug-v">${c.nm!=null?pf(c.nm):"–"}<small>${c.overall?"market":"NM"}</small></span></button>`}).join(""))}
+  <span class="sug-m"><b>${esc(c.name)}</b><span>${esc([num?"#"+num:"",c.set].filter(Boolean).join(" · "))}</span>${c.sealed?`<i class="sug-p">Sealed</i>`:c.print?`<i class="sug-p">${esc(c.print)}</i>`:c.rarity?`<i class="sug-p">${esc(c.rarity)}</i>`:""}</span>
+  <span class="sug-v">${c.nm!=null?pf(c.nm):"–"}<small>${c.sealed?"sealed":c.overall?"market":"NM"}</small></span></button>`}).join(""))}
 function sugPick(i){const c=sugItems[i];if(!c)return;
  const num=c.numberText||(c.number?c.number+(c.printedTotal&&/^\d+$/.test(c.number)?"/"+c.printedTotal:""):"");
  $("q").value=[c.name,num].filter(Boolean).join(" ");sugQ=$("q").value;sugHide();
  if(c.print)tprintWant=c.print; // the TCGplayer tab opens on this printing
- tWant={id:String(c.tcgId||""),set:c.set||""};
+ tWant={id:String(c.tcgId||""),set:c.set||"",...(c.sealed?{sealed:{name:c.name,set:c.set||"",image:c.image||"",nm:c.nm,print:c.print||""}}:{})};
  tcgQ="";const b=$("tb").querySelector('[data-t="tcg"]');if(tab!=="tcg")b.click();else loadTcg()}
 $("q").addEventListener("input",()=>{const q=$("q").value.trim();clearTimeout(sugT);if(sugCtl)sugCtl.abort();
  if(q.length<3||q===sugQ){sugHide();return}
@@ -904,7 +904,9 @@ function tGesture(pf,nf,f){const v=tview||TG.full,w=v.x1-v.x0,h=v.y1-v.y0,cx=v.x
  ["gesturestart","gesturechange","gestureend"].forEach(t=>T.addEventListener(t,e=>{if(inCh(e))e.preventDefault()},{passive:false}));
  T.addEventListener("touchmove",e=>{if(inCh(e)&&e.cancelable)e.preventDefault()},{passive:false});}
 $("tcg").onclick=e=>{const dot=e.target.closest&&e.target.closest("[data-tpi]");if(dot){tpPick(+dot.dataset.tpi);return}
- const d=e.target.closest("button")?.dataset;if(!d||!TM)return;
+ const d=e.target.closest("button")?.dataset;if(!d)return;
+ if(tSealed&&!TM){if(d.zoom)tcgZoom();else if(d.addsealed){const s=tSealed;if(window.ppAddFromTcg)ppAddFromTcg({name:s.name,set:s.set,number:"",tcgId:s.tcgId,variants:[{print:s.print||"",cond:"Sealed",price:s.px??s.nm??null}]},s.print||"",["Sealed"])}return}
+ if(!TM)return;
  if(d.zoom){tcgZoom();return}
  if(d.tsall){tcgAllSold();return}
  if(d.addpf){if(window.ppAddFromTcg)ppAddFromTcg(TM.cards[tci],tprint,[...tconds]);return}
@@ -925,6 +927,21 @@ function tmGet(k){try{const x=JSON.parse(localStorage.getItem(k)||"null");return
 function tmPut(k,j){try{const keys=Object.keys(localStorage).filter(x=>x.startsWith("pp:tm:")).map(x=>{let t=0;try{t=JSON.parse(localStorage.getItem(x)).t}catch{}return[x,t]}).sort((a,b)=>a[1]-b[1]);
  while(keys.length>=15)localStorage.removeItem(keys.shift()[0]);
  const v=JSON.stringify({t:Date.now(),j});try{localStorage.setItem(k,v)}catch{keys.forEach(([x])=>localStorage.removeItem(x));localStorage.setItem(k,v)}}catch{}}
+/* sealed products (booster boxes, ETBs, bundles...): TCGplayer's market price, last sold and listings, no conditions */
+let tSealed=null;
+function drawSealed(){
+ const s=tSealed;if(!s)return;const tid=s.tcgId,url="https://www.tcgplayer.com/product/"+encodeURIComponent(tid);
+ if(s.px===undefined){s.px=null;fetch("/api/tcgprice?"+new URLSearchParams({id:tid,cond:"Near Mint",print:s.print||""})).then(r=>r.json()).then(j=>{s.px=j.market>0?j.market:(s.nm??null);s.print=j.print||s.print}).catch(()=>{s.px=s.nm??null}).then(()=>{if(tSealed===s)drawSealed()})}
+ if(!TPD.has(tid)){TPD.set(tid,{loading:true});fetch("/api/tcgplayer?id="+encodeURIComponent(tid)).then(async r=>{const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}).then(j=>TPD.set(tid,j),e=>TPD.set(tid,{error:e.message})).then(()=>{if(tSealed===s)drawSealed()})}
+ const d=TPD.get(tid),ok=d&&!d.loading&&!d.error,sold=ok?d.sold.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)):[],lst=ok?d.listings.slice().sort((a,b)=>(a.price+(a.ship||0))-(b.price+(b.ship||0))):[];
+ const tot=x=>x.price+(x.ship||0),dt=x=>new Date(/^\d{4}-\d{2}-\d{2}$/.test(x.date)?x.date+"T12:00:00":x.date).toLocaleDateString(undefined,{month:"short",day:"numeric"});
+ const img=`https://tcgplayer-cdn.tcgplayer.com/product/${tid}_in_1000x1000.jpg`;tZoom=[img,s.image].filter(Boolean);
+ $("tcg").innerHTML=`<div class="tc"><div style="flex:1;min-width:0"><b>${esc(s.name)}</b> <span class="mu">${esc(s.set||"")} · Sealed</span>
+  <div class="tc-pr">${s.px==null&&s.nm==null?`<span class="mu">Looking up the price…</span>`:`<span class="tc-pv">${pf(s.px??s.nm)}</span><span class="mu tc-pl">market</span>`}</div>
+  ${ok?(sold.length?`<div class="sm">Last sold <b>${money(tot(sold[0]))}</b> <span class="mu">· ${esc(dt(sold[0]))} · incl. shipping</span></div>${sold.length>1?`<details class="tls"><summary class="mu">Previous sales</summary>${sold.slice(1,11).map(x=>`<div class="mu">${esc(dt(x))} · <b>${money(tot(x))}</b>${x.qty>1?" ×"+x.qty:""}</div>`).join("")}</details>`:""}`:`<div class="sm mu">No recent TCGplayer sales.</div>`)
+   +(lst.length?`<div class="sm">Lowest listed <b>${money(tot(lst[0]))}</b> <span class="mu">incl. shipping · ${lst.length} listing${lst.length===1?"":"s"}</span></div>`:""):d&&d.error?`<div class="sm mu">TCGplayer sales unavailable right now.</div>`:`<div class="sm mu">Loading sales…</div>`}
+ </div><div class="tc-r"><button type="button" class="tci-b" data-zoom="1" aria-label="Enlarge the picture"><img class="tci" id="tci" src="${esc(img)}" alt="${esc(s.name)}" data-alt="${esc(s.image||"")}"></button>
+  <div class="tc-btns"><a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Open TCGplayer</a><button class="btn o" type="button" data-addsealed="1">+ Add to portfolio</button></div></div></div>`}
 async function loadTcg(){
  const q=$("q").value.trim(),bx=$("tcg");
  if(!q){bx.innerHTML='<p class="sm">Search for a card first, then come back to this tab.</p>';return}
@@ -935,6 +952,8 @@ async function loadTcg(){
  const ex=basic&&(basic.cards||[]).find(c=>c.exact);
  const ps=new URLSearchParams({q});if(ex){ps.set("name",ex.name||"");ps.set("set",ex.set||"");ps.set("n",String(+String(ex.number).replace(/\D/g,"")||""));if(ex.printedTotal)ps.set("d",ex.printedTotal)}
  const want=tWant;tWant={id:"",set:""};
+ if(want.sealed&&want.id){tcgQ=q;TM=null;tSealed={...want.sealed,tcgId:want.id};drawSealed();return}
+ tSealed=null;
  if(want.id){ps.set("tid",want.id);if(want.set)ps.set("set",want.set)}
  try{const ck="pp:tm:"+ps,hit=tmGet(ck);let j;
   if(hit)j={...hit,left:null};else{const r=await fetch("/api/tcgmarket?"+ps);j=await r.json();if(!r.ok)throw new Error(j.error||r.status);if(j.cards&&j.cards.length)tmPut(ck,j)}
@@ -979,5 +998,5 @@ $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
-<script src="/portfolio.js?v=117"></script>
+<script src="/portfolio.js?v=118"></script>
 </body></html>
