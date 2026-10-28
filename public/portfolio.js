@@ -1222,18 +1222,23 @@ async function sqFind(it, read) {
 // --- TCGplayer market price for each scanned card, for its chosen condition and printing ---
 const sqJp = (it, c) => /japan/i.test(c.set || "") || !!(it.ai && /japan/i.test(it.ai.language || ""));
 function sqPrints(it, c) { if (!c) return []; let pr = c.prints && c.prints.length ? c.prints.slice() : ["Normal"]; if (it.print && !pr.includes(it.print)) pr = [it.print, ...pr]; return pr; }
-const sqPxKey = (it) => [it.pick, it.cond || "Near Mint", it.print || ""].join("|");
+const sqPxKey = (it) => [it.pick, it.cond || "Near Mint", it.print || "", sqTarget === "tradeGive" ? (it.pid || "") + (it.mcond || "") : ""].join("|");
 async function sqPrice(it) {
   const c = it.pick >= 0 ? it.cards[it.pick] : null; if (!c) return;
   if (!it.print) it.print = sqPrints(it, c)[0];
   const k = sqPxKey(it); if (it.pxK === k) return;
   it.pxK = k; it.px = undefined; it.pxEst = false; it.pxCond = "";
+  // one of your cards in the trade: the price is your copy's (the same number the trade uses), or, in another
+  // condition, TCGplayer's price for your copy's product
+  const cp = sqTarget === "tradeGive" && it.pid ? P.items.find((x) => x.id === it.pid) : null;
+  if (cp && (!it.mcond || it.mcond === sqCopyCond(cp)) && (cp.ovr > 0 || cp.mkt != null)) { it.px = unit(cp); it.pxEst = !!cp.mktEst && !(cp.ovr > 0); it.pxCond = ""; sqSave(); if (!sqView) sqRow(it); else sqBar(); return; }
   let px = null, est = false, cond = "";
   try {
     // cards matched through pokemontcg.io don't carry a TCGplayer product id yet: find it the same way card pictures are found
     let fb = null;
     if (!c.tcgId) { const j = await getJSON("/api/cardimg?" + new URLSearchParams({ name: c.name, set: c.set || "", num: sqNum(c), cat: "Pokemon" })); if (j.tcgId) c.tcgId = j.tcgId; else if (j.market > 0) fb = j.market; }
-    if (c.tcgId) { const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: c.tcgId, cond: it.cond || "Near Mint", print: it.print || "", jp: sqJp(it, c) ? "1" : "" })); px = j.market ?? null; est = !!j.est; cond = j.cond || ""; }
+    const tid = (cp && cp.tcgId) || c.tcgId;
+    if (tid) { const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: tid, cond: it.cond || "Near Mint", print: it.print || "", jp: sqJp(it, c) ? "1" : "" })); px = j.market ?? null; est = !!j.est; cond = j.cond || ""; }
     else if (fb) { px = fb; est = true; }
   } catch {}
   if (it.pxK !== k) return; // the condition, printing or match changed while this was loading
