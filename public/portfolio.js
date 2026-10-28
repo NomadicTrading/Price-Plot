@@ -603,7 +603,7 @@ ${P.items.length ? `
     ${canUndo() ? `<button class="imp-i" type="button" data-pa="undo">Undo last import</button>` : ""}
     ${P.items.length ? `<div class="imp-sep"></div><button class="imp-i" type="button" data-pa="export">Export as CSV</button><button class="imp-i imp-dn" type="button" data-pa="clear">Clear all</button>` : ""}</div></span>
    <input id="pff" type="file" accept=".csv,.xlsx,.xls,text/csv" hidden><input id="pff2" type="file" accept=".csv,text/csv" hidden>
-   <button class="pill" type="button" data-pa="add">+ Add card</button><button class="pill" style="margin-left:auto" type="button" data-pa="trade">⇄ Trade${TRD.give.length + TRD.get.length ? ` (${TRD.give.length + TRD.get.length})` : ""}</button></div>
+   <button class="pill" style="margin-left:auto" type="button" data-pa="trade">⇄ Trade${TRD.give.length + TRD.get.length ? ` (${TRD.give.length + TRD.get.length})` : ""}</button></div>
   ${cimpPanel()}<div class="sm" id="pfs">${pfText()}</div>${pfBarHTML()}<div id="pfi" class="pbx" hidden></div>
   ${editing === "new" ? `<div class="pbx">${form({ qty: 1 })}</div>` : ""}
   ${P.items.length ? `
@@ -611,7 +611,7 @@ ${P.items.length ? `
   <div class="bar"><input id="pfq" type="search" placeholder="Filter by name, set, number…" value="${esc(findTxt)}" autocomplete="off"><button class="pill pf-scan" type="button" data-ps="scan" aria-label="Scan cards to select them in your portfolio">📷</button>
    <select id="pfo" aria-label="Sort">${[["value", "Total value: high to low"], ["low", "Total value: low to high"], ["unit", "Individual value: high to low"], ["unitlow", "Individual value: low to high"], ["gain", "Gain"], ["name", "Name"], ["added", "Recently added"]].map(([k, l]) => `<option value="${k}" ${k === sortBy ? "selected" : ""}>${l}</option>`).join("")}</select></div>
   <div id="pflist">${listHTML(list)}</div>${selMode ? `<div id="pfsel" class="pfsel">${selBarHTML()}</div>` : ""}`
-  : `<p class="sm">Your portfolio is empty. Import a Collectr export (in Collectr: Portfolio → ⋯ → Export, then open the emailed file here), or add cards one at a time. Everything stays saved on this device.</p>`}`;
+  : `<p class="sm">Your portfolio is empty. Import a Collectr export (in Collectr: Portfolio → ⋯ → Export, then open the emailed file here), or add cards with the 📷 scanner or the TCGplayer tab’s Add to portfolio. Everything stays saved on this device.</p>`}`;
   if (P.items.length) fetchImgs(list.slice(0, shown));
   watchMore();
 }
