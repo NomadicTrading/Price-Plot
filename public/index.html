@@ -238,6 +238,19 @@ label.pill{display:inline-block}
 .sq-camdone{justify-self:start;font:inherit;font-size:17px;font-weight:700;color:#fff;background:rgba(0,0,0,.45);border:0;border-radius:999px;padding:10px 18px;min-height:44px;cursor:pointer}
 .sq-camlast{justify-self:end;position:relative;width:52px;height:68px;border-radius:8px;border:2px solid #fff;background:rgba(0,0,0,.45);padding:0;overflow:visible;cursor:pointer;visibility:hidden}.sq-camlast.on{visibility:visible}
 .sq-camlast img{width:100%;height:100%;object-fit:cover;border-radius:6px}.sq-camlast i{position:absolute;top:-8px;right:-8px;font-style:normal;font-size:12px;font-weight:700;background:var(--blue);color:#fff;border-radius:999px;min-width:22px;height:22px;line-height:22px;text-align:center;padding:0 4px}
+.tr-t{font-size:18px}.tr-bal{margin:12px 0;padding:14px;border-radius:14px;background:var(--soft)}.tr-pos{font-size:34px;font-weight:800;letter-spacing:-.8px;line-height:1.1}
+.tr-st{display:flex;flex-direction:column;gap:3px;margin-top:6px;font-size:13.5px}.tr-sec{margin:14px 0;padding-top:12px;border-top:1px solid var(--line)}.tr-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;font-size:16px}
+.tr-cash{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px}.tr-cash label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mut)}
+.tr input,.tr select{font:inherit;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:6px 8px;min-height:36px;width:100%;min-width:0}
+.tr input.sq-rg{border:0;padding:0;min-height:28px}.tr .sq-pn input{width:64px}
+.tr-r{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:start;padding:10px 0;border-bottom:1px solid var(--line)}
+.tr-pic{width:46px;height:64px;padding:0;border:0;border-radius:5px;background:var(--soft);overflow:hidden;cursor:zoom-in}.tr-pic img{width:100%;height:100%;object-fit:contain;display:block}.tr-pic:disabled{cursor:default}
+.tr-m{min-width:0;font-size:14px;line-height:1.3}.tr-m b{display:block}.tr-m .mu{font-size:12.5px}.tr-v{margin-top:3px;font-size:13.5px}
+.tr-f{grid-column:2/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px}.tr-f label{display:flex;align-items:center;gap:3px;font-size:14px;color:var(--mut)}
+.tr-n{grid-column:2/-1;font-size:12px}.tr-hits{display:flex;flex-direction:column}.tr-hits:empty{display:none}
+.tr-hit{display:flex;gap:10px;align-items:center;width:100%;text-align:left;font:inherit;color:var(--fg);background:none;border:0;border-bottom:1px solid var(--line);padding:6px 2px;cursor:pointer}
+.tr-hit img,.tr-hit .ph{flex:none;width:34px;height:47px;border-radius:4px;object-fit:contain;background:var(--soft)}
+.tr-add{display:flex;gap:8px;align-items:center;margin-top:8px}.tr-add input{flex:1}#tr-find{margin-top:6px}
 .mg{max-width:460px;max-height:calc(100dvh - 32px)}.mg-s{margin:10px 0 2px;font-size:14px}.mg-l{margin:2px 0 0;padding-left:18px;font-size:13px;color:var(--mut)}.mg-l li{margin:2px 0}.mg-p{margin:8px 0;padding:8px 10px;border-radius:10px;background:var(--soft);font-size:13.5px}.mg-p select{margin-top:6px;width:100%;font:inherit;font-size:14px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:6px;min-height:36px}
 .mg-more{margin:0 0 0 18px;font-size:13px}.mg-more>summary{cursor:pointer;color:var(--link);font-weight:600;padding:3px 0;list-style:none}.mg-more>summary::-webkit-details-marker{display:none}.mg-more[open]>summary{color:var(--mut)}.mg-more>.mg-l{margin:0;padding-left:0}
 .pfb{height:8px;border-radius:999px;background:var(--soft);overflow:hidden;margin:6px 0 10px}.pfb[hidden]{display:none}.pfb>i{display:block;height:100%;width:0;border-radius:999px;background:var(--blue);transition:width .3s ease}
@@ -955,5 +968,5 @@ $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
-<script src="/portfolio.js?v=91"></script>
+<script src="/portfolio.js?v=92"></script>
 </body></html>
