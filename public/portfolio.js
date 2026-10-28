@@ -155,7 +155,7 @@ async function trLive(c) {
   try {
     const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: x.tcgId, cond: x.cond || "Near Mint", print: x.var || "", jp: isJp(x) ? "1" : "", live: "1" }));
     if (j.market > 0 && (Math.abs((x.mkt ?? -1) - j.market) >= 0.005 || !!x.mktEst !== !!j.est || x.mktV !== 2)) {
-      x.mkt = j.market; x.mktEst = !!j.est; x.mktV = 2; x.pT = Date.now(); delete x.pWhy; delete x.mktSrc; store(); trDraw();
+      x.mkt = j.market; x.mktEst = !!j.est; x.mktV = 2; x.pT = Date.now(); if (j.live) x.mktLive = Date.now(); delete x.pWhy; delete x.mktSrc; store(); trDraw();
       const pr = document.querySelector(`.tr [data-tid="${c.id}"][data-tf="own"]`); if (pr && !(c.own > 0)) pr.placeholder = (Math.round(unit(x) * 100) / 100).toFixed(2);
     }
   } catch { c.liveT = 0; }
@@ -940,6 +940,8 @@ async function priceOne(x) {
   if (!x.tcgId) { const j = await getJSON("/api/cardimg?" + new URLSearchParams({ name: x.name, set: x.set || "", num: x.num || "", cat: x.cat || "" })).catch(() => null);
     if (j && j.tcgId) { x.tcgId = j.tcgId; if (!x.img && j.img) { x.img = j.img; x.big = j.big; x.imgT = Date.now(); } } }
   if (!x.tcgId) { x.pWhy = "not found on TCGplayer"; return false; }
+  // a live price set in the last day (from the trade analyzer) isn't replaced by the slower weekly figure
+  if (x.mktLive && Date.now() - x.mktLive < 864e5 && x.mkt > 0) return true;
   const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: x.tcgId, cond: x.cond || "Near Mint", print: x.var || "", jp: isJp(x) ? "1" : "" })).catch(() => null);
   if (!j) { x.pWhy = "TCGplayer didn't answer, trying again tomorrow"; return false; }
   if (!(j.market > 0)) { x.pWhy = j.why || "no TCGplayer price"; return false; }
@@ -1248,19 +1250,19 @@ async function sqPrice(it) {
   const cp = sqTarget === "tradeGive" && it.pid ? P.items.find((x) => x.id === it.pid) : null, same = cp && (!it.mcond || it.mcond === sqCopyCond(cp));
   const showCopy = () => { it.px = unit(cp); it.pxEst = !!cp.mktEst && !(cp.ovr > 0); it.pxCond = ""; sqSave(); if (!sqView) sqRow(it); else sqBar(); };
   if (same && isGraded(cp)) { if (cp.ovr > 0 || cp.mkt != null) showCopy(); else { it.px = null; sqSave(); if (!sqView) sqRow(it); } return; }
-  let px = null, est = false, cond = "", fbUsed = false;
+  let px = null, est = false, cond = "", fbUsed = false, live = false;
   try {
     // cards matched through pokemontcg.io don't carry a TCGplayer product id yet: find it the same way card pictures are found
     let fb = null;
     if (!c.tcgId && !(cp && cp.tcgId)) { const j = await getJSON("/api/cardimg?" + new URLSearchParams({ name: c.name, set: c.set || "", num: sqNum(c), cat: "Pokemon" })); if (j.tcgId) c.tcgId = j.tcgId; else if (j.market > 0) fb = j.market; }
     const tid = (cp && cp.tcgId) || c.tcgId;
-    if (tid) { const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: tid, cond: it.cond || "Near Mint", print: it.print || "", jp: sqJp(it, c) ? "1" : "", ...(sqTarget ? { live: "1" } : {}) })); px = j.market ?? null; est = !!j.est; cond = j.cond || ""; }
+    if (tid) { const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: tid, cond: it.cond || "Near Mint", print: it.print || "", jp: sqJp(it, c) ? "1" : "", ...(sqTarget ? { live: "1" } : {}) })); px = j.market ?? null; est = !!j.est; cond = j.cond || ""; live = !!j.live; }
     else if (fb) { px = fb; est = true; fbUsed = true; }
   } catch {}
   if (it.pxK !== k) return; // the condition, printing or match changed while this was loading
   if (same && !(px > 0) && (cp.ovr > 0 || cp.mkt != null)) return showCopy(); // TCGplayer had nothing: your copy's price
   if (same && px > 0 && !fbUsed && (Math.abs((cp.mkt ?? -1) - px) >= 0.005 || !!cp.mktEst !== est || cp.mktV !== 2)) {
-    cp.mkt = px; cp.mktEst = est; cp.mktV = 2; cp.pT = Date.now(); delete cp.pWhy; delete cp.mktSrc; if (!cp.tcgId && c.tcgId) cp.tcgId = c.tcgId; store(); trDraw();
+    cp.mkt = px; cp.mktEst = est; cp.mktV = 2; cp.pT = Date.now(); if (live) cp.mktLive = Date.now(); delete cp.pWhy; delete cp.mktSrc; if (!cp.tcgId && c.tcgId) cp.tcgId = c.tcgId; store(); trDraw();
   }
   it.px = px; it.pxEst = est; it.pxCond = cond; sqSave();
   if (!sqView) sqRow(it); else sqBar();
