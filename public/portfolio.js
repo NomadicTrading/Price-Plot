@@ -1885,72 +1885,170 @@ async function selRemove() {
   selBackup("bulk remove"); P.items = P.items.filter((x) => !selIds.has(x.id)); store(); snap(); selMode = false; selIds.clear(); render();
   toast(`Removed ${pick.length} item${pick.length === 1 ? "" : "s"}`, { label: "Undo", run: undoImport });
 }
-// the edit sheet for the selected cards: every field starts as "Keep", so only what you change is changed
-function selEdit() {
-  const pick = P.items.filter((x) => selIds.has(x.id)); if (!pick.length) return;
-  const pfs = [...new Set(P.items.map((y) => y.pf).filter(Boolean))].sort();
-  const keep = `<option value="">Keep as is</option>`, opt = (v, l) => `<option value="${esc(v)}">${esc(l ?? v)}</option>`;
-  const common = (k) => { const v = new Set(pick.map((x) => x[k] || "")); return v.size === 1 ? [...v][0] : null; };
-  const ov = document.createElement("div"); ov.className = "ppm-ov"; ov.id = "pfbulk";
-  ov.innerHTML = `<div class="ppm be" role="dialog" aria-modal="true" aria-labelledby="be-t"><button type="button" class="pe-x" data-be="x" aria-label="Close without saving">✕</button>
-    <h3 id="be-t">Edit ${pick.length} item${pick.length === 1 ? "" : "s"}</h3>
-    <div class="be-pics">${pick.slice(0, 8).map((x) => x.img ? `<img src="${esc(x.img)}" alt="">` : `<span></span>`).join("")}${pick.length > 8 ? `<b>+${pick.length - 8}</b>` : ""}</div>
-    <form id="be-f" class="pe"><div class="pg">
-      <label>Condition<select name="cond">${keep}${CONDS.map((c) => opt(c)).join("")}</select></label>
-      <label>Printing<select name="var">${keep}${PRINTS_ANY.map((c) => opt(c)).join("")}</select></label>
-      <label>Grade<select name="grade">${keep}${opt("Ungraded", "Raw (not graded)")}${TR_GRADES.map((g) => opt(g)).join("")}</select></label>
-      <label>Portfolio<select name="pf" data-be="pf">${keep}${pfs.map((p) => opt(p)).join("")}<option value="__new">+ New portfolio…</option></select></label>
-      <label class="pfnew" hidden>New portfolio name<input name="pfNew" placeholder="e.g. Binder 2" autocomplete="off"></label>
-      <label>Paid each<select name="costHow" data-be="how">${keep}${opt("amt", "Set an amount ($ each)")}${opt("pct", "Set a % of each card's market price")}${opt("clear", "Clear what was paid")}</select></label>
-      <label class="be-v" data-for="costHow" hidden><span>Amount</span><input name="costV" type="number" min="0" step="any" inputmode="decimal"></label>
-      <label>Your price each<select name="ovrHow" data-be="how">${keep}${opt("amt", "Set an amount ($ each)")}${opt("clear", "Clear (use the market price)")}</select></label>
-      <label class="be-v" data-for="ovrHow" hidden><span>Amount ($ each)</span><input name="ovrV" type="number" min="0" step="any" inputmode="decimal"></label>
-      <label>Quantity<select name="qtyHow" data-be="how">${keep}${opt("set", "Set each to")}</select></label>
-      <label class="be-v" data-for="qtyHow" hidden><span>Quantity each</span><input name="qtyV" type="number" min="0" step="1" inputmode="numeric"></label>
-      <label>Notes<select name="noteHow" data-be="how">${keep}${opt("set", "Replace with")}${opt("add", "Add to the end")}${opt("clear", "Clear")}</select></label>
-      <label class="be-v" data-for="noteHow" hidden><span>Note</span><input name="noteV" autocomplete="off"></label>
-    </div>
-    ${common("pf") != null ? "" : ""}<div class="sm be-sum" id="be-sum">Nothing changes until you pick something.</div>
-    <div class="bar"><button class="pill on" type="submit">Save</button><button class="pill" type="button" data-be="x">Cancel</button></div></form></div>`;
-  document.body.appendChild(ov); syncScrollLock();
-  const f = ov.querySelector("#be-f"), close = () => { ov.remove(); syncScrollLock(); };
-  const summary = () => { const d = Object.fromEntries(new FormData(f)), ch = [];
-    if (d.cond) ch.push("condition → " + (COND_CODE[d.cond] || d.cond)); if (d.var) ch.push("printing → " + d.var); if (d.grade) ch.push("grade → " + (d.grade === "Ungraded" ? "raw" : d.grade));
-    if (d.pf) ch.push("portfolio → " + (d.pf === "__new" ? d.pfNew || "new" : d.pf));
-    if (d.costHow) ch.push(d.costHow === "clear" ? "paid cleared" : d.costHow === "pct" ? `paid → ${d.costV || "?"}% of market` : `paid → $${d.costV || "?"}`);
-    if (d.ovrHow) ch.push(d.ovrHow === "clear" ? "your price cleared" : `your price → $${d.ovrV || "?"}`);
-    if (d.qtyHow) ch.push(`quantity → ${d.qtyV || "?"}`); if (d.noteHow) ch.push(d.noteHow === "clear" ? "notes cleared" : d.noteHow === "add" ? "note added" : "notes replaced");
-    $("be-sum").textContent = ch.length ? `${pick.length === 1 ? "Changes" : pick.length === 2 ? "Changes for both" : `Changes for all ${pick.length}`}: ${ch.join(", ")}.` : "Nothing changes until you pick something."; };
-  ov.addEventListener("change", (e) => { const t = e.target;
-    if (t.dataset.be === "how") { const v = f.querySelector(`.be-v[data-for="${t.name}"]`); if (v) { v.hidden = !t.value || t.value === "clear"; if (!v.hidden) { v.querySelector("span").textContent = t.value === "pct" ? "Percent of market (%)" : t.name === "costHow" || t.name === "ovrHow" ? "Amount ($ each)" : v.querySelector("span").textContent; v.querySelector("input").focus(); } } }
-    if (t.dataset.be === "pf") { const b = f.querySelector(".pfnew"); b.hidden = t.value !== "__new"; if (!b.hidden) b.querySelector("input").focus(); }
-    summary(); });
-  ov.addEventListener("input", summary);
-  ov.addEventListener("click", (e) => { if (e.target === ov || (e.target.closest && e.target.closest('[data-be="x"]'))) close(); });
-  f.addEventListener("submit", (e) => { e.preventDefault();
-    const d = Object.fromEntries(new FormData(f)), n = (v) => (v === "" || v == null ? null : Number(v));
-    if (d.pf === "__new") { d.pf = String(d.pfNew || "").trim(); if (!d.pf) { toast("Type a name for the new portfolio"); f.querySelector('[name="pfNew"]').focus(); return; } }
-    for (const [how, v, lab] of [["costHow", "costV", "what was paid"], ["ovrHow", "ovrV", "your price"], ["qtyHow", "qtyV", "the quantity"]])
-      if (d[how] && d[how] !== "clear" && !(n(d[v]) >= 0)) { toast(`Type ${lab}`); f.querySelector(`[name="${v}"]`).focus(); return; }
-    if (!(d.cond || d.var || d.grade || d.pf || d.costHow || d.ovrHow || d.qtyHow || d.noteHow)) return close();
-    selBackup("bulk edit");
-    let noMkt = 0;
-    for (const x of pick) {
-      const was = [x.cond, x.var, isGraded(x) ? shortGrade(x.grade) : ""].join("|");
-      if (d.cond) x.cond = d.cond; if (d.var) x.var = d.var; if (d.grade) x.grade = d.grade; if (d.pf) x.pf = d.pf;
-      if (d.costHow === "clear") x.cost = 0; else if (d.costHow === "amt") x.cost = Math.round(n(d.costV) * 100) / 100;
-      else if (d.costHow === "pct") { const mk = unit(x); if (mk > 0) x.cost = Math.round(mk * n(d.costV)) / 100; else noMkt++; }
-      if (d.ovrHow === "clear") x.ovr = 0; else if (d.ovrHow === "amt") x.ovr = Math.round(n(d.ovrV) * 100) / 100;
-      if (d.qtyHow === "set") x.qty = Math.max(0, Math.round(n(d.qtyV)));
-      if (d.noteHow === "clear") x.notes = ""; else if (d.noteHow === "set") x.notes = String(d.noteV || "").trim(); else if (d.noteHow === "add") x.notes = [x.notes, String(d.noteV || "").trim()].filter(Boolean).join("; ");
-      // a new condition, printing or grade needs a new price: raw cards get TCGplayer's on the next price check
-      if ([x.cond, x.var, isGraded(x) ? shortGrade(x.grade) : ""].join("|") !== was) { delete x.pT; delete x.pTry; delete x.mktLive; delete x.pWhy; if (!isGraded(x)) x.mktV = 1; }
-    }
-    store(); snap(); close(); selMode = false; selIds.clear(); render(); fillPrices();
-    toast(`Updated ${pick.length} item${pick.length === 1 ? "" : "s"}${noMkt ? ` (${noMkt} without a market price kept what was paid)` : ""}`, { label: "Undo", run: undoImport });
-  });
-  const first = f.querySelector("select"); if (first) first.focus();
+/* ---------- the edit window for the selected cards: each card edited on its own as you scroll, with the total value
+   kept up to date, and an optional "Set the same for all". Nothing is saved until Apply changes. ---------- */
+let ED = null; // { ids, d: Map(id -> draft fields), px: Map(key -> price | null | undefined) }
+const edGr = (d) => (d.grade && !/^ungraded$/i.test(d.grade) ? shortGrade(d.grade) : "");
+const edKey = (x, d) => [x.tcgId || "", d.cond || "Near Mint", d.var || "", edGr(d)].join("|");
+const edChanged = (x, d) => ["cond", "var", "pf", "notes"].some((k) => (d[k] || "") !== (x[k] || "")) || edGr(d) !== (isGraded(x) ? shortGrade(x.grade) : "") || +d.qty !== +x.qty || +(d.cost || 0) !== +(x.cost || 0);
+// the price each for a card as edited: its own price while condition, printing and grade are unchanged
+function edPrice(x, d) {
+  if (x.ovr > 0) return x.ovr;
+  const same = (d.cond || "") === (x.cond || "") && (d.var || "") === (x.var || "") && edGr(d) === (isGraded(x) ? shortGrade(x.grade) : "");
+  if (same) return x.mkt != null ? x.mkt : null;
+  if (edGr(d)) return P.items.find((y) => y !== x && y.mkt != null && isGraded(y) && shortGrade(y.grade) === edGr(d) && mName(y.name) === mName(x.name) && mNum(y.num) === mNum(x.num))?.mkt ?? null;
+  return ED.px.get(edKey(x, d));
 }
+async function edLookup(x, d) {
+  const k = edKey(x, d); if (edGr(d) || !x.tcgId || ED.px.has(k)) return;
+  ED.px.set(k, undefined);
+  try { const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: x.tcgId, cond: d.cond || "Near Mint", print: d.var || "", jp: isJp(x) ? "1" : "" })); ED.px.set(k, j.market > 0 ? j.market : null); }
+  catch { ED.px.set(k, null); }
+  if (ED) { for (const id of ED.ids) { const y = P.items.find((z) => z.id === id), e = ED.d.get(id); if (y && e && edKey(y, e) === k) edRowPrice(y); } edTotal(); }
+}
+function edPriceHTML(x, d) {
+  const px = edPrice(x, d), q = Math.max(0, Math.round(+d.qty || 0)), changed = px !== undefined && !((d.cond || "") === (x.cond || "") && (d.var || "") === (x.var || "") && edGr(d) === (isGraded(x) ? shortGrade(x.grade) : ""));
+  if (px === undefined) return `<span class="mu">Looking up the price…</span>`;
+  if (px == null) return `<span class="mu">${edGr(d) ? "No price for that grade yet (Collectr's is used once saved, if you have it)" : "No price yet"}</span>`;
+  return `<span class="mu">${x.ovr > 0 ? "Your price" : edGr(d) ? "Collectr" : "TCGplayer"}</span> <b>${money(px)}</b>${q !== 1 ? ` <span class="mu">× ${q} = ${money(px * q)}</span>` : ""}${changed ? ` <span class="ed-new">new</span>` : ""}`;
+}
+function edRowHTML(x) {
+  const d = ED.d.get(x.id), g = edGr(d), cur = g || d.cond || "Near Mint", mk = edPrice(x, d);
+  const conds = [...CONDS, ...TR_GRADES, ...(g && !TR_GRADES.includes(g) ? [g] : [])];
+  const prints = printsCache.get(String(x.tcgId)) || (x.tcgId ? (d.var ? [d.var] : []) : PRINTS_ANY);
+  const pfs = [...new Set(P.items.map((y) => y.pf).filter(Boolean))].sort();
+  const pc = mk > 0 && d.cost > 0 ? String(Math.round((d.cost / mk) * 1000) / 10) : "";
+  return `<div class="ed-r${edChanged(x, d) ? " chg" : ""}" id="ed-${x.id}">
+    <button type="button" class="ed-pic" data-ezm="${x.id}" aria-label="Enlarge picture" ${x.img ? "" : "disabled"}>${x.img ? `<img src="${esc(x.img)}" alt="" loading="lazy">` : ""}</button>
+    <div class="ed-t"><b>${esc(x.name)}</b><div class="mu">${esc([x.set, x.num].filter(Boolean).join(" · "))}</div><div class="ed-p" data-epx="${x.id}">${edPriceHTML(x, d)}</div></div>
+    <button type="button" class="sq-x" data-edrop="${x.id}" aria-label="Take off this list">✕</button>
+    <div class="ed-f">
+      <label><span>Condition</span><select data-ef="cond" data-eid="${x.id}">${conds.map((o) => `<option value="${esc(o)}" ${o === cur ? "selected" : ""}>${esc(COND_CODE[o] || o)}</option>`).join("")}</select></label>
+      <label><span>Printing</span><select data-ef="var" data-eid="${x.id}">${printOpts(prints, d.var || "")}</select></label>
+      <label><span>Qty</span><input data-ef="qty" data-eid="${x.id}" type="number" min="0" step="1" inputmode="numeric" value="${esc(d.qty)}"></label>
+      <label class="ed-cost"><span>Paid each $</span><input data-ef="cost" data-eid="${x.id}" type="number" min="0" step="any" inputmode="decimal" value="${d.cost > 0 ? d.cost : ""}"></label>
+      <label class="ed-pc"><span>%</span><input data-ef="pct" data-eid="${x.id}" type="number" min="0" step="any" inputmode="decimal" value="${pc}" ${mk > 0 ? "" : "disabled placeholder=\"–\""}></label>
+      <label class="ed-pf"><span>Portfolio</span><select data-ef="pf" data-eid="${x.id}">${[...new Set([...pfs, d.pf].filter(Boolean))].map((p) => `<option ${p === d.pf ? "selected" : ""}>${esc(p)}</option>`).join("")}</select></label>
+    </div></div>`;
+}
+function edRowPrice(x) {
+  const el = document.querySelector(`#pfed [data-epx="${x.id}"]`), d = ED.d.get(x.id); if (!el || !d) return;
+  el.innerHTML = edPriceHTML(x, d);
+  const mk = edPrice(x, d), pc = document.querySelector(`#pfed [data-ef="pct"][data-eid="${x.id}"]`);
+  if (pc && document.activeElement !== pc) { pc.disabled = !(mk > 0); pc.placeholder = mk > 0 ? "" : "–"; pc.value = mk > 0 && d.cost > 0 ? String(Math.round((d.cost / mk) * 1000) / 10) : ""; }
+  const r = $("ed-" + x.id); if (r) r.classList.toggle("chg", edChanged(x, d));
+}
+function edTotal() {
+  if (!ED) return; const el = $("ed-v"); if (!el) return;
+  let v = 0, cards = 0, none = 0, wait = 0, chg = 0;
+  for (const id of ED.ids) { const x = P.items.find((y) => y.id === id), d = ED.d.get(id); if (!x || !d) continue;
+    const q = Math.max(0, Math.round(+d.qty || 0)), px = edPrice(x, d); cards += q; if (px === undefined) wait++; else if (px == null) none++; else v += px * q; if (edChanged(x, d)) chg++; }
+  el.innerHTML = `<span class="mu">Market value</span> <b>${money(v)}</b> <span class="mu">for ${cards} card${cards === 1 ? "" : "s"}${wait ? ` · ${wait} pricing` : ""}${none ? ` · ${none} without a price` : ""}</span>`;
+  const b = document.querySelector("#pfed [data-ea=apply]"); if (b) { b.disabled = !chg; b.textContent = chg ? `Apply changes (${chg} card${chg === 1 ? "" : "s"})` : "Apply changes"; }
+}
+function edOpen() {
+  const ids = P.items.filter((x) => selIds.has(x.id)).map((x) => x.id); if (!ids.length) return;
+  ED = { ids, d: new Map(), px: new Map() };
+  for (const id of ids) { const x = P.items.find((y) => y.id === id); ED.d.set(id, { cond: x.cond || "Near Mint", var: x.var || "", grade: isGraded(x) ? x.grade : "", qty: x.qty, cost: x.cost || 0, pf: x.pf || "", notes: x.notes || "" }); }
+  edRender();
+  // the printings each card comes in, two at a time
+  const todo = ids.map((id) => P.items.find((y) => y.id === id)).filter((x) => x && x.tcgId && !printsCache.get(String(x.tcgId))); let i = 0;
+  const next = async () => { const x = todo[i++]; if (!x || !ED) return;
+    try { if (!printsCache.get(String(x.tcgId))) printsCache.set(String(x.tcgId), (await getJSON("/api/tcgprints?id=" + encodeURIComponent(x.tcgId))).prints || []); } catch {}
+    const list = printsCache.get(String(x.tcgId)); const sel = document.querySelector(`#pfed [data-ef="var"][data-eid="${x.id}"]`);
+    if (sel && list && list.length && ED) sel.innerHTML = printOpts(list, ED.d.get(x.id).var || ""); next(); };
+  next(); next();
+}
+function edRender() {
+  let ov = $("pfed"); if (!ov) { ov = document.createElement("div"); ov.id = "pfed"; ov.className = "ppm-ov"; document.body.appendChild(ov); }
+  const items = ED.ids.map((id) => P.items.find((y) => y.id === id)).filter(Boolean), pfs = [...new Set(P.items.map((y) => y.pf).filter(Boolean))].sort();
+  const keep = `<option value="">Keep each</option>`, opt = (v, l) => `<option value="${esc(v)}">${esc(l ?? v)}</option>`;
+  ov.innerHTML = `<div class="ppm sqm" role="dialog" aria-modal="true" aria-labelledby="ed-h">
+    <div class="sq-h"><h3 id="ed-h">Edit ${items.length} card${items.length === 1 ? "" : "s"}</h3><button type="button" class="ppm-x plain sq-close" data-ea="close">Close</button></div>
+    <div class="sq-v" id="ed-v"></div>
+    <details class="sq-o ed-all"${ED.allOpen ? " open" : ""}><summary class="sq-os"><b>Set the same for all</b> <span class="mu">optional</span></summary>
+      <div class="ed-af">
+        <label><span>Condition</span><select data-ea2="cond">${keep}${[...CONDS, ...TR_GRADES].map((c) => opt(c, COND_CODE[c] ? c : c)).join("")}</select></label>
+        <label><span>Printing</span><select data-ea2="var">${keep}${PRINTS_ANY.map((c) => opt(c)).join("")}</select></label>
+        <label><span>Portfolio</span><select data-ea2="pf">${keep}${pfs.map((c) => opt(c)).join("")}<option value="__new">+ New portfolio…</option></select></label>
+        <label data-ea2for="pf" hidden><span>New portfolio name</span><input data-ea2="pfNew" autocomplete="off" placeholder="e.g. Binder 2"></label>
+        <label><span>Paid each</span><select data-ea2="costHow">${keep}${opt("amt", "Set $ each")}${opt("pct", "Set % of market")}${opt("clear", "Clear")}</select></label>
+        <label data-ea2for="costHow" hidden><span>Amount</span><input data-ea2="costV" type="number" min="0" step="any" inputmode="decimal"></label>
+        <label><span>Quantity</span><select data-ea2="qtyHow">${keep}${opt("set", "Set each to")}</select></label>
+        <label data-ea2for="qtyHow" hidden><span>Quantity each</span><input data-ea2="qtyV" type="number" min="0" step="1" inputmode="numeric"></label>
+      </div>
+      <button type="button" class="pill" data-ea="setall">Set for all ${items.length}</button> <span class="mu ed-hint">Fills these in on every card below; you can still change any card after.</span>
+    </details>
+    <div class="sq-list">${items.map(edRowHTML).join("")}</div>
+    <div class="sq-bar ed-bar"><button type="button" class="ppm-x primary sq-add" data-ea="apply" disabled>Apply changes</button></div>
+  </div>`;
+  edTotal();
+  for (const x of items) { const d = ED.d.get(x.id); if (edPrice(x, d) === undefined || (!ED.px.has(edKey(x, d)) && !edGr(d) && edPrice(x, d) == null)) edLookup(x, d); }
+}
+async function edClose(force) {
+  if (!ED) return;
+  const chg = ED.ids.filter((id) => { const x = P.items.find((y) => y.id === id); return x && edChanged(x, ED.d.get(id)); }).length;
+  if (!force && chg && !(await modal({ title: `Discard changes to ${chg} card${chg === 1 ? "" : "s"}?`, text: "", buttons: [{ label: "Discard", value: true, kind: "danger" }, { label: "Keep editing", value: false, kind: "primary" }] }))) return;
+  ED = null; const ov = $("pfed"); if (ov) ov.remove();
+}
+function edApply() {
+  if (!ED) return;
+  const chg = ED.ids.map((id) => P.items.find((y) => y.id === id)).filter((x) => x && edChanged(x, ED.d.get(x.id))); if (!chg.length) return;
+  selBackup("bulk edit");
+  for (const x of chg) {
+    const d = ED.d.get(x.id), was = [x.cond, x.var, isGraded(x) ? shortGrade(x.grade) : ""].join("|"), px = edPrice(x, d);
+    x.cond = d.cond; x.var = d.var; x.grade = edGr(d) ? d.grade : "Ungraded"; x.qty = Math.max(0, Math.round(+d.qty || 0)); x.cost = Math.round((+d.cost || 0) * 100) / 100; x.pf = d.pf;
+    if ([x.cond, x.var, isGraded(x) ? shortGrade(x.grade) : ""].join("|") !== was) {
+      delete x.mktLive; delete x.pWhy; delete x.pTry;
+      if (px > 0 && !(x.ovr > 0)) { x.mkt = px; x.mktEst = false; x.mktV = isGraded(x) ? x.mktV : 2; x.pT = Date.now(); } else { delete x.pT; if (!isGraded(x)) x.mktV = 1; }
+    }
+  }
+  store(); snap(); ED = null; const ov = $("pfed"); if (ov) ov.remove(); selMode = false; selIds.clear(); render(); fillPrices();
+  toast(`Saved changes to ${chg.length} card${chg.length === 1 ? "" : "s"}`, { label: "Undo", run: undoImport });
+}
+function edSet(id, f, v) {
+  const x = P.items.find((y) => y.id === id), d = ED && ED.d.get(id); if (!x || !d) return;
+  if (f === "cond") { if (TR_GRADES.includes(v) || (!CONDS.includes(v) && v)) { d.grade = v; } else { d.cond = v; d.grade = ""; } }
+  else if (f === "var") d.var = v; else if (f === "pf") d.pf = v;
+  else if (f === "qty") d.qty = Math.max(0, Math.round(+v || 0));
+  else if (f === "cost") { d.cost = +v > 0 ? Math.round(+v * 100) / 100 : 0; }
+  else if (f === "pct") { const mk = edPrice(x, d); if (mk > 0) { d.cost = v === "" ? 0 : Math.round(mk * +v) / 100; const c = document.querySelector(`#pfed [data-ef="cost"][data-eid="${id}"]`); if (c) c.value = d.cost > 0 ? d.cost.toFixed(2) : ""; } }
+  if (f === "cond" || f === "var") edLookup(x, d);
+  edRowPrice(x); edTotal();
+}
+document.addEventListener("input", (e) => { const t = e.target; if (!ED || !t.closest || !t.closest("#pfed") || !t.dataset.ef) return; if (t.tagName !== "SELECT") edSet(t.dataset.eid, t.dataset.ef, t.value); });
+document.addEventListener("change", (e) => { const t = e.target; if (!ED || !t.closest || !t.closest("#pfed")) return;
+  if (t.dataset.ef) { if (t.tagName === "SELECT") edSet(t.dataset.eid, t.dataset.ef, t.value); return; }
+  if (t.dataset.ea2) { const f = document.querySelector(`#pfed [data-ea2for="${t.dataset.ea2}"]`); if (f) { f.hidden = !t.value || t.value === "clear" || (t.dataset.ea2 === "pf" && t.value !== "__new"); if (!f.hidden) { const sp = f.querySelector("span"); if (t.dataset.ea2 === "costHow") sp.textContent = t.value === "pct" ? "Percent of market (%)" : "Amount ($ each)"; f.querySelector("input").focus(); } } }
+});
+document.addEventListener("click", async (e) => {
+  const ov = $("pfed"); if (!ov || !ED || !ov.contains(e.target)) return;
+  if (e.target === ov) return edClose();
+  const b = e.target.closest("button"); if (!b) return; const d = b.dataset;
+  if (d.ea === "close") edClose();
+  else if (d.ea === "apply") edApply();
+  else if (d.ezm) { const x = P.items.find((y) => y.id === d.ezm); if (x) ppZoom([x.tcgId ? `https://tcgplayer-cdn.tcgplayer.com/product/${x.tcgId}_in_1000x1000.jpg` : "", x.big, x.img], x.name); }
+  else if (d.edrop) { ED.ids = ED.ids.filter((id) => id !== d.edrop); ED.d.delete(d.edrop); selIds.delete(d.edrop); selSync(); const r = $("ed-" + d.edrop); if (r) r.remove(); if (!ED.ids.length) return edClose(true); const h = $("ed-h"); if (h) h.textContent = `Edit ${ED.ids.length} card${ED.ids.length === 1 ? "" : "s"}`; edTotal(); }
+  else if (d.ea === "setall") {
+    const g = (k) => { const el = ov.querySelector(`[data-ea2="${k}"]`); return el ? el.value : ""; };
+    let pf = g("pf"); if (pf === "__new") { pf = g("pfNew").trim(); if (!pf) { toast("Type a name for the new portfolio"); return; } }
+    const cond = g("cond"), pr = g("var"), costHow = g("costHow"), costV = g("costV"), qtyHow = g("qtyHow"), qtyV = g("qtyV");
+    if ((costHow === "amt" || costHow === "pct") && !(costV !== "" && +costV >= 0)) { toast("Type the amount"); return; }
+    if (qtyHow && !(qtyV !== "" && +qtyV >= 0)) { toast("Type the quantity"); return; }
+    if (!(cond || pr || pf || costHow || qtyHow)) { toast("Pick something to set for all"); return; }
+    for (const id of ED.ids) { const x = P.items.find((y) => y.id === id), dd = ED.d.get(id); if (!x || !dd) continue;
+      if (cond) { if (TR_GRADES.includes(cond)) dd.grade = cond; else { dd.cond = cond; dd.grade = ""; } }
+      if (pr) dd.var = pr; if (pf) dd.pf = pf; if (qtyHow) dd.qty = Math.max(0, Math.round(+qtyV));
+      if (costHow === "clear") dd.cost = 0; else if (costHow === "amt") dd.cost = Math.round(+costV * 100) / 100; }
+    ED.allOpen = false; edRender();
+    // a % of market waits for the new prices, then is worked out per card
+    if (costHow === "pct") { const setPct = () => { for (const id of ED ? ED.ids : []) { const x = P.items.find((y) => y.id === id), dd = ED.d.get(id), mk = x && edPrice(x, dd); if (mk > 0) dd.cost = Math.round(mk * +costV) / 100; }
+        if (ED) { edRender(); } };
+      const wait = () => { if (!ED) return; if (ED.ids.some((id) => { const x = P.items.find((y) => y.id === id); return x && edPrice(x, ED.d.get(id)) === undefined; })) setTimeout(wait, 300); else setPct(); }; wait(); }
+    toast(`Set for all ${ED.ids.length}. Check them, then Apply changes.`);
+  }
+});
+document.addEventListener("toggle", (e) => { if (e.target.classList && e.target.classList.contains("ed-all") && ED) ED.allOpen = e.target.open; }, true);
 function impMenu(open) { impOpen = !!open; const m = $("impm"), b = document.querySelector('[data-pa="imp"]'); if (!m) return; m.hidden = !open; if (b) b.setAttribute("aria-expanded", open ? "true" : "false"); }
 document.addEventListener("click", (e) => { const m = $("impm"); if (!m || m.hidden) return;
   if (e.target.closest('[data-pa="imp"]')) return; if (!m.contains(e.target) || e.target.closest(".imp-i")) impMenu(false); }, true);
@@ -1964,7 +2062,7 @@ document.addEventListener("click", (e) => {
   if (!btn) { const row = !e.target.closest("a,input,select,label,form") && e.target.closest(".pr[data-id]"); if (row && selMode) selToggle(row.dataset.id); else if (row && editing !== row.dataset.id) openDetail(row.dataset.id); return; }
   const d = btn.dataset;
   if (d.ps) { if (d.ps === "done") selEnd(); else if (d.ps === "all") { const l = filtered(), all = l.length && l.every((x) => selIds.has(x.id)); l.forEach((x) => (all ? selIds.delete(x.id) : selIds.add(x.id))); selSync(); }
-    else if (d.ps === "edit") selEdit(); else if (d.ps === "rm") selRemove(); else if (d.ps === "scan") { sqTarget = "select"; sqOpen(); } return; }
+    else if (d.ps === "edit") edOpen(); else if (d.ps === "rm") selRemove(); else if (d.ps === "scan") { sqTarget = "select"; sqOpen(); } return; }
   if (d.czr) { cSet({ x0: -Infinity, x1: Infinity, y0: -Infinity, y1: Infinity }); return; }
   if (d.dr) { drng = d.dr; cview = null; render(); return; }
   if (d.dc) { dsel = d.dc; cview = null; render(); return; }
