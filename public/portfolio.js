@@ -8,7 +8,7 @@ const PAGE = 50;
 let P = readStore(), view = "all", sortBy = "value", findTxt = "", shown = PAGE, editing = null, pending = null, impOpen = false;
 let selMode = false, selJust = 0, selJustId = "";
 // portfolio filters: kind, condition, gain, value range (each), set, added, needs attention. Remembered on this device.
-let PFF = (() => { try { return JSON.parse(localStorage.getItem("pp_pffilter") || "{}") || {}; } catch { return {}; } })(), pffOpen = false; const selIds = new Set(); // selecting several cards (press and hold a card)
+let PFF = (() => { try { const f = JSON.parse(localStorage.getItem("pp_pffilter") || "{}") || {}; delete f.gain; delete f.added; delete f.attn; return f; } catch { return {}; } })(), pffOpen = false; const selIds = new Set(); // selecting several cards (press and hold a card)
 /* ---------- trade analyzer ----------
    Your cards: cards from your portfolio (or found on TCGplayer), at their full market value.
    Their cards: the trader's cards (TCGplayer search or the scanner), counted at a trade % (list-wide, or per card).
@@ -498,10 +498,10 @@ async function applyImport(how) {
 const PFF_OPTS = {
   kind: [["", "Any kind"], ["raw", "Raw"], ["graded", "Graded"], ["sealed", "Sealed"]],
   cond: [["", "Any condition"], ...["Near Mint", "Lightly Played", "Moderately Played", "Heavily Played", "Damaged"].map((c) => [c, c])],
-  gain: [["", "Any gain"], ["up", "Up vs. paid"], ["down", "Down vs. paid"], ["nocost", "No cost entered"]],
-  added: [["", "Any time"], ["7", "Last 7 days"], ["30", "Last 30 days"], ["90", "Last 90 days"], ["365", "Last year"]],
-  attn: [["", "All prices"], ["noprice", "No price"], ["est", "Estimated price"], ["collectr", "Still on Collectr's price"], ["own", "Your own price"]] };
-const PFF_NAMES = { kind: "Kind", cond: "Condition", gain: "Gain", added: "Added", attn: "Needs attention", set: "Set", vmin: "Value from", vmax: "Value to" };
+  lang: [["", "Any language"], ["en", "English"], ["jp", "Japanese"], ["other", "Other languages"]] };
+const PFF_NAMES = { kind: "Kind", cond: "Condition", lang: "Language", set: "Set", vmin: "Value from", vmax: "Value to" };
+// a card's language from its set, category or name (Collectr marks Japanese cards in the set or category)
+const langOf = (x) => { const t = [x.set, x.cat, x.name].join(" "); return /japan|\(jp\)/i.test(t) ? "jp" : /chinese|korean|korea|china|\(cn\)|\(kr\)|german|french|italian|spanish|portuguese/i.test(t) ? "other" : "en"; };
 const pffOn = () => Object.entries(PFF).filter(([, v]) => v !== "" && v != null);
 const pffLabel = (k, v) => k === "set" ? v : k === "vmin" ? `≥ ${money(+v)} each` : k === "vmax" ? `≤ ${money(+v)} each` : ((PFF_OPTS[k] || []).find((o) => o[0] === v) || [, v])[1];
 const isSealedX = (x) => x.cond === "Sealed";
@@ -509,13 +509,9 @@ function pffOk(x) {
   const f = PFF, g = isGraded(x), u = unit(x);
   if (f.kind === "raw" && (g || isSealedX(x))) return false; if (f.kind === "graded" && !g) return false; if (f.kind === "sealed" && !isSealedX(x)) return false;
   if (f.cond && (g || (x.cond || "Near Mint") !== f.cond)) return false;
-  if (f.gain === "nocost" && x.cost > 0) return false;
-  if ((f.gain === "up" || f.gain === "down") && !(x.cost > 0 && (x.mkt != null || x.ovr > 0) && (f.gain === "up" ? u > x.cost : u < x.cost))) return false;
+  if (f.lang && langOf(x) !== f.lang) return false;
   if (f.vmin !== undefined && f.vmin !== "" && !(u >= +f.vmin)) return false; if (f.vmax !== undefined && f.vmax !== "" && !(u <= +f.vmax)) return false;
   if (f.set && (x.set || "") !== f.set) return false;
-  if (f.added && !(x.added && Date.now() - Date.parse(x.added) <= +f.added * 864e5 + 864e5)) return false;
-  if (f.attn === "noprice" && !(x.mkt == null && !(x.ovr > 0))) return false; if (f.attn === "est" && !x.mktEst) return false;
-  if (f.attn === "collectr" && !(!g && x.mktV !== 2 && x.mkt != null && !(x.ovr > 0))) return false; if (f.attn === "own" && !(x.ovr > 0)) return false;
   return true;
 }
 function pffSet(k, v) { if (v === "" || v == null) delete PFF[k]; else PFF[k] = v; try { localStorage.setItem("pp_pffilter", JSON.stringify(PFF)); } catch {} shown = PAGE; render(); }
@@ -523,10 +519,10 @@ function pffHTML() {
   const on = pffOn(), sets = [...new Set(owned(P.items).map((x) => x.set).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const sel = (k) => `<label><span>${PFF_NAMES[k]}</span><select data-pff="${k}">${PFF_OPTS[k].map(([v, l]) => `<option value="${esc(v)}" ${v === (PFF[k] || "") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
   return `<div class="rf pf-rf"><button type="button" class="pill rf-b" data-pffo="1" aria-expanded="${pffOpen}">Filter${on.length ? ` · ${on.length}` : ""} ▾</button>${on.map(([k, v]) => `<button type="button" class="pill rf-c" data-pffx="${k}" aria-label="Remove filter ${esc(pffLabel(k, v))}">${esc(pffLabel(k, v))} ✕</button>`).join("")}
-  ${pffOpen ? `<div class="rf-p">${sel("kind")}${sel("cond")}${sel("gain")}${sel("attn")}
+  ${pffOpen ? `<div class="rf-p">${sel("kind")}${sel("cond")}${sel("lang")}
     <label><span>Value each from $</span><input data-pff="vmin" type="number" min="0" step="any" inputmode="decimal" value="${esc(PFF.vmin ?? "")}" placeholder="0"></label>
     <label><span>to $</span><input data-pff="vmax" type="number" min="0" step="any" inputmode="decimal" value="${esc(PFF.vmax ?? "")}" placeholder="Any"></label>
-    <label><span>Set</span><select data-pff="set"><option value="">Any set</option>${sets.map((t) => `<option ${t === PFF.set ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>${sel("added")}
+    <label><span>Set</span><select data-pff="set"><option value="">Any set</option>${sets.map((t) => `<option ${t === PFF.set ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
     <div class="rf-a">${on.length ? `<button type="button" class="cs-back" data-pffc="1">Clear all</button>` : ""}<button type="button" class="cs-back" data-pffo="1">Done</button></div></div>` : ""}</div>`;
 }
 function filtered() {
@@ -535,7 +531,11 @@ function filtered() {
   if (findTxt) { const w = findTxt.toLowerCase().split(/\s+/).filter(Boolean); a = a.filter((x) => { const t = [x.name, x.set, x.num, x.var, x.grade, x.cond, x.rarity, x.cat, x.notes].join(" ").toLowerCase(); return w.every((y) => t.includes(y)); }); }
   const v = (x) => unit(x) * (view === "watch" ? 1 : x.qty);
   const S = { value: (a, b) => v(b) - v(a), low: (a, b) => v(a) - v(b), unit: (a, b) => unit(b) - unit(a), unitlow: (a, b) => unit(a) - unit(b), name: (a, b) => a.name.localeCompare(b.name), added: (a, b) => String(b.added).localeCompare(String(a.added)),
-    gain: (a, b) => (b.cost > 0 ? (unit(b) - b.cost) * b.qty : -1e9) - (a.cost > 0 ? (unit(a) - a.cost) * a.qty : -1e9) };
+    gain: (a, b) => (b.cost > 0 ? (unit(b) - b.cost) * b.qty : -1e9) - (a.cost > 0 ? (unit(a) - a.cost) * a.qty : -1e9),
+    // cards without a cost go last in every gain sort
+    gainlow: (a, b) => (a.cost > 0 ? (unit(a) - a.cost) * a.qty : 1e9) - (b.cost > 0 ? (unit(b) - b.cost) * b.qty : 1e9),
+    gainpct: (a, b) => (b.cost > 0 ? unit(b) / b.cost : -1e9) - (a.cost > 0 ? unit(a) / a.cost : -1e9),
+    addedold: (a, b) => String(a.added || "9999").localeCompare(String(b.added || "9999")) };
   return a.slice().sort(S[sortBy] || S.value);
 }
 function chart() {
@@ -647,7 +647,7 @@ ${P.items.length ? `
   ${P.items.length ? `
   ${view === "all" ? `<div class="pch">${chart()}</div>` : ""}
   <div class="bar"><input id="pfq" type="search" placeholder="Filter by name, set, number…" value="${esc(findTxt)}" autocomplete="off"><button class="pill pf-scan" type="button" data-ps="scan" aria-label="Scan cards to select them in your portfolio">📷</button>
-   <select id="pfo" aria-label="Sort">${[["value", "Total value: high to low"], ["low", "Total value: low to high"], ["unit", "Individual value: high to low"], ["unitlow", "Individual value: low to high"], ["gain", "Gain"], ["name", "Name"], ["added", "Recently added"]].map(([k, l]) => `<option value="${k}" ${k === sortBy ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+   <select id="pfo" aria-label="Sort">${[["value", "Total value: high to low"], ["low", "Total value: low to high"], ["unit", "Individual value: high to low"], ["unitlow", "Individual value: low to high"], ["gain", "Gain: high to low"], ["gainlow", "Gain: low to high"], ["gainpct", "Gain %: high to low"], ["added", "Date added: newest first"], ["addedold", "Date added: oldest first"], ["name", "Name"]].map(([k, l]) => `<option value="${k}" ${k === sortBy ? "selected" : ""}>${l}</option>`).join("")}</select></div>
   ${pffHTML()}
   <div id="pflist">${listHTML(list)}</div>${selMode ? `<div id="pfsel" class="pfsel">${selBarHTML()}</div>` : ""}`
   : `<p class="sm">Your portfolio is empty. Import a Collectr export (in Collectr: Portfolio → ⋯ → Export, then open the emailed file here), or add cards with the 📷 scanner or the TCGplayer tab’s Add to portfolio. Everything stays saved on this device.</p>`}`;
