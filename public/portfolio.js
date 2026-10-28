@@ -1263,7 +1263,7 @@ async function sqFind(it, read) {
 // --- TCGplayer market price for each scanned card, for its chosen condition and printing ---
 const sqJp = (it, c) => /japan/i.test(c.set || "") || !!(it.ai && /japan/i.test(it.ai.language || ""));
 function sqPrints(it, c) { if (!c) return []; let pr = c.prints && c.prints.length ? c.prints.slice() : ["Normal"]; if (it.print && !pr.includes(it.print)) pr = [it.print, ...pr]; return pr; }
-const sqPxKey = (it) => [it.pick, it.cond || "Near Mint", it.print || "", sqTarget === "tradeGive" ? (it.pid || "") + (it.mcond || "") : ""].join("|");
+const sqPxKey = (it) => [it.pick, it.cond || "Near Mint", it.print || "", sqOwnMode() ? (it.pid || "") + (it.mcond || "") : ""].join("|");
 async function sqPrice(it) {
   const c = it.pick >= 0 ? it.cards[it.pick] : null; if (!c) return;
   if (!it.print) it.print = sqPrints(it, c)[0];
@@ -1271,9 +1271,14 @@ async function sqPrice(it) {
   it.pxK = k; it.px = undefined; it.pxEst = false; it.pxCond = "";
   // one of your cards in the trade: TCGplayer's live price for your copy's product, condition and printing.
   // When it differs from what your portfolio has, your portfolio is updated to it. Graded copies keep Collectr's price.
-  const cp = sqTarget === "tradeGive" && it.pid ? P.items.find((x) => x.id === it.pid) : null, same = cp && (!it.mcond || it.mcond === sqCopyCond(cp));
-  const showCopy = () => { it.px = unit(cp); it.pxEst = !!cp.mktEst && !(cp.ovr > 0); it.pxCond = ""; sqSave(); if (!sqView) sqRow(it); else sqBar(); };
-  if (same && isGraded(cp)) { if (cp.ovr > 0 || cp.mkt != null) showCopy(); else { it.px = null; sqSave(); if (!sqView) sqRow(it); } return; }
+  // a price you typed in for your copy is its value; graded copies use Collectr's; finding cards in your portfolio uses
+  // the portfolio's own price (nothing is looked up unless the condition is changed)
+  const cp = sqOwnMode() && it.pid ? P.items.find((x) => x.id === it.pid) : null, same = cp && (!it.mcond || it.mcond === sqCopyCond(cp));
+  it.pxSrc = "";
+  const showCopy = () => { it.px = unit(cp); it.pxEst = !!cp.mktEst && !(cp.ovr > 0); it.pxCond = ""; it.pxSrc = cp.ovr > 0 ? "own" : isGraded(cp) ? "collectr" : ""; sqSave(); if (!sqView) sqRow(it); else sqBar(); };
+  if (same && cp.ovr > 0) return showCopy();
+  if (same && isGraded(cp)) { if (cp.mkt != null) showCopy(); else { it.px = null; sqSave(); if (!sqView) sqRow(it); } return; }
+  if (same && sqTarget === "select" && cp.mkt != null) return showCopy();
   let px = null, est = false, cond = "", fbUsed = false, live = false;
   try {
     // cards matched through pokemontcg.io don't carry a TCGplayer product id yet: find it the same way card pictures are found
@@ -1285,7 +1290,7 @@ async function sqPrice(it) {
   } catch {}
   if (it.pxK !== k) return; // the condition, printing or match changed while this was loading
   if (same && !(px > 0) && (cp.ovr > 0 || cp.mkt != null)) return showCopy(); // TCGplayer had nothing: your copy's price
-  if (same && px > 0 && !fbUsed) {
+  if (same && px > 0 && !fbUsed && sqTarget === "tradeGive") {
     if (!cp.tcgId && c.tcgId) cp.tcgId = c.tcgId;
     if (pfSetLive(cp, px, est, live)) trDraw();
   }
@@ -1305,7 +1310,7 @@ function sqPriceHTML(it, c) {
   if (!(it.px > 0)) return `<div class="sq-p mu">TCGplayer: no price found</div>`;
   const q = Math.max(1, Math.round(+it.qty || 1));
   const tip = it.pxEst ? ` <span class="mu" title="No recent sales in this condition on TCGplayer, so this is the Near Mint price with the usual discount">(est.)</span>` : "";
-  return `<div class="sq-p">TCGplayer <span class="sq-pv">${money(it.px)}</span>${q > 1 ? ` <span class="mu">× ${q} =</span> <span class="sq-pv">${money(it.px * q)}</span>` : ""}${tip}${it.grade ? ` <span class="mu">(raw price, not graded)</span>` : ""}</div>`;
+  return `<div class="sq-p">${it.pxSrc === "own" ? "Your price" : it.pxSrc === "collectr" ? "Collectr" : "TCGplayer"} <span class="sq-pv">${money(it.px)}</span>${q > 1 ? ` <span class="mu">× ${q} =</span> <span class="sq-pv">${money(it.px * q)}</span>` : ""}${tip}${it.grade && !it.pxSrc ? ` <span class="mu">(raw price, not graded)</span>` : ""}</div>`;
 }
 
 // --- Shadowless: Base Set cards only. TCGplayer lists the Shadowless print as its own product, so ticking the box swaps
@@ -1548,7 +1553,7 @@ function sqMineHTML(it, c) {
   const pid = sqMinePick(it, mine);
   const one = new Set(mine.map((x) => x.pf)).size < 2, cp = mine.find((x) => x.id === pid), cpc = sqCopyCond(cp), cur = it.mcond || cpc;
   const csel = `<select class="sq-mcd" data-qf="mcond" data-qid="${it.id}" aria-label="Condition for the trade">${[...CONDS, ...TR_GRADES].map((o) => `<option value="${o}" ${o === cur ? "selected" : ""}>${COND_CODE[o] || o}</option>`).join("")}</select>`;
-  return `<div class="sq-mine">${c.fromPf && !it.okPf ? `<span class="sq-st warn sq-chk">Found by searching your portfolio for what was read. Check it's the right card${it.cards.filter((y) => y.fromPf).length > 1 ? " (Change shows the others)" : ""}. <button type="button" class="sq-ok" data-qok="${it.id}">Yes, that's it</button></span>` : ""}<span class="mu">Your copy${mine.length > 1 ? " (tap one)" : ""}:</span>${mine.map((x) => `<button type="button" class="sq-mc" data-qown="${x.id}" data-qid="${it.id}" aria-pressed="${x.id === pid}">${esc(isGraded(x) ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond || "NM")}${x.var ? " · " + esc(x.var) : ""}${x.pf && !one ? " · " + esc(x.pf) : ""} · ×${x.qty}${x.mkt != null || x.ovr > 0 ? " · " + money(unit(x)) : ""}</button>`).join("")}${sqTarget === "select" ? "" : `<span class="sq-mrow">${csel}<label class="sq-mq">Qty <input data-qf="qty" data-qid="${it.id}" type="number" min="1" step="1" inputmode="numeric" value="${it.qty || 1}" aria-label="Quantity"></label></span>`}</div>`;
+  return `<div class="sq-mine">${c.fromPf && !it.okPf ? `<span class="sq-st warn sq-chk">Found by searching your portfolio for what was read. Check it's the right card${it.cards.filter((y) => y.fromPf).length > 1 ? " (Change shows the others)" : ""}. <button type="button" class="sq-ok" data-qok="${it.id}">Yes, that's it</button></span>` : ""}<span class="mu">Your copy${mine.length > 1 ? " (tap one)" : ""}:</span>${mine.map((x) => `<button type="button" class="sq-mc" data-qown="${x.id}" data-qid="${it.id}" aria-pressed="${x.id === pid}">${esc(isGraded(x) ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond || "NM")}${x.var ? " · " + esc(x.var) : ""}${x.pf && !one ? " · " + esc(x.pf) : ""} · ×${x.qty}${x.mkt != null || x.ovr > 0 ? " · " + money(unit(x)) : ""}</button>`).join("")}${sqTarget === "select" ? `<span class="sq-mrow">${csel}</span>` : `<span class="sq-mrow">${csel}<label class="sq-mq">Qty <input data-qf="qty" data-qid="${it.id}" type="number" min="1" step="1" inputmode="numeric" value="${it.qty || 1}" aria-label="Quantity"></label></span>`}</div>`;
 }
 // the TCGplayer price shown for one of your cards follows the copy you're trading: its condition (or the one
 // picked in the dropdown) and its printing
@@ -1612,10 +1617,11 @@ function sqBar() {
   if (tv) {
     const total = ready.reduce((a, x) => a + sqVal(x), 0), cards = ready.reduce((a, x) => a + Math.max(1, Math.round(+x.qty || 1)), 0);
     const wait = ready.filter((x) => x.pxK !== sqPxKey(x) || x.px === undefined).length, none = ready.filter((x) => x.pxK === sqPxKey(x) && x.px !== undefined && !(x.px > 0)).length;
-    tv.innerHTML = ready.length ? `<span class="mu">TCGplayer market value</span> <b>${money(total)}</b> <span class="mu">for ${cards} card${cards === 1 ? "" : "s"}${sel.length && sel.length < ready.length ? ` · selected ${money(selV)}` : ""}${wait ? ` · ${wait} still pricing` : ""}${none ? ` · ${none} without a price` : ""}</span>`
+    tv.innerHTML = ready.length ? `<span class="mu">${ready.some((x) => x.pxSrc === "own" || x.pxSrc === "collectr") ? "Value" : "TCGplayer market value"}</span> <b>${money(total)}</b> <span class="mu">for ${cards} card${cards === 1 ? "" : "s"}${sel.length && sel.length < ready.length ? ` · selected ${money(selV)}` : ""}${wait ? ` · ${wait} still pricing` : ""}${none ? ` · ${none} without a price` : ""}</span>`
       : "";
   }
   el.querySelector("[data-qa=add]").disabled = !sel.length;
+  const ap = el.querySelector("[data-qa=apply]"); if (ap) { const n = sqEdits().length; ap.disabled = !n; ap.textContent = n ? `Apply changes (${n})` : "Apply changes"; }
   sqGroupSync();
   const all = el.querySelector("[data-qa=all]"); if (all) all.textContent = ready.length && sel.length === ready.length ? "Select none" : "Select all";
   const rm = document.querySelector("#ppscan [data-qa=rmsel]"); if (rm) rm.textContent = sel.length ? `Remove ${sel.length} from list` : "Remove from list", rm.disabled = !sel.length;
@@ -1635,7 +1641,7 @@ function sqRender() {
       <div class="sq-list">${scanQ.map(sqRowHTML).join("")}</div>
       <form id="sq-bar" class="sq-bar"><div class="pg">${pfField(sqDefaults.pf && (pfs.includes(sqDefaults.pf) || !pfs.length) ? sqDefaults.pf : pfs[0] || "", pfs)}
         <label>Condition for selected<select data-qa="cond"><option value="">Keep each</option>${CONDS.map((x) => `<option>${x}</option>`).join("")}</select></label></div>
-        <button type="submit" class="ppm-x primary sq-add" data-qa="add">Add to portfolio</button></form>`
+        ${sqTarget === "select" ? `<button type="button" class="ppm-x sq-add sq-apply" data-qa="apply" disabled>Apply changes</button>` : ""}<button type="submit" class="ppm-x primary sq-add" data-qa="add">Add to portfolio</button></form>`
     : `<p class="mu" style="margin:10px 0 4px">Take a photo of each card, one after another. You don't have to wait: each card is read while you take the next, and they all collect here for you to check and add together.</p>
       <p class="mu" style="margin:0">Or choose photos you've already taken. You can pick several at once.</p>`}
   </div>`;
@@ -1667,6 +1673,19 @@ function sqToItem(it, pf) {
     ...(!it.grade && c.tcgId && it.pxK === sqPxKey(it) && it.px > 0 ? { mkt: it.px, mktEst: !!it.pxEst, mktV: 2, pT: Date.now() } : {}) };
 }
 let sqTarget = null; // "trade" / "tradeGive" when the scanner was opened from the trade analyzer (their cards / your cards); "select" to select cards in the portfolio
+// condition changes made while finding your cards, saved to those copies in the portfolio
+function sqEdits() { return scanQ.filter((it) => it.pick >= 0 && it.pid && it.mcond && P.items.some((x) => x.id === it.pid && sqCopyCond(x) !== it.mcond)); }
+function sqApplyEdits() {
+  const list = sqEdits(); if (!list.length) return;
+  selBackup("bulk edit");
+  for (const it of list) { const x = P.items.find((y) => y.id === it.pid); if (!x) continue;
+    if (TR_GRADES.includes(it.mcond)) x.grade = it.mcond; else { x.cond = it.mcond; x.grade = "Ungraded"; }
+    delete x.mktLive; delete x.pWhy; delete x.pTry;
+    if (!isGraded(x) && it.pxK === sqPxKey(it) && it.px > 0 && !(x.ovr > 0)) { x.mkt = it.px; x.mktEst = !!it.pxEst; x.mktV = 2; x.pT = Date.now(); } else { delete x.pT; if (!isGraded(x)) x.mktV = 1; }
+    it.mcond = null; it.pxK = null; }
+  store(); snap(); render(); fillPrices(); sqRender();
+  toast(`Saved the condition of ${list.length} card${list.length === 1 ? "" : "s"}`, { label: "Undo", run: () => { undoImport(); if ($("ppscan")) sqRender(); } });
+}
 function sqOwnMode() { return sqTarget === "tradeGive" || sqTarget === "select"; }
 function sqAddSelected(fm) {
   if (sqTarget === "select") {
@@ -1757,6 +1776,7 @@ document.addEventListener("click", (e) => {
   if (e.target === ov) { ov.remove(); return; }
   const b = e.target.closest("button"); if (!b) return; const d = b.dataset;
   if (d.qa === "close") ov.remove();
+  else if (d.qa === "apply") sqApplyEdits();
   else if (d.qa === "cam") sqCamera();
   else if (d.qa === "lib") sqPicker(false);
   else if (d.qa === "list") { sqView = null; sqRender(); }
@@ -1785,7 +1805,8 @@ document.addEventListener("change", (e) => {
     // the selected copy stays selected (a 1st Edition card doesn't turn into your Unlimited one): only another copy of
     // the same printing that's already in that condition is used instead; otherwise your copy is priced in that condition
     const cur = mine.find((x) => x.id === it.pid), m = cur && mine.find((x) => sqCopyCond(x) === t.value && mVar(x.var) === mVar(cur.var) && String(x.tcgId || "") === String(cur.tcgId || ""));
-    if (m) { it.pid = m.id; it.mcond = null; } else it.mcond = t.value;
+    if (sqTarget === "select") it.mcond = cur && sqCopyCond(cur) === t.value ? null : t.value; // editing this copy: no switching
+    else if (m) { it.pid = m.id; it.mcond = null; } else it.mcond = t.value;
     it.okPf = true; sqSave(); sqRow(it, true); }
   else if (t.dataset.qf) { const it = sqItem(t.dataset.qid); if (!it) return; if (t.dataset.qf === "qty") it.qty = Math.max(1, Math.round(+t.value || 1)); else it[t.dataset.qf] = t.value; sqSave();
     if (t.dataset.qf !== "qty") sqPrice(it); sqRow(it); }
