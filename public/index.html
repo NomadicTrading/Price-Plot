@@ -262,7 +262,7 @@ label.pill{display:inline-block}
 .ed-f select,.ed-f input,.ed-af select,.ed-af input{font:inherit;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:6px 8px;min-height:38px;width:100%;min-width:0}
 .ed-f .ed-cost{grid-column:1/2}.ed-f .ed-pc{grid-column:3/4;grid-row:2}.ed-f .ed-pf{grid-column:2/3;grid-row:2}
 .ed-all{margin:4px 0 10px}.ed-all[open]{padding-bottom:10px}.ed-all>:not(summary){margin-left:10px;margin-right:10px}.ed-af{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0 10px}.ed-af [hidden]{display:none!important}.ed-hint{font-size:12.5px}.ed-bar .sq-add{width:100%}
-.pf-rf{margin:8px 0 2px}.rf{flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:-4px}.rf .pill{padding:5px 12px;font-size:13.5px;min-height:32px}.rf-c{background:var(--soft)}
+.pf-tools{display:flex;align-items:center;gap:8px;margin-top:10px}.pf-tools .rf-b{padding:5px 12px;font-size:13.5px;min-height:36px;flex:none}.pf-tools #pfo{margin-left:auto;max-width:62%}.rf.pf-rf{margin:8px 0 2px}.pf-rf:empty{display:none}.rf{flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:-4px}.rf .pill{padding:5px 12px;font-size:13.5px;min-height:32px}.rf-c{background:var(--soft)}
 .rf-p{flex-basis:100%;display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px;border-radius:12px;background:var(--soft);margin-top:2px}.rf-p label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mut);min-width:0}.rf-p [hidden]{display:none!important}
 .rf-p select,.rf-p input{font:inherit;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:6px 8px;min-height:38px;width:100%;min-width:0}.rf-a{grid-column:1/-1;display:flex;justify-content:flex-end;gap:16px}
 .mg{max-width:460px;max-height:calc(100dvh - 32px)}.mg-s{margin:10px 0 2px;font-size:14px}.mg-l{margin:2px 0 0;padding-left:18px;font-size:13px;color:var(--mut)}.mg-l li{margin:2px 0}.mg-p{margin:8px 0;padding:8px 10px;border-radius:10px;background:var(--soft);font-size:13.5px}.mg-p select{margin-top:6px;width:100%;font:inherit;font-size:14px;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:6px;min-height:36px}
@@ -1031,5 +1031,5 @@ $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
-<script src="/portfolio.js?v=121"></script>
+<script src="/portfolio.js?v=122"></script>
 </body></html>

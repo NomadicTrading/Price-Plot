@@ -515,10 +515,14 @@ function pffOk(x) {
   return true;
 }
 function pffSet(k, v) { if (v === "" || v == null) delete PFF[k]; else PFF[k] = v; try { localStorage.setItem("pp_pffilter", JSON.stringify(PFF)); } catch {} shown = PAGE; render(); }
-function pffHTML() {
+function sortSelHTML() {
+  return `<select id="pfo" aria-label="Sort">${[["value", "Total value: high to low"], ["low", "Total value: low to high"], ["unit", "Individual value: high to low"], ["unitlow", "Individual value: low to high"], ["gain", "Gain: high to low"], ["gainlow", "Gain: low to high"], ["gainpct", "Gain %: high to low"], ["added", "Date added: newest first"], ["addedold", "Date added: oldest first"], ["name", "Name"]].map(([k, l]) => `<option value="${k}" ${k === sortBy ? "selected" : ""}>${l}</option>`).join("")}</select>`;
+}
+function pffHTML(sortSel) {
   const on = pffOn(), sets = [...new Set(owned(P.items).map((x) => x.set).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const sel = (k) => `<label><span>${PFF_NAMES[k]}</span><select data-pff="${k}">${PFF_OPTS[k].map(([v, l]) => `<option value="${esc(v)}" ${v === (PFF[k] || "") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
-  return `<div class="rf pf-rf"><button type="button" class="pill rf-b" data-pffo="1" aria-expanded="${pffOpen}">Filter${on.length ? ` · ${on.length}` : ""} ▾</button>${on.map(([k, v]) => `<button type="button" class="pill rf-c" data-pffx="${k}" aria-label="Remove filter ${esc(pffLabel(k, v))}">${esc(pffLabel(k, v))} ✕</button>`).join("")}
+  return `<div class="pf-tools"><button type="button" class="pill rf-b" data-pffo="1" aria-expanded="${pffOpen}">Filter${on.length ? ` · ${on.length}` : ""} ▾</button>${sortSel}</div>
+  <div class="rf pf-rf">${on.map(([k, v]) => `<button type="button" class="pill rf-c" data-pffx="${k}" aria-label="Remove filter ${esc(pffLabel(k, v))}">${esc(pffLabel(k, v))} ✕</button>`).join("")}
   ${pffOpen ? `<div class="rf-p">${sel("kind")}${sel("lang")}
     <label><span>Value each from $</span><input data-pff="vmin" type="number" min="0" step="any" inputmode="decimal" value="${esc(PFF.vmin ?? "")}" placeholder="0"></label>
     <label><span>to $</span><input data-pff="vmax" type="number" min="0" step="any" inputmode="decimal" value="${esc(PFF.vmax ?? "")}" placeholder="Any"></label>
@@ -647,8 +651,8 @@ ${P.items.length ? `
   ${P.items.length ? `
   ${view === "all" ? `<div class="pch">${chart()}</div>` : ""}
   <div class="bar"><input id="pfq" type="search" placeholder="Filter by name, set, number…" value="${esc(findTxt)}" autocomplete="off"><button class="pill pf-scan" type="button" data-ps="scan" aria-label="Scan cards to select them in your portfolio">📷</button>
-   <select id="pfo" aria-label="Sort">${[["value", "Total value: high to low"], ["low", "Total value: low to high"], ["unit", "Individual value: high to low"], ["unitlow", "Individual value: low to high"], ["gain", "Gain: high to low"], ["gainlow", "Gain: low to high"], ["gainpct", "Gain %: high to low"], ["added", "Date added: newest first"], ["addedold", "Date added: oldest first"], ["name", "Name"]].map(([k, l]) => `<option value="${k}" ${k === sortBy ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-  ${pffHTML()}
+</div>
+  ${pffHTML(sortSelHTML())}
   <div id="pflist">${listHTML(list)}</div>${selMode ? `<div id="pfsel" class="pfsel">${selBarHTML()}</div>` : ""}`
   : `<p class="sm">Your portfolio is empty. Import a Collectr export (in Collectr: Portfolio → ⋯ → Export, then open the emailed file here), or add cards with the 📷 scanner or the TCGplayer tab’s Add to portfolio. Everything stays saved on this device.</p>`}`;
   if (P.items.length) fetchImgs(list.slice(0, shown));
