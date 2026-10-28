@@ -134,9 +134,9 @@ function renderTrade(box) {
     <div class="tr-cash"><label>Cash they add $<input id="tr-cin" type="number" min="0" step="any" inputmode="decimal" value="${trMoneyIn(TRD.cashIn)}" placeholder="0"></label><label>Cash you add $<input id="tr-cout" type="number" min="0" step="any" inputmode="decimal" value="${trMoneyIn(TRD.cashOut)}" placeholder="0"></label><label>Cash offer %<input id="tr-cpct" type="number" min="0" step="any" inputmode="decimal" value="${TRD.cashPct}"></label></div></div>
   <div class="tr-sec"><div class="tr-h"><b>You give</b><span class="mu">${TRD.give.length} card${TRD.give.length === 1 ? "" : "s"}</span></div>
     ${TRD.give.map(trRow).join("")}
-    <input id="tr-find" type="search" placeholder="Add from your portfolio: name, set, number…" value="${esc(trFind)}" autocomplete="off">
+    <div class="tr-add"><input id="tr-find" type="search" placeholder="Add from your portfolio…" value="${esc(trFind)}" autocomplete="off"><button type="button" class="pill" data-tx="scang">📷 Scan</button></div>
     <div class="tr-hits" id="tr-hits">${trPickHTML()}</div>
-    <div class="tr-add"><input id="tr-sq-give" type="search" placeholder="…or search TCGplayer" autocomplete="off"><button type="button" class="pill" data-tx="scang">📷 Scan</button></div><div class="tr-hits" id="tr-sug-give">${trSugHTML("give")}</div></div>
+    <input id="tr-sq-give" type="search" placeholder="…or search TCGplayer" autocomplete="off"><div class="tr-hits" id="tr-sug-give">${trSugHTML("give")}</div></div>
   <div class="tr-sec"><div class="tr-h"><b>You get</b><span class="mu">${TRD.get.length} card${TRD.get.length === 1 ? "" : "s"}</span></div>
     ${TRD.get.map(trRow).join("")}
     <div class="tr-add"><input id="tr-sq-get" type="search" placeholder="Search their card on TCGplayer" autocomplete="off"><button type="button" class="pill" data-tx="scan">📷 Scan</button></div>
