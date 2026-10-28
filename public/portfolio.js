@@ -1498,10 +1498,20 @@ function sqMineHTML(it, c) {
   const csel = `<select class="sq-mcd" data-qf="mcond" data-qid="${it.id}" aria-label="Condition for the trade">${[...CONDS, ...TR_GRADES].map((o) => `<option value="${o}" ${o === cur ? "selected" : ""}>${COND_CODE[o] || o}</option>`).join("")}</select>`;
   return `<div class="sq-mine">${c.fromPf && !it.okPf ? `<span class="sq-st warn sq-chk">Found by searching your portfolio for what was read. Check it's the right card${it.cards.filter((y) => y.fromPf).length > 1 ? " (Change shows the others)" : ""}. <button type="button" class="sq-ok" data-qok="${it.id}">Yes, that's it</button></span>` : ""}<span class="mu">Your copy${mine.length > 1 ? " (tap one)" : ""}:</span>${mine.map((x) => `<button type="button" class="sq-mc" data-qown="${x.id}" data-qid="${it.id}" aria-pressed="${x.id === pid}">${esc(isGraded(x) ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond || "NM")}${x.var ? " · " + esc(x.var) : ""}${x.pf && !one ? " · " + esc(x.pf) : ""} · ×${x.qty}${x.mkt != null || x.ovr > 0 ? " · " + money(unit(x)) : ""}</button>`).join("")}<span class="sq-mrow">${csel}<label class="sq-mq">Qty <input data-qf="qty" data-qid="${it.id}" type="number" min="1" step="1" inputmode="numeric" value="${it.qty || 1}" aria-label="Quantity"></label></span></div>`;
 }
+// the TCGplayer price shown for one of your cards follows the copy you're trading: its condition (or the one
+// picked in the dropdown) and its printing
+function sqMineSync(it) {
+  const c = it.pick >= 0 ? it.cards[it.pick] : null; if (!c) return;
+  const mine = sqMine(it, c); if (!mine.length) return;
+  const cp = mine.find((x) => x.id === sqMinePick(it, mine)); if (!cp) return;
+  const eff = it.mcond || sqCopyCond(cp);
+  if (CONDS.includes(eff) && it.cond !== eff) it.cond = eff;
+  if (cp.var && it.print !== cp.var) it.print = cp.var;
+}
 const sqCopyCond = (x) => (!x ? "Near Mint" : isGraded(x) ? shortGrade(x.grade) : x.cond || "Near Mint");
 function sqPfs() { return [...new Set(P.items.filter((x) => x.qty > 0 && x.pf).map((x) => x.pf))].sort(); }
 function sqRowHTML(it) {
-  if (sqTarget === "tradeGive") sqOwnFix(it);
+  if (sqTarget === "tradeGive") { sqOwnFix(it); sqMineSync(it); }
   const c = it.pick >= 0 ? it.cards[it.pick] : null, a = it.ai;
   const status = it.st === "wait" ? "Waiting…" : it.st === "reading" ? (it.note || "Reading the card…") : it.st === "error" ? it.err : it.err ? it.err : it.unsure ? "Check this match" : "";
   const prints = sqPrints(it, c);
