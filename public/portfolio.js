@@ -13,7 +13,7 @@ let PFF = (() => { try { const f = JSON.parse(localStorage.getItem("pp_pffilter"
    Your cards: cards from your portfolio (or found on TCGplayer), at their full market value.
    Their cards: the trader's cards (TCGplayer search or the scanner), counted at a trade % (list-wide, or per card).
    Your position = their trade credit + cash they add − (your cards + cash you add): green when you come out ahead.
-   Their cards needed = what you give (net of cash) ÷ the trade %: the reverse calculation ($80 at 80% → $100).
+   Their cards need = what you give (net of cash) ÷ the trade %: the reverse calculation ($80 at 80% → $100).
    Graded cards are valued at Collectr's price (from your portfolio); a graded card you don't own needs its price typed.
    The trade is saved on this device as you go, and Complete trade updates the portfolio (with Undo). */
 const TR_KEY = "pp_trade";
@@ -103,7 +103,7 @@ function trBalHTML() {
   const m = trMath(), up = m.pos >= -0.005;
   return `<div class="tr-pos" style="color:var(${up ? "--up" : "--dn"})">${up ? "+" : "−"}${money(Math.abs(m.pos))}</div>
     <div class="tr-st"><span>Your cards <b>${money(m.give)}</b></span><span>Their cards <b>${money(m.getMk)}</b> <span class="mu">= ${money(m.credit)} credit</span></span>
-    <span>Their cards needed <b>${m.need != null ? money(m.need) : "—"}</b> <span class="mu">at ${TRD.pct}%</span></span>
+    <span>Their cards need <b>${m.need != null ? money(m.need) : "—"}</b> <span class="mu">at ${TRD.pct}%</span></span>
     <span>Cash offer for their cards <b>${money(m.cash)}</b> <span class="mu">at ${TRD.cashPct}%</span></span></div>
     ${m.missing ? `<div class="mu" style="font-size:12.5px">${m.missing} card${m.missing === 1 ? " has" : "s have"} no price yet and count as $0.</div>` : ""}`;
 }
