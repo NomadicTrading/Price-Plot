@@ -984,8 +984,9 @@ async function tpHistory(id) {
     // TCGplayer lists a market price for each condition and printing every week, whether or not it sold:
     // mk/mt is the latest one. b keeps only the weeks with sales (for the sales chart).
     const lm = all.filter((k) => k[5] > 0).sort((x, y) => x[0] - y[0]).pop();
+    // m: every week's market price [start ms, market], for a market line when there's no daily history (sealed products)
     return { cond: s.condition || "", print: s.variant || s.printing || "", lang: s.language || "", mk: lm ? lm[5] : null, mt: lm ? lm[0] : null,
-      b: all.filter((k) => k[4] > 0 && k[1] > 0) };
+      b: all.filter((k) => k[4] > 0 && k[1] > 0), m: all.filter((k) => k[5] > 0).sort((x, y) => x[0] - y[0]).map((k) => [k[0], k[5]]) };
   }).filter((s) => s.b.length || s.mk > 0);
 }
 // One card's TCGplayer market price for a given condition and printing (the latest week's market price from
