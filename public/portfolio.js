@@ -157,7 +157,7 @@ function renderTrade(box) {
     <div class="tr-add"><input id="tr-find" type="search" placeholder="Add from your portfolio…" value="${esc(trFind)}" autocomplete="off"><button type="button" class="pill" data-tx="scang">📷 Scan</button></div>
     <div class="tr-hits" id="tr-hits">${trPickHTML()}</div>
     <input id="tr-sq-give" type="search" placeholder="…or search TCGplayer" autocomplete="off"><div class="tr-hits" id="tr-sug-give">${trSugHTML("give")}</div></div>
-  <div class="tr-sec"><div class="tr-h"><b>Their cards</b><span class="mu">${TRD.get.length} card${TRD.get.length === 1 ? "" : "s"}</span></div>
+  <div class="tr-sec tr-them"><div class="tr-h"><b>Their cards</b><span class="mu">${TRD.get.length} card${TRD.get.length === 1 ? "" : "s"}</span></div>
     ${TRD.get.map(trRow).join("")}
     <div class="tr-add"><input id="tr-sq-get" type="search" placeholder="Search their card on TCGplayer" autocomplete="off"><button type="button" class="pill" data-tx="scan">📷 Scan</button></div>
     <div class="tr-hits" id="tr-sug-get">${trSugHTML("get")}</div></div>
