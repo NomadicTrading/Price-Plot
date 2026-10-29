@@ -152,7 +152,7 @@ function renderTrade(box) {
     <input type="range" class="sq-rg" id="tr-rg" min="0" max="100" step="1" value="${Math.min(100, Math.round(TRD.pct))}" aria-label="Trade percent for their cards">
     <div class="sq-pp" id="tr-pr">${SQ_PRESETS.map((x) => `<button type="button" class="sq-pb" data-tpp="${x}" aria-pressed="${TRD.pct === x}">${x}%</button>`).join("")}</div>
     <div class="tr-cash"><label>Cash they add $<input id="tr-cin" type="number" min="0" step="any" inputmode="decimal" value="${trMoneyIn(TRD.cashIn)}" placeholder="0"></label><label>Cash you add $<input id="tr-cout" type="number" min="0" step="any" inputmode="decimal" value="${trMoneyIn(TRD.cashOut)}" placeholder="0"></label><label>Cash offer %<input id="tr-cpct" type="number" min="0" step="any" inputmode="decimal" value="${TRD.cashPct}"></label></div></div>
-  <div class="tr-sec"><div class="tr-h"><b>Your cards</b><span class="mu">${TRD.give.length} card${TRD.give.length === 1 ? "" : "s"}</span></div>
+  <div class="tr-sec tr-you"><div class="tr-h"><b>Your cards</b><span class="mu">${TRD.give.length} card${TRD.give.length === 1 ? "" : "s"}</span></div>
     ${TRD.give.map(trRow).join("")}
     <div class="tr-add"><input id="tr-find" type="search" placeholder="Add from your portfolio…" value="${esc(trFind)}" autocomplete="off"><button type="button" class="pill" data-tx="scang">📷 Scan</button></div>
     <div class="tr-hits" id="tr-hits">${trPickHTML()}</div>
