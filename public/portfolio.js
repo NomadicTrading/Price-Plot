@@ -101,7 +101,7 @@ function trValTxt(c) {
 }
 function trBalHTML() {
   const m = trMath(), up = m.pos >= -0.005;
-  return `<div class="tr-pos" style="color:var(${up ? "--up" : "--dn"})">${up ? "+" : "−"}${money(Math.abs(m.pos))}</div>
+  return `<div class="tr-top"><div class="tr-pos" style="color:var(${up ? "--up" : "--dn"})">${up ? "+" : "−"}${money(Math.abs(m.pos))}</div><button class="pill" type="button" data-tx="sum" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>Trade summary</button></div>
     <div class="tr-st"><span>Your cards <b>${money(m.give)}</b></span><span>Their cards <b>${money(m.getMk)}</b> <span class="mu">= ${money(m.credit)} credit</span></span>
     <span>Their cards need <b>${m.need != null ? money(m.need) : "—"}</b> <span class="mu">at ${TRD.pct}%</span></span>
     <span>Cash offer for their cards <b>${money(m.cash)}</b> <span class="mu">at ${TRD.cashPct}%</span></span></div>
@@ -161,7 +161,7 @@ function renderTrade(box) {
     ${TRD.get.map(trRow).join("")}
     <div class="tr-add"><input id="tr-sq-get" type="search" placeholder="Search their card on TCGplayer" autocomplete="off"><button type="button" class="pill" data-tx="scan">📷 Scan</button></div>
     <div class="tr-hits" id="tr-sug-get">${trSugHTML("get")}</div></div>
-  <div class="bar"><button class="pill" type="button" data-tx="sum" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>Trade summary</button><button class="pill on" type="button" data-tx="done" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>Complete trade</button></div>
+  <div class="bar"><button class="pill on" type="button" data-tx="done" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>Complete trade</button></div>
   <div class="sm">Your cards count at full market value; theirs at the trade % (set one card's own % in its box). The green or red number is where you stand: trade credit plus cash they add, minus your cards and cash you add. Graded cards use Collectr's price.</div></div>`;
   for (const c of [...TRD.give, ...TRD.get]) { if (c.pxK !== [c.cond, c.var, c.grade].join("|") && !(c.pid && trEach(c) != null)) trPrice(c); trLoadPrints(c); trLive(c); }
 }
