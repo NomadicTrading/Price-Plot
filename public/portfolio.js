@@ -2082,11 +2082,18 @@ function edRowHTML(x) {
       <label><span>Condition</span><select data-ef="cond" data-eid="${x.id}">${conds.map((o) => `<option value="${esc(o)}" ${o === cur ? "selected" : ""}>${esc(COND_CODE[o] || o)}</option>`).join("")}</select></label>
       <label><span>Printing</span><select data-ef="var" data-eid="${x.id}">${printOpts(prints, d.var || "")}</select></label>
       <label><span>Qty</span><input data-ef="qty" data-eid="${x.id}" type="number" min="0" step="1" inputmode="numeric" value="${esc(d.qty)}"></label>
-      <label class="ed-cost"><span>Paid each $</span><input data-ef="cost" data-eid="${x.id}" type="number" min="0" step="any" inputmode="decimal" value="${d.cost > 0 ? d.cost : ""}"></label>
-      <label class="ed-pc"><span>%</span><input data-ef="pct" data-eid="${x.id}" type="number" min="0" step="any" inputmode="decimal" value="${pc}" ${mk > 0 ? "" : "disabled placeholder=\"–\""}></label>
+      ${edHid(x.id) ? `<label class="ed-cost"><span>Paid each $</span><button type="button" class="ed-mask" data-eshow="${x.id}" aria-label="Show what you paid">${d.cost > 0 ? "••••" : "–"}<small>tap to show</small></button></label>
+      <label class="ed-pc"><span>%</span><button type="button" class="ed-mask" data-eshow="${x.id}" aria-label="Show what you paid">••</button></label>`
+      : `<label class="ed-cost"><span>Paid each $</span><input data-ef="cost" data-eid="${x.id}" type="number" min="0" step="any" inputmode="decimal" value="${d.cost > 0 ? d.cost : ""}"></label>
+      <label class="ed-pc"><span>%</span><input data-ef="pct" data-eid="${x.id}" type="number" min="0" step="any" inputmode="decimal" value="${pc}" ${mk > 0 ? "" : "disabled placeholder=\"–\""}></label>`}
       <label class="ed-pf"><span>Portfolio</span><select data-ef="pf" data-eid="${x.id}">${[...new Set([...pfs, d.pf].filter(Boolean))].map((p) => `<option ${p === d.pf ? "selected" : ""}>${esc(p)}</option>`).join("")}</select></label>
     </div></div>`;
 }
+// Paid each is hidden in the multi-card editor until tapped (one card at a time), or shown for all with the
+// Show paid / Hide paid toggle. The toggle is remembered on this device.
+let edHide = (() => { try { return localStorage.getItem("pp_ed_hide") !== "0"; } catch { return true; } })();
+const edHid = (id) => edHide && !(ED && ED.show && ED.show.has(id));
+const edHideBtn = () => `<button type="button" class="pill ed-hb" data-ea="hide" aria-pressed="${!edHide}">${edHide ? "Show paid" : "Hide paid"}</button>`;
 function edRowPrice(x) {
   const el = document.querySelector(`#pfed [data-epx="${x.id}"]`), d = ED.d.get(x.id); if (!el || !d) return;
   el.innerHTML = edPriceHTML(x, d);
@@ -2104,7 +2111,7 @@ function edTotal() {
 }
 function edOpen() {
   const ids = P.items.filter((x) => selIds.has(x.id)).map((x) => x.id); if (!ids.length) return;
-  ED = { ids, d: new Map(), px: new Map() };
+  ED = { ids, d: new Map(), px: new Map(), show: new Set() };
   for (const id of ids) { const x = P.items.find((y) => y.id === id); ED.d.set(id, { cond: x.cond || "Near Mint", var: x.var || "", grade: isGraded(x) ? x.grade : "", qty: x.qty, cost: x.cost || 0, pf: x.pf || "", notes: x.notes || "" }); }
   edRender();
   // the printings each card comes in, two at a time
@@ -2120,7 +2127,7 @@ function edRender() {
   const items = ED.ids.map((id) => P.items.find((y) => y.id === id)).filter(Boolean), pfs = [...new Set(P.items.map((y) => y.pf).filter(Boolean))].sort();
   const keep = `<option value="">Keep each</option>`, opt = (v, l) => `<option value="${esc(v)}">${esc(l ?? v)}</option>`;
   ov.innerHTML = `<div class="ppm sqm" role="dialog" aria-modal="true" aria-labelledby="ed-h">
-    <div class="sq-h"><h3 id="ed-h">Edit ${items.length} card${items.length === 1 ? "" : "s"}</h3><button type="button" class="ppm-x plain sq-close" data-ea="close">Close</button></div>
+    <div class="sq-h"><h3 id="ed-h">Edit ${items.length} card${items.length === 1 ? "" : "s"}</h3><span class="ed-hd">${edHideBtn()}<button type="button" class="ppm-x plain sq-close" data-ea="close">Close</button></span></div>
     <div class="sq-v" id="ed-v"></div>
     <details class="sq-o ed-all"${ED.allOpen ? " open" : ""}><summary class="sq-os"><b>Set the same for all</b> <span class="mu">optional</span></summary>
       <div class="ed-af">
@@ -2183,6 +2190,10 @@ document.addEventListener("click", async (e) => {
   const b = e.target.closest("button"); if (!b) return; const d = b.dataset;
   if (d.ea === "close") edClose();
   else if (d.ea === "apply") edApply();
+  else if (d.ea === "hide") { edHide = !edHide; ED.show.clear(); try { localStorage.setItem("pp_ed_hide", edHide ? "1" : "0"); } catch {}
+    b.outerHTML = edHideBtn(); const items = ED.ids.map((id) => P.items.find((y) => y.id === id)).filter(Boolean), l = ov.querySelector(".sq-list"); if (l) l.innerHTML = items.map(edRowHTML).join(""); }
+  else if (d.eshow) { const x = P.items.find((y) => y.id === d.eshow), r = $("ed-" + d.eshow); if (!x || !r) return; ED.show.add(x.id); r.outerHTML = edRowHTML(x);
+    const c = ov.querySelector(`[data-ef="cost"][data-eid="${x.id}"]`); if (c) c.focus({ preventScroll: true }); }
   else if (d.ezm) { const x = P.items.find((y) => y.id === d.ezm); if (x) ppZoom([x.tcgId ? `https://tcgplayer-cdn.tcgplayer.com/product/${x.tcgId}_in_1000x1000.jpg` : "", x.big, x.img], x.name); }
   else if (d.edrop) { ED.ids = ED.ids.filter((id) => id !== d.edrop); ED.d.delete(d.edrop); selIds.delete(d.edrop); selSync(); const r = $("ed-" + d.edrop); if (r) r.remove(); if (!ED.ids.length) return edClose(true); const h = $("ed-h"); if (h) h.textContent = `Edit ${ED.ids.length} card${ED.ids.length === 1 ? "" : "s"}`; edTotal(); }
   else if (d.ea === "setall") {
