@@ -161,7 +161,7 @@ function renderTrade(box) {
     ${TRD.get.map(trRow).join("")}
     <div class="tr-add"><input id="tr-sq-get" type="search" placeholder="Search their card on TCGplayer" autocomplete="off"><button type="button" class="pill" data-tx="scan">📷 Scan</button></div>
     <div class="tr-hits" id="tr-sug-get">${trSugHTML("get")}</div></div>
-  <div class="bar"><button class="pill on" type="button" data-tx="done" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>Complete trade</button></div>
+  <div class="bar"><button class="pill" type="button" data-tx="sum" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>Trade summary</button><button class="pill on" type="button" data-tx="done" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>Complete trade</button></div>
   <div class="sm">Your cards count at full market value; theirs at the trade % (set one card's own % in its box). The green or red number is where you stand: trade credit plus cash they add, minus your cards and cash you add. Graded cards use Collectr's price.</div></div>`;
   for (const c of [...TRD.give, ...TRD.get]) { if (c.pxK !== [c.cond, c.var, c.grade].join("|") && !(c.pid && trEach(c) != null)) trPrice(c); trLoadPrints(c); trLive(c); }
 }
@@ -221,6 +221,7 @@ document.addEventListener("click", (e) => {
   else if (d.tx === "scan") { sqTarget = "trade"; sqOpen(); }
   else if (d.tx === "scang") { sqTarget = "tradeGive"; sqOpen(); }
   else if (d.tx === "done") trComplete();
+  else if (d.tx === "sum") trSummary();
   else if (d.tpick) { const x = P.items.find((y) => y.id === d.tpick); if (x) { trAddFromPortfolio(x); trFind = ""; render(); } }
   else if (d.tsmore) trSugMoreLoad(d.tsmore);
   else if (d.tpmore) trPickMore();
@@ -260,6 +261,56 @@ document.addEventListener("change", (e) => {
   else if (t.dataset.tf === "var") { c.var = t.value; trSave(); trPrice(c); render(); }
   else if (t.dataset.tf === "qty") { t.value = trQ(c); }
 });
+
+/* Trade summary: every card on both sides and the trade's numbers on one compact page, sized to screenshot whole
+   and send to someone for review. "Show trade % and my position" can be turned off before sending it to the trader. */
+let trSumMine = (() => { try { return localStorage.getItem("pp_trsum_mine") !== "0"; } catch { return true; } })();
+function trSumRow(c, mine) {
+  const each = trEach(c), q = trQ(c), tot = each != null ? each * q : null, get = c.side === "get", pc = trPctOf(c);
+  const cond = c.grade ? shortGrade(c.grade) : COND_CODE[c.cond] || c.cond || "NM";
+  const pic = c.img || (c.tcgId ? `https://tcgplayer-cdn.tcgplayer.com/product/${c.tcgId}_in_1000x1000.jpg` : "");
+  return `<div class="ts-r"><span class="ts-pic">${pic ? `<img src="${esc(pic)}" alt="">` : ""}</span>
+    <span class="ts-m"><b>${esc(c.name)}</b><span class="mu">${esc([c.set, c.num].filter(Boolean).join(" · "))}</span><span class="ts-tg"><i>${esc(cond)}</i>${c.var ? `<i>${esc(c.var)}</i>` : ""}${q > 1 ? `<i>×${q}</i>` : ""}</span></span>
+    <span class="ts-v"><b>${tot != null ? money(tot) : "—"}</b>${q > 1 && each != null ? `<small>${money(each)} each</small>` : ""}${get && mine && tot != null ? `<small>${pc}% = ${money(tot * pc / 100)}</small>` : ""}</span></div>`;
+}
+function trSumHTML() {
+  const m = trMath(), mine = trSumMine, cin = +TRD.cashIn || 0, cout = +TRD.cashOut || 0;
+  const giveQ = TRD.give.reduce((a, c) => a + trQ(c), 0), getQ = TRD.get.reduce((a, c) => a + trQ(c), 0);
+  const giveTot = m.give + cout, getTot = m.getMk + cin, diff = getTot - giveTot, up = m.pos >= -0.005;
+  const perCard = TRD.get.some((c) => c.pct != null && c.pct !== TRD.pct);
+  const line = (l, v, cls) => `<div class="ts-l${cls ? " " + cls : ""}"><span>${l}</span><b>${v}</b></div>`;
+  const d = new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return `<div class="ts-card" id="ts-card">
+    <div class="ts-hd"><h3 class="ts-t">Trade summary</h3><span class="ts-br"><img src="/brand/icon-small.svg" width="22" height="22" alt=""><span>Price<span class="pp-dot">·</span>Plot<small class="mu">${esc(d)}</small></span></span></div>
+    <div class="ts-cols">
+      <div class="ts-s"><div class="ts-sh"><b>I give</b><span class="mu">${giveQ} card${giveQ === 1 ? "" : "s"}</span></div>
+        ${TRD.give.map((c) => trSumRow(c, mine)).join("") || `<div class="mu ts-e">No cards</div>`}
+        ${cout > 0 ? line("+ Cash", money(cout)) : ""}${line("Total (market)", money(giveTot), "tot")}</div>
+      <div class="ts-s them"><div class="ts-sh"><b>I get</b><span class="mu">${getQ} card${getQ === 1 ? "" : "s"}</span></div>
+        ${TRD.get.map((c) => trSumRow(c, mine)).join("") || `<div class="mu ts-e">No cards</div>`}
+        ${cin > 0 ? line("+ Cash", money(cin)) : ""}${line("Total (market)", money(getTot), "tot")}</div>
+    </div>
+    <div class="ts-bal">
+      ${line("Market difference", (diff >= -0.005 ? "+" : "−") + money(Math.abs(diff)) + ` <span class="mu">${Math.abs(diff) < 0.005 ? "even" : diff > 0 ? "in my favor" : "in their favor"}</span>`)}
+      ${mine ? line(`Trade credit for their cards at ${TRD.pct}%${perCard ? " (some cards set separately)" : ""}`, money(m.credit))
+        + line(`Their cards needed at ${TRD.pct}%`, m.need != null ? money(m.need) : "—")
+        + line("Cash offer for their cards" + ` at ${TRD.cashPct}%`, money(m.cash))
+        + `<div class="ts-pos" style="color:var(${up ? "--up" : "--dn"})"><span>My position</span><b>${up ? "+" : "−"}${money(Math.abs(m.pos))}</b></div>` : ""}
+    </div>
+    <div class="ts-ft mu">Raw cards at TCGplayer market price${TRD.give.concat(TRD.get).some(trGraded) ? ", graded cards at Collectr's price" : ""}${TRD.give.concat(TRD.get).some((c) => c.own > 0) ? ", typed prices where set" : ""}.${m.missing ? ` ${m.missing} card${m.missing === 1 ? " has" : "s have"} no price and count${m.missing === 1 ? "s" : ""} as $0.` : ""}</div>
+  </div>`;
+}
+function trSummary() {
+  const ov = document.createElement("div"); ov.className = "ppm-ov ts-ov";
+  const paint = () => { ov.innerHTML = `<div class="ts-wrap" role="dialog" aria-modal="true" aria-label="Trade summary">
+    <div class="ts-bar"><label class="ts-tog"><input type="checkbox" data-tsm="1" ${trSumMine ? "checked" : ""}> Show trade % and my position</label><button type="button" class="pill" data-x="1">Close</button></div>
+    ${trSumHTML()}<div class="ts-tip mu">Screenshot this page to send it. Turn off “Show trade % and my position” to share it with the other trader.</div></div>`; };
+  const close = () => { removeEventListener("keydown", key); ov.remove(); }, key = (e) => { if (e.key === "Escape") close(); };
+  ov.onclick = (e) => { if (e.target === ov || e.target.closest("[data-x]")) close(); };
+  ov.onchange = (e) => { if (e.target.dataset.tsm) { trSumMine = e.target.checked; try { localStorage.setItem("pp_trsum_mine", trSumMine ? "1" : "0"); } catch {} paint(); } };
+  ov.addEventListener("error", (e) => { if (e.target.tagName === "IMG" && e.target.closest(".ts-pic")) e.target.remove(); }, true);
+  paint(); addEventListener("keydown", key); document.body.appendChild(ov); ov.querySelector("[data-x]").focus();
+}
 
 /* Complete trade: your cards leave the portfolio, theirs come in. What you gave (your cards at market, plus cash you
    added, less cash they added) becomes the cost of their cards, shared out by market value. */
