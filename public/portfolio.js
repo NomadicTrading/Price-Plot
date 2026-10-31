@@ -1819,7 +1819,7 @@ function sqRender() {
       <div class="sq-list">${scanQ.map(sqRowHTML).join("")}</div>
       <form id="sq-bar" class="sq-bar"><div class="pg">${pfField(sqDefaults.pf && (pfs.includes(sqDefaults.pf) || !pfs.length) ? sqDefaults.pf : pfs[0] || "", pfs)}
         <label>Condition for selected<select data-qa="cond"><option value="">Keep each</option>${CONDS.map((x) => `<option>${x}</option>`).join("")}</select></label></div>
-        ${sqTarget === "select" ? `<button type="button" class="ppm-x sq-add sq-apply" data-qa="apply" disabled>Apply changes</button>` : ""}${sqTarget ? "" : `<button type="button" class="ppm-x sq-add sq-trd" data-qa="trade" disabled>⇄ Add to trade</button>`}<button type="submit" class="ppm-x primary sq-add" data-qa="add">Add to portfolio</button></form>`
+        ${sqTarget === "select" ? `<button type="button" class="ppm-x sq-add sq-apply" data-qa="apply" disabled>Apply changes</button>` : ""}<button type="submit" class="ppm-x primary sq-add" data-qa="add">Add to portfolio</button>${sqTarget ? "" : `<button type="button" class="ppm-x sq-add sq-trd" data-qa="trade" disabled>⇄ Add to trade</button>`}</form>`
     : `<p class="mu" style="margin:10px 0 4px">Take a photo of each card, one after another. You don't have to wait: each card is read while you take the next, and they all collect here for you to check and add together.</p>
       <p class="mu" style="margin:0">Or choose photos you've already taken. You can pick several at once.</p>`}
   </div>`;
