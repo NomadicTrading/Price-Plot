@@ -81,7 +81,7 @@ function trRow(c) {
   const note = c.own > 0 ? "your price" : trSrc(c) && each != null && c.px == null ? "portfolio value" : c.pxNote || (c.px == null && !trGraded(c) ? "looking up…" : "");
   return `<div class="tr-r" data-tc="${c.id}">
     <button type="button" class="tr-pic" data-tzm="${c.id}" ${c.img ? "" : "disabled"} aria-label="Enlarge picture">${c.img ? `<img src="${esc(c.img)}" alt="" loading="lazy">` : ""}</button>
-    <div class="tr-m"><b>${esc(c.name)}</b><div class="mu">${esc([c.set, c.num].filter(Boolean).join(" · "))}${c.pid ? " · from your portfolio" : ""}</div>
+    <div class="tr-m"><b class="ptn" data-ptn="${c.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(c.name)}</b><div class="mu">${esc([c.set, c.num].filter(Boolean).join(" · "))}${c.pid ? " · from your portfolio" : ""}</div>
       <div class="tr-v" data-tv="${c.id}">${trValTxt(c)}</div></div>
     <button type="button" class="sq-x" data-tdel="${c.id}" aria-label="Remove from trade">✕</button>
     <div class="tr-f">
@@ -270,7 +270,7 @@ function trSumRow(c, mine) {
   const cond = c.grade ? shortGrade(c.grade) : COND_CODE[c.cond] || c.cond || "NM";
   const pic = c.img || (c.tcgId ? `https://tcgplayer-cdn.tcgplayer.com/product/${c.tcgId}_in_1000x1000.jpg` : "");
   return `<div class="ts-r"><span class="ts-pic">${pic ? `<img src="${esc(pic)}" alt="">` : ""}</span>
-    <span class="ts-m"><b>${esc(c.name)}</b><span class="mu">${esc([c.set, c.num].filter(Boolean).join(" · "))}</span><span class="ts-tg"><i>${esc(cond)}</i>${c.var ? `<i>${esc(c.var)}</i>` : ""}${q > 1 ? `<i>×${q}</i>` : ""}</span></span>
+    <span class="ts-m"><b class="ptn" data-ptn="${c.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(c.name)}</b><span class="mu">${esc([c.set, c.num].filter(Boolean).join(" · "))}</span><span class="ts-tg"><i>${esc(cond)}</i>${c.var ? `<i>${esc(c.var)}</i>` : ""}${q > 1 ? `<i>×${q}</i>` : ""}</span></span>
     <span class="ts-v"><b>${tot != null ? money(tot) : "—"}</b>${q > 1 && each != null ? `<small>${money(each)} each</small>` : ""}${get && mine && tot != null ? `<small>${pc}% = ${money(tot * pc / 100)}</small>` : ""}</span></div>`;
 }
 function trSumHTML() {
@@ -629,7 +629,7 @@ function rowHTML(x) {
   const g = isGraded(x), line = view === "watch" ? unit(x) : unit(x) * x.qty, gain = x.cost > 0 && x.qty ? (unit(x) - x.cost) * x.qty : null;
   const meta = [x.set, x.num, x.var && x.var !== "Normal" ? x.var : "", x.cat && x.cat !== "Pokemon" ? x.cat : ""].filter(Boolean).map(esc).join(" · ");
   if (editing === x.id) return `<div class="pr" data-id="${x.id}">${form(x)}</div>`;
-  return `<div class="pr${selMode ? " selm" : ""}${selMode && selIds.has(x.id) ? " sel" : ""}" data-id="${x.id}"><button class="prx" type="button" data-trash="${x.id}" tabindex="-1" aria-label="Remove ${esc(x.name)}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></button><div class="prc">${selMode ? `<span class="pr-ck" role="checkbox" aria-checked="${selIds.has(x.id)}" aria-label="Select ${esc(x.name)}"></span>` : ""}${thumb(x)}<div class="pm"><b>${esc(x.name)}</b> <span class="cg ${g ? "gr" : ""}">${esc(g ? shortGrade(x.grade) : x.cond || "")}</span>
+  return `<div class="pr${selMode ? " selm" : ""}${selMode && selIds.has(x.id) ? " sel" : ""}" data-id="${x.id}"><button class="prx" type="button" data-trash="${x.id}" tabindex="-1" aria-label="Remove ${esc(x.name)}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></button><div class="prc">${selMode ? `<span class="pr-ck" role="checkbox" aria-checked="${selIds.has(x.id)}" aria-label="Select ${esc(x.name)}"></span>` : ""}${thumb(x)}<div class="pm"><b class="ptn" data-ptn="${x.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(x.name)}</b> <span class="cg ${g ? "gr" : ""}">${esc(g ? shortGrade(x.grade) : x.cond || "")}</span>
   <div class="mu">${meta}${view === "all" && x.pf ? ` · <i>${esc(x.pf)}</i>` : ""}</div>
   <div class="mu">${view === "watch" ? "" : x.qty + " × "}${x.mkt == null && !(x.ovr > 0) ? "—" : money(unit(x)) + (view !== "watch" && x.qty > 1 ? " = " + money(line) : "")}${x.ovr > 0 ? ` <span title="Your own price, set in Collectr or here">(your price)</span>` : x.mkt == null ? (pfq.includes(x) || pfRunning ? " (looking up price…)" : " (no price)") : x.mktV !== 2 && !isGraded(x) ? ` <span title="Collectr's price until TCGplayer's is found">(Collectr${pfq.includes(x) || (pfRunning && !x.pTry) ? " · looking up TCGplayer…" : x.pWhy ? " · " + esc(x.pWhy) : ""})</span>` : x.mktEst ? ` <span title="No recent ${esc(x.cond || "")} sales on TCGplayer, so this is the Near Mint price with the usual discount for this condition">(est.)</span>` : ""}</div>${gain != null ? `<div class="mu pr-g">vs. ${money(x.cost)} paid · <span style="color:var(${gain >= 0 ? "--up" : "--dn"});font-weight:600;white-space:nowrap">${gain >= 0 ? "+" : "−"}${money(Math.abs(gain))} (${gain >= 0 ? "+" : "−"}${Math.abs((gain / (x.cost * x.qty)) * 100).toFixed(1)}%)</span></div>` : ""}
   ${x.notes ? `<div class="mu">${esc(x.notes)}</div>` : ""}</div>
@@ -673,7 +673,7 @@ function form(x) {
   const pic = x.big || x.img;
   return `<form class="pe" data-fid="${x.id || ""}"><button type="button" class="pe-x" data-cx="1" aria-label="Close without saving">✕</button>
   ${x.id ? `<div class="pe-h"><button type="button" class="pe-pic" data-zm="${x.id}" aria-label="Enlarge the picture of ${esc(x.name)}" ${pic ? "" : "disabled"}>${pic ? `<img src="${esc(x.img || pic)}" alt="">` : ""}</button>
-    <div class="pe-hm"><b>${esc(x.name)}</b>${esc([x.set, x.num].filter(Boolean).join(" · "))}</div></div>` : ""}<div class="pg">${f("name", "Card name", x.name, "text", "required")}${f("set", "Set", x.set)}${f("num", "Number", x.num)}${printField(x)}
+    <div class="pe-hm"><b class="ptn" data-ptn="${x.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(x.name)}</b>${esc([x.set, x.num].filter(Boolean).join(" · "))}</div></div>` : ""}<div class="pg">${f("name", "Card name", x.name, "text", "required")}${f("set", "Set", x.set)}${f("num", "Number", x.num)}${printField(x)}
   <label>Condition<select name="cond">${[...CONDS, "Sealed", ...(x.cond && !CONDS.includes(x.cond) && x.cond !== "Sealed" ? [x.cond] : [])].map((c) => `<option ${c === (x.cond || "Near Mint") ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
   ${f("grade", "Grade (blank if raw)", isGraded(x) ? x.grade : "", "text", 'placeholder="e.g. PSA 10"')}
   ${f("qty", "Quantity", x.qty ?? 1, "number", 'min="0" step="1" inputmode="numeric"')}${costField(x)}
@@ -929,7 +929,7 @@ function renderDetail(box, x) {
   const gi = gradeOf(x), meta = [x.set, x.num, x.var].filter(Boolean).map(esc).join(" · ") + " · " + esc(gi ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond || "NM");
   const pic = x.img ? `<a class="cdx-pic" href="${esc(x.tcgId ? "https://www.tcgplayer.com/product/" + encodeURIComponent(x.tcgId) : x.big || x.img)}" target="_blank" rel="noopener" aria-label="${esc(x.name)} on TCGplayer"><img src="${esc(x.big || x.img)}" alt="${esc(x.name)}"></a>` : `<span class="cdx-pic none" aria-hidden="true"></span>`;
   const head = (fair) => `<div class="cdx-top"><button class="pill" type="button" data-dx="back">‹ ${x === preview ? "Scan list" : "Portfolio"}</button>${x === preview ? `<span class="mu">Scanned, not in your portfolio yet</span>` : `<button class="pill sm2" type="button" data-ed="${x.id}">Edit</button>`}</div>
-  <div class="cdx-hd">${pic}<div class="cdx-hm"><div class="cdx-name">${esc(x.name)}</div><div class="mu">${meta}</div>
+  <div class="cdx-hd">${pic}<div class="cdx-hm"><div class="cdx-name"><span class="ptn" data-ptn="${x.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(x.name)}</span></div><div class="mu">${meta}</div>
     <div class="cdx-frow">${fair}<div class="cdx-hb"><button class="btn" type="button" data-dx="ebay" aria-label="eBay chart">eBay</button><button class="btn o" type="button" data-dx="tcg" aria-label="TCGplayer chart">TCGplayer</button></div></div></div></div>
   <div class="seg cdx-rg" role="group" aria-label="Time range">${DRNG.map(([k, l]) => `<button type="button" data-dr="${k}" aria-pressed="${k === drng}">${l}</button>`).join("")}</div>
   <div class="tk cdx-cd" role="group" aria-label="Condition">${condOptions(x).map((c) => `<button class="pill" type="button" data-dc="${esc(c)}" aria-pressed="${c === dsel}">${esc(selLabel(c))}${c === ownSel(x) ? " ★" : ""}</button>`).join("")}</div>`;
@@ -1959,6 +1959,23 @@ function exportCSV() {
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([rows.map((r) => r.map(c).join(",")).join("\n")], { type: "text/csv" }));
   a.download = "price-plot-portfolio-" + today() + ".csv"; document.body.appendChild(a); a.click(); a.remove();
 }
+// Tapping a card's name anywhere (portfolio list, card page, edit forms, trade, trade summary) opens the TCGplayer
+// tab on that card: its exact TCGplayer product, condition and printing when known. Graded cards open on Near Mint.
+function ptnFind(id) { return P.items.find((y) => y.id === id) || (preview && preview.id === id ? preview : null) || TRD.give.find((c) => c.id === id) || TRD.get.find((c) => c.id === id) || null; }
+async function openTcgFor(id) {
+  const x = ptnFind(id); if (!x) return;
+  if (ED) { await edClose(); if (ED) return; }
+  document.querySelectorAll(".ts-ov").forEach((o) => o.remove());
+  if (detail) closeDetail(false, true);
+  if (editing) { editing = null; render(); }
+  const raw = !(x.grade && !/^ungraded$/i.test(x.grade));
+  $("q").value = [ebName(x.name), ebNum(x.num)].filter(Boolean).join(" "); ppTcgFilter(raw ? x.cond || "Near Mint" : "Near Mint", x.var, x.tcgId, x.set); tcgQ = "";
+  const b = $("tb").querySelector('[data-t="tcg"]'); if (b && tab !== "tcg") b.click(); else loadTcg();
+  scrollTo({ top: 0, behavior: "smooth" });
+}
+const ptnHit = (e) => { const n = e.target.closest && e.target.closest("[data-ptn]"); if (!n || (selMode && n.closest(".pr"))) return null; return n; };
+document.addEventListener("click", (e) => { const n = ptnHit(e); if (!n) return; e.preventDefault(); e.stopPropagation(); openTcgFor(n.dataset.ptn); }, true);
+document.addEventListener("keydown", (e) => { if (e.key !== "Enter" && e.key !== " ") return; const n = ptnHit(e); if (!n) return; e.preventDefault(); e.stopPropagation(); openTcgFor(n.dataset.ptn); }, true);
 // The Comp button: TCGplayer is the market standard, so raw cards open the TCGplayer tab on their condition and printing
 // (the eBay search waits until the eBay tab is opened). Graded cards open eBay on their grade, since TCGplayer has no graded sales.
 function comp(x) {
@@ -2076,7 +2093,7 @@ function edRowHTML(x) {
   const pc = mk > 0 && d.cost > 0 ? String(Math.round((d.cost / mk) * 1000) / 10) : "";
   return `<div class="ed-r${edChanged(x, d) ? " chg" : ""}" id="ed-${x.id}">
     <button type="button" class="ed-pic" data-ezm="${x.id}" aria-label="Enlarge picture" ${x.img ? "" : "disabled"}>${x.img ? `<img src="${esc(x.img)}" alt="" loading="lazy">` : ""}</button>
-    <div class="ed-t"><b>${esc(x.name)}</b><div class="mu">${esc([x.set, x.num].filter(Boolean).join(" · "))}</div><div class="ed-p" data-epx="${x.id}">${edPriceHTML(x, d)}</div></div>
+    <div class="ed-t"><b class="ptn" data-ptn="${x.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(x.name)}</b><div class="mu">${esc([x.set, x.num].filter(Boolean).join(" · "))}</div><div class="ed-p" data-epx="${x.id}">${edPriceHTML(x, d)}</div></div>
     <button type="button" class="sq-x" data-edrop="${x.id}" aria-label="Take off this list">✕</button>
     <div class="ed-f">
       <label><span>Condition</span><select data-ef="cond" data-eid="${x.id}">${conds.map((o) => `<option value="${esc(o)}" ${o === cur ? "selected" : ""}>${esc(COND_CODE[o] || o)}</option>`).join("")}</select></label>
