@@ -68,6 +68,21 @@ function trAddFromPortfolio(x) {
   else TRD.give.push(trCard({ ...x, pid: x.id, qty: 1, max: x.qty, grade: isGraded(x) ? x.grade : "" }, "give"));
   trSave(); trDraw();
 }
+// the ⇄ button on a portfolio card, or ⇄ Trade with several cards selected: adds them to your side of the trade
+// (one copy each; more if tapped again, up to what you own) and offers to open the trade
+function trAddMany(ids) {
+  let added = 0, full = 0;
+  for (const id of ids) { const x = P.items.find((y) => y.id === id); if (!x || !(x.qty > 0)) continue;
+    const have = TRD.give.find((c) => c.pid === x.id);
+    if (have) { if (have.qty < x.qty) { have.qty++; have.max = x.qty; added++; } else full++; }
+    else { TRD.give.push(trCard({ ...x, pid: x.id, qty: 1, max: x.qty, grade: isGraded(x) ? x.grade : "" }, "give")); added++; } }
+  trSave();
+  if (selMode) { selMode = false; selIds.clear(); }
+  render();
+  const msg = added ? `Added ${added === 1 && ids.length === 1 ? P.items.find((y) => y.id === ids[0]).name : added + " card" + (added === 1 ? "" : "s")} to the trade` : "";
+  const fullMsg = full ? `${full} already in the trade at the full quantity you own` : "";
+  toast([msg, fullMsg].filter(Boolean).join(" · ") || "Nothing added", { label: "Open trade", run: () => { tradeOpen = true; editing = null; detail = null; render(); scrollTo(0, 0); } });
+}
 function trAddFound(s, side) {
   const c = trCard({ name: s.name, set: s.set, num: s.numberText || s.number, var: s.print || "", tcgId: s.tcgId, img: s.image, cond: "Near Mint", px: s.print && s.nm > 0 && !s.overall ? s.nm : null }, side);
   (side === "give" ? TRD.give : TRD.get).push(c); trSave(); trDraw(); if (c.px == null) trPrice(c);
@@ -633,7 +648,7 @@ function rowHTML(x) {
   <div class="mu">${meta}${view === "all" && x.pf ? ` · <i>${esc(x.pf)}</i>` : ""}</div>
   <div class="mu">${view === "watch" ? "" : x.qty + " × "}${x.mkt == null && !(x.ovr > 0) ? "—" : money(unit(x)) + (view !== "watch" && x.qty > 1 ? " = " + money(line) : "")}${x.ovr > 0 ? ` <span title="Your own price, set in Collectr or here">(your price)</span>` : x.mkt == null ? (pfq.includes(x) || pfRunning ? " (looking up price…)" : " (no price)") : x.mktV !== 2 && !isGraded(x) ? ` <span title="Collectr's price until TCGplayer's is found">(Collectr${pfq.includes(x) || (pfRunning && !x.pTry) ? " · looking up TCGplayer…" : x.pWhy ? " · " + esc(x.pWhy) : ""})</span>` : x.mktEst ? ` <span title="No recent ${esc(x.cond || "")} sales on TCGplayer, so this is the Near Mint price with the usual discount for this condition">(est.)</span>` : ""}</div>${gain != null ? `<div class="mu pr-g">vs. ${money(x.cost)} paid · <span style="color:var(${gain >= 0 ? "--up" : "--dn"});font-weight:600;white-space:nowrap">${gain >= 0 ? "+" : "−"}${money(Math.abs(gain))} (${gain >= 0 ? "+" : "−"}${Math.abs((gain / (x.cost * x.qty)) * 100).toFixed(1)}%)</span></div>` : ""}
   ${x.notes ? `<div class="mu">${esc(x.notes)}</div>` : ""}</div>
-  <div class="pv"><b>${x.mkt == null && !(x.ovr > 0) ? "—" : money(unit(x))}</b>${selMode ? "" : `<div><button class="pill sm2" type="button" data-cmp="${x.id}">Comp</button><button class="pill sm2" type="button" data-ed="${x.id}">Edit</button></div>`}</div></div></div>`;
+  <div class="pv"><b>${x.mkt == null && !(x.ovr > 0) ? "—" : money(unit(x))}</b>${selMode ? "" : `<div><button class="pill sm2" type="button" data-cmp="${x.id}">Comp</button><button class="pill sm2" type="button" data-ed="${x.id}">Edit</button>${view !== "watch" && x.qty > 0 ? `<button class="pill sm2 trb" type="button" data-trd="${x.id}" aria-label="Add ${esc(x.name)} to the trade" title="Add to trade">⇄</button>` : ""}</div>`}</div></div></div>`;
 }
 // "Paid each" with a small % box beside it: the % is of the card's market price. Typing either one fills in the other.
 function costField(x) {
@@ -2014,7 +2029,7 @@ function selBarHTML() {
   const n = selIds.size, shownN = filtered().length, cards = P.items.filter((x) => selIds.has(x.id)).reduce((a, x) => a + (x.qty || 0), 0);
   return `<div class="pfsel-t"><b>${n} selected</b>${n ? ` <span class="mu">${cards} card${cards === 1 ? "" : "s"}</span>` : ""}<span style="flex:1"></span>
     <button type="button" class="cs-back" data-ps="all">${shownN && filtered().every((x) => selIds.has(x.id)) ? "Select none" : `Select all ${shownN.toLocaleString()}`}</button><button type="button" class="cs-back" data-ps="done">Done</button></div>
-    <div class="pfsel-b"><button class="pill" type="button" data-ps="scan">📷 Scan</button><button class="pill on" type="button" data-ps="edit" ${n ? "" : "disabled"}>Edit ${n || ""}</button><button class="pill dl" type="button" data-ps="rm" ${n ? "" : "disabled"}>Remove</button></div>`;
+    <div class="pfsel-b"><button class="pill" type="button" data-ps="scan">📷 Scan</button><button class="pill on" type="button" data-ps="edit" ${n ? "" : "disabled"}>Edit ${n || ""}</button><button class="pill" type="button" data-ps="trade" ${n ? "" : "disabled"}>⇄ Trade</button><button class="pill dl" type="button" data-ps="rm" ${n ? "" : "disabled"}>Remove</button></div>`;
 }
 // update the checkmarks and the bar without redrawing the page
 function selSync() {
@@ -2243,7 +2258,7 @@ document.addEventListener("click", (e) => {
   if (d.pffc) { PFF = {}; try { localStorage.removeItem("pp_pffilter"); } catch {} shown = PAGE; render(); return; }
   if (d.pffx) { pffSet(d.pffx, ""); return; }
   if (d.ps) { if (d.ps === "done") selEnd(); else if (d.ps === "all") { const l = filtered(), all = l.length && l.every((x) => selIds.has(x.id)); l.forEach((x) => (all ? selIds.delete(x.id) : selIds.add(x.id))); selSync(); }
-    else if (d.ps === "edit") edOpen(); else if (d.ps === "rm") selRemove(); else if (d.ps === "scan") { sqTarget = "select"; sqOpen(); } return; }
+    else if (d.ps === "edit") edOpen(); else if (d.ps === "rm") selRemove(); else if (d.ps === "trade") trAddMany([...selIds]); else if (d.ps === "scan") { sqTarget = "select"; sqOpen(); } return; }
   if (d.czr) { cSet({ x0: -Infinity, x1: Infinity, y0: -Infinity, y1: Infinity }); return; }
   if (d.dr) { drng = d.dr; cview = null; render(); return; }
   if (d.dc) { dsel = d.dc; cview = null; render(); return; }
@@ -2254,6 +2269,7 @@ document.addEventListener("click", (e) => {
     return; }
   if (d.ed && detail) { detail = null; }
   if (d.pv != null) { view = d.pv; shown = PAGE; editing = null; render(); }
+  else if (d.trd) trAddMany([d.trd]);
   else if (d.cmp) openDetail(d.cmp); // the card's comps page, the same one Comp opens from the scan list
   else if (d.ed) { editing = d.ed; render(); const x = P.items.find((y) => y.id === d.ed); if (x) loadPrints(x); }
   else if (d.zm) { const x = P.items.find((y) => y.id === d.zm); if (x) ppZoom([x.tcgId ? `https://tcgplayer-cdn.tcgplayer.com/product/${x.tcgId}_in_1000x1000.jpg` : "", x.big, x.img], x.name); }
