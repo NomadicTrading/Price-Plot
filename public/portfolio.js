@@ -87,7 +87,7 @@ function trAddMany(ids) {
 // On your side, a card you own is linked to that portfolio copy (capped at how many you have); otherwise it's added as found.
 function trPickSide(n) {
   return modal({ title: `Add ${n === 1 ? "this card" : n + " cards"} to the trade`, text: "Whose cards are they?",
-    buttons: [{ label: "Their cards", value: "get", kind: "primary" }, { label: "Your cards", value: "give" }, { label: "Cancel", value: null, kind: "plain" }] });
+    buttons: [{ label: "Their cards", value: "get" }, { label: "Your cards", value: "give" }, { label: "Cancel", value: null, kind: "plain" }] });
 }
 function trOwnMatch(f) {
   const gr = f.grade && !/^ungraded$/i.test(f.grade) ? shortGrade(f.grade) : "";
