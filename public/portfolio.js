@@ -83,6 +83,53 @@ function trAddMany(ids) {
   const fullMsg = full ? `${full} already in the trade at the full quantity you own` : "";
   toast([msg, fullMsg].filter(Boolean).join(" · ") || "Nothing added", { label: "Open trade", run: () => { tradeOpen = true; editing = null; detail = null; render(); scrollTo(0, 0); } });
 }
+// Adding to the trade from the main scanner or the TCGplayer tab: ask whose side, then add.
+// On your side, a card you own is linked to that portfolio copy (capped at how many you have); otherwise it's added as found.
+function trPickSide(n) {
+  return modal({ title: `Add ${n === 1 ? "this card" : n + " cards"} to the trade`, text: "Whose cards are they?",
+    buttons: [{ label: "Their cards", value: "get", kind: "primary" }, { label: "Your cards", value: "give" }, { label: "Cancel", value: null, kind: "plain" }] });
+}
+function trOwnMatch(f) {
+  const gr = f.grade && !/^ungraded$/i.test(f.grade) ? shortGrade(f.grade) : "";
+  const all = owned(P.items).filter((x) => (f.tcgId && x.tcgId && String(x.tcgId) === String(f.tcgId)) || (mName(x.name) === mName(f.name) && mNum(x.num) === mNum(f.num) && (!f.tcgId || !x.tcgId)));
+  const score = (x) => ((isGraded(x) ? shortGrade(x.grade) : "") === gr ? 2 : 0) + (!gr && (x.cond || "Near Mint") === (f.cond || "Near Mint") ? 1 : 0) + ((x.var || "") === (f.var || "") ? 1 : 0);
+  return all.sort((a, b) => score(b) - score(a))[0] || null;
+}
+function trAddAny(f, side) {
+  const q = Math.max(1, Math.round(+f.qty || 1));
+  if (side === "give") { const x = trOwnMatch(f);
+    if (x) { const have = TRD.give.find((t) => t.pid === x.id);
+      if (have) { if (have.qty >= x.qty) return "full"; have.qty = Math.min(x.qty, have.qty + q); have.max = x.qty; }
+      else TRD.give.push(trCard({ ...x, pid: x.id, qty: Math.min(x.qty, q), max: x.qty, grade: isGraded(x) ? x.grade : "" }, "give"));
+      return "own"; } }
+  const c = trCard({ ...f, qty: q }, side); (side === "give" ? TRD.give : TRD.get).push(c); if (c.px == null) trPrice(c); return "new";
+}
+function trGoOpen() {
+  const ov = $("ppscan"); if (ov) ov.remove(); sqTarget = null;
+  tradeOpen = true; detail = null; editing = null;
+  const b = $("tb").querySelector('[data-t="pf"]'); if (b && tab !== "pf") b.click();
+  render(); scrollTo(0, 0);
+}
+function trAddedToast(n, side, full) {
+  toast(`Added ${n} card${n === 1 ? "" : "s"} to ${side === "get" ? "their" : "your"} side of the trade${full ? ` (${full} already at the full quantity you own)` : ""}`, { label: "Open trade", run: trGoOpen });
+}
+// the TCGplayer tab's ⇄ Trade button
+window.ppTradeFromTcg = async (f) => {
+  const side = await trPickSide(1); if (!side) return;
+  const r = trAddAny(f, side); trSave(); if (!tradeOpen) render(); else trDraw();
+  if (r === "full") toast("Already in the trade at the full quantity you own", { label: "Open trade", run: trGoOpen }); else trAddedToast(1, side, 0);
+};
+// the main scanner's ⇄ Trade button: the selected cards go to either side
+async function sqToTrade() {
+  const pick = scanQ.filter((x) => x.sel && x.pick >= 0); if (!pick.length) return;
+  const side = await trPickSide(pick.length); if (!side) return;
+  let n = 0, full = 0;
+  for (const it of pick) { const c = it.cards[it.pick], priced = it.pxK === sqPxKey(it) && it.px > 0 && !it.grade;
+    const r = trAddAny({ name: c.name, set: c.set, num: sqNum(c), var: it.print || "", cond: it.cond || "Near Mint", grade: it.grade || "", img: c.image, tcgId: c.tcgId, qty: it.qty, px: priced ? it.px : null }, side);
+    if (r === "full") full++; else n++; }
+  scanQ = scanQ.filter((x) => !pick.includes(x)); sqSave(); trSave(); render(); sqRender();
+  trAddedToast(n, side, full);
+}
 function trAddFound(s, side) {
   const c = trCard({ name: s.name, set: s.set, num: s.numberText || s.number, var: s.print || "", tcgId: s.tcgId, img: s.image, cond: "Near Mint", px: s.print && s.nm > 0 && !s.overall ? s.nm : null }, side);
   (side === "give" ? TRD.give : TRD.get).push(c); trSave(); trDraw(); if (c.px == null) trPrice(c);
@@ -92,7 +139,7 @@ function trAddFound(s, side) {
 const trMoneyIn = (v) => (v > 0 ? (Math.round(v * 100) / 100).toFixed(2) : "");
 function trRow(c) {
   const each = trEach(c), q = trQ(c), get = c.side === "get", pc = trPctOf(c);
-  const opts = [...CONDS, ...TR_GRADES].map((o) => `<option ${o === (c.grade ? shortGrade(c.grade) : c.cond) ? "selected" : ""}>${o}</option>`).join("");
+  const opts = [...CONDS, ...(c.cond === "Sealed" ? ["Sealed"] : []), ...TR_GRADES].map((o) => `<option ${o === (c.grade ? shortGrade(c.grade) : c.cond) ? "selected" : ""}>${o}</option>`).join("");
   const note = c.own > 0 ? "your price" : trSrc(c) && each != null && c.px == null ? "portfolio value" : c.pxNote || (c.px == null && !trGraded(c) ? "looking up…" : "");
   return `<div class="tr-r" data-tc="${c.id}">
     <button type="button" class="tr-pic" data-tzm="${c.id}" ${c.img ? "" : "disabled"} aria-label="Enlarge picture">${c.img ? `<img src="${esc(c.img)}" alt="" loading="lazy">` : ""}</button>
@@ -1751,6 +1798,7 @@ function sqBar() {
       : "";
   }
   el.querySelector("[data-qa=add]").disabled = !sel.length;
+  const tb = el.querySelector("[data-qa=trade]"); if (tb) { tb.disabled = !sel.length; tb.textContent = sel.length ? `⇄ Add ${sel.length} to trade` : "⇄ Add to trade"; }
   const ap = el.querySelector("[data-qa=apply]"); if (ap) { const n = sqEdits().length; ap.disabled = !n; ap.textContent = n ? `Apply changes (${n})` : "Apply changes"; }
   sqGroupSync();
   const all = el.querySelector("[data-qa=all]"); if (all) all.textContent = ready.length && sel.length === ready.length ? "Select none" : "Select all";
@@ -1771,7 +1819,7 @@ function sqRender() {
       <div class="sq-list">${scanQ.map(sqRowHTML).join("")}</div>
       <form id="sq-bar" class="sq-bar"><div class="pg">${pfField(sqDefaults.pf && (pfs.includes(sqDefaults.pf) || !pfs.length) ? sqDefaults.pf : pfs[0] || "", pfs)}
         <label>Condition for selected<select data-qa="cond"><option value="">Keep each</option>${CONDS.map((x) => `<option>${x}</option>`).join("")}</select></label></div>
-        ${sqTarget === "select" ? `<button type="button" class="ppm-x sq-add sq-apply" data-qa="apply" disabled>Apply changes</button>` : ""}<button type="submit" class="ppm-x primary sq-add" data-qa="add">Add to portfolio</button></form>`
+        ${sqTarget === "select" ? `<button type="button" class="ppm-x sq-add sq-apply" data-qa="apply" disabled>Apply changes</button>` : ""}${sqTarget ? "" : `<button type="button" class="ppm-x sq-add sq-trd" data-qa="trade" disabled>⇄ Add to trade</button>`}<button type="submit" class="ppm-x primary sq-add" data-qa="add">Add to portfolio</button></form>`
     : `<p class="mu" style="margin:10px 0 4px">Take a photo of each card, one after another. You don't have to wait: each card is read while you take the next, and they all collect here for you to check and add together.</p>
       <p class="mu" style="margin:0">Or choose photos you've already taken. You can pick several at once.</p>`}
   </div>`;
@@ -1915,6 +1963,7 @@ document.addEventListener("click", (e) => {
   if (e.target === ov) { ov.remove(); return; }
   const b = e.target.closest("button"); if (!b) return; const d = b.dataset;
   if (d.qa === "close") ov.remove();
+  else if (d.qa === "trade") sqToTrade();
   else if (d.qa === "apply") sqApplyEdits();
   else if (d.qa === "cam") sqCamera();
   else if (d.qa === "lib") sqPicker(false);

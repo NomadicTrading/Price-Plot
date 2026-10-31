@@ -763,7 +763,7 @@ function drawTcg(){
  const selP=TCOND.filter(([n])=>tconds.has(n)&&byC[n]&&byC[n].price!=null).map(([n,a,col])=>`<span class="tc-pv"><small style="color:${col}">${a}</small>${pf(byC[n].price)}</span>`).join("");
  $("tcg").innerHTML=pick+`<div class="tc"><div style="flex:1;min-width:0"><b>${esc(c.name)}</b> <span class="mu">${esc(c.set||"")} · ${esc(c.number||"")}${c.rarity?" · "+esc(c.rarity):""}</span>
 ${selP?`<div class="tc-pr" aria-label="Market price for the selected condition">${selP}<span class="mu tc-pl">${esc(tprint)} market</span></div>`:""}
-${tcgLastSold(tpd)}</div><div class="tc-r">${tImgs.length?`<button type="button" class="tci-b" data-zoom="1" aria-label="Enlarge the card picture"><img class="tci" id="tci" src="${esc(tImgs[0])}" alt="${esc(c.name)} card" data-alt="${esc(tImgs.slice(1).join(" "))}"></button>`:""}<div class="tc-btns">${c.tcgUrl?`<a class="btn" href="${esc(safeUrl(c.tcgUrl))}" target="_blank" rel="noopener">Open TCGplayer</a>`:""}<button class="btn o" type="button" data-addpf="1">+ Add to portfolio</button></div></div></div>
+${tcgLastSold(tpd)}</div><div class="tc-r">${tImgs.length?`<button type="button" class="tci-b" data-zoom="1" aria-label="Enlarge the card picture"><img class="tci" id="tci" src="${esc(tImgs[0])}" alt="${esc(c.name)} card" data-alt="${esc(tImgs.slice(1).join(" "))}"></button>`:""}<div class="tc-btns">${c.tcgUrl?`<a class="btn" href="${esc(safeUrl(c.tcgUrl))}" target="_blank" rel="noopener">Open TCGplayer</a>`:""}<button class="btn o" type="button" data-addpf="1">+ Add to portfolio</button><button class="btn o" type="button" data-addtr="1">⇄ Add to trade</button></div></div></div>
 <div class="bar fs" id="tpr" role="group" aria-label="Printing">${prints.map(p=>`<button class="pill" type="button" data-tp="${esc(p)}" aria-pressed="${p===tprint}">${esc(p)}</button>`).join("")}</div>
 <div class="bar fs" id="tcd" role="group" aria-label="Condition"${tSeal?" hidden":""}>${TCOND.filter(([n])=>n in byC).map(([n,a])=>`<button class="pill" type="button" data-tc="${n}" aria-pressed="${tconds.has(n)}">${a}</button>`).join("")}</div>
 <div class="ch-h"><div><h2>Market Price</h2><div class="mu" style="font-size:12.5px">TCGplayer market price${tSeal?"":" by condition"}${tover&&tid?", with sold cards and live listings":""}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex:none">${tid?`<button class="pill" type="button" style="white-space:nowrap" data-tover="1" aria-pressed="${tover}">Sales &amp; listings</button>`:""}<button class="pill" type="button" style="white-space:nowrap" data-tboll="1" aria-pressed="${tboll}" title="20-day average of the market price, with a band 2 standard deviations either side">Bollinger bands</button></div></div>
@@ -977,13 +977,17 @@ function tGesture(pf,nf,f){const v=tview||TG.full,w=v.x1-v.x0,h=v.y1-v.y0,cx=v.x
  T.addEventListener("touchmove",e=>{if(inCh(e)&&e.cancelable)e.preventDefault()},{passive:false});}
 $("tcg").onclick=e=>{const dot=e.target.closest&&e.target.closest("[data-tpi]");if(dot){tpPick(+dot.dataset.tpi);return}
  const d=e.target.closest("button")?.dataset;if(!d)return;
- if(tSealed&&!TM){if(d.zoom)tcgZoom();else if(d.addsealed){const s=tSealed;if(window.ppAddFromTcg)ppAddFromTcg({name:s.name,set:s.set,number:"",tcgId:s.tcgId,variants:[{print:s.print||"",cond:"Sealed",price:s.px??s.nm??null}]},s.print||"",["Sealed"])}
+ if(tSealed&&!TM){if(d.zoom)tcgZoom();else if(d.addtr){const s=tSealed;if(window.ppTradeFromTcg)ppTradeFromTcg({name:s.name,set:s.set,num:"",var:s.print||"",cond:"Sealed",tcgId:s.tcgId,img:"https://tcgplayer-cdn.tcgplayer.com/product/"+s.tcgId+"_in_1000x1000.jpg",px:s.px??s.nm??null})}
+  else if(d.addsealed){const s=tSealed;if(window.ppAddFromTcg)ppAddFromTcg({name:s.name,set:s.set,number:"",tcgId:s.tcgId,variants:[{print:s.print||"",cond:"Sealed",price:s.px??s.nm??null}]},s.print||"",["Sealed"])}
   else if(d.tzr){tview=null;if(TG)drawTcgChart(TG.vs,TG.tpd)}
   else if(d.tover||d.tboll||d.tr){tsel=null;tview=null;if(d.tover)tover=!tover;else if(d.tboll)tboll=!tboll;else trng=d.tr;drawSealed()}
   return}
  if(!TM)return;
  if(d.zoom){tcgZoom();return}
  if(d.tsall){tcgAllSold();return}
+ if(d.addtr){const c=TM.cards[tci],tid=c.tcgId||(String(c.tcgUrl||"").match(/product\/(\d+)/)||[])[1]||"",cond=tSeal?"Sealed":[...tconds][0]||"Near Mint";
+  const v=c.variants.find(v=>v.print===tprint&&(tSeal||v.cond===cond)&&(v.lang||"English")==="English")||c.variants.find(v=>v.print===tprint&&(tSeal||v.cond===cond));
+  if(window.ppTradeFromTcg)ppTradeFromTcg({name:c.name,set:c.set||"",num:c.number||"",var:tprint||"",cond,tcgId:tid||null,img:tid?`https://tcgplayer-cdn.tcgplayer.com/product/${tid}_in_1000x1000.jpg`:"",px:v&&v.price>0?v.price:null});return}
  if(d.addpf){if(window.ppAddFromTcg)ppAddFromTcg(TM.cards[tci],tprint,[...tconds]);return}
  if(d.tzr){tview=null;if(TG)drawTcgChart(TG.vs,TG.tpd);return}
  tsel=null;tview=null;
@@ -1026,7 +1030,7 @@ function drawSealed(){
   ${ok?(sold.length?`<div class="sm">Last sold <b>${money(tot(sold[0]))}</b> <span class="mu">· ${esc(dt(sold[0]))} · incl. shipping</span></div>${sold.length>1?`<details class="tls"><summary class="mu">Previous sales</summary>${sold.slice(1,11).map(x=>`<div class="mu">${esc(dt(x))} · <b>${money(tot(x))}</b>${x.qty>1?" ×"+x.qty:""}</div>`).join("")}</details>`:""}`:`<div class="sm mu">No recent TCGplayer sales.</div>`)
    +(lst.length?`<div class="sm">Lowest listed <b>${money(tot(lst[0]))}</b> <span class="mu">incl. shipping · ${lst.length} listing${lst.length===1?"":"s"}</span></div>`:""):d&&d.error?`<div class="sm mu">TCGplayer sales unavailable right now.</div>`:`<div class="sm mu">Loading sales…</div>`}
  </div><div class="tc-r"><button type="button" class="tci-b" data-zoom="1" aria-label="Enlarge the picture"><img class="tci" id="tci" src="${esc(img)}" alt="${esc(s.name)}" data-alt="${esc(s.image||"")}"></button>
-  <div class="tc-btns"><a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Open TCGplayer</a><button class="btn o" type="button" data-addsealed="1">+ Add to portfolio</button></div></div></div>
+  <div class="tc-btns"><a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Open TCGplayer</a><button class="btn o" type="button" data-addsealed="1">+ Add to portfolio</button><button class="btn o" type="button" data-addtr="1">⇄ Add to trade</button></div></div></div>
 <div class="ch-h"><div><h2>Market Price</h2><div class="mu" style="font-size:12.5px">TCGplayer weekly market price${tover?", with sold sales and live listings":""}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex:none"><button class="pill" type="button" style="white-space:nowrap" data-tover="1" aria-pressed="${tover}">Sales &amp; listings</button><button class="pill" type="button" style="white-space:nowrap" data-tboll="1" aria-pressed="${tboll}" title="20-week average of the market price, with a band 2 standard deviations either side">Bollinger bands</button></div></div>
 ${tover?`<div class="py fs" id="tpw" hidden><span class="pl">Price</span><div class="dr" id="tpdr" role="group" aria-label="Sold and listed price range"></div><b id="tpt"></b></div><div class="mu" style="font-size:12.5px;margin-top:6px" id="tsm"></div>`:""}
 <div id="trd"></div>
