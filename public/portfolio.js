@@ -208,7 +208,7 @@ function trWatchMore() {
 }
 function renderTrade(box) {
   box.innerHTML = `<div class="tr">
-  <div class="cdx-top"><button class="pill" type="button" data-tx="back">‹ Portfolio</button><b class="tr-t">Trade</b>${TRD.give.length || TRD.get.length ? `<button class="pill sm2" type="button" data-tx="clear">Clear</button>` : "<span></span>"}</div>
+  ${trTopHTML()}${TRD.editOf ? (() => { const r = TH.find((x) => x.id === TRD.editOf); return `<div class="th-warn ed" role="note">Editing the trade from ${r ? thDate(r.at) : "your history"}. Change it, then Save changes, or Cancel edit to put it back as it was.</div>`; })() : ""}
   <div class="tr-bal" id="tr-bal">${trBalHTML()}</div>
   <div class="tr-sec"><div class="tr-h"><b>Their trade %</b><label class="sq-pn"><input id="tr-pct" type="number" min="0" step="any" inputmode="decimal" value="${TRD.pct}" aria-label="Trade percent for their cards">%</label></div>
     <input type="range" class="sq-rg" id="tr-rg" min="0" max="100" step="1" value="${Math.min(100, Math.round(TRD.pct))}" aria-label="Trade percent for their cards">
@@ -223,7 +223,7 @@ function renderTrade(box) {
     ${TRD.get.map(trRow).join("")}
     <div class="tr-add"><input id="tr-sq-get" type="search" placeholder="Search their card on TCGplayer" autocomplete="off"><button type="button" class="pill" data-tx="scan">📷 Scan</button></div>
     <div class="tr-hits" id="tr-sug-get">${trSugHTML("get")}</div></div>
-  <div class="bar"><button class="pill on" type="button" data-tx="done" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>Complete trade</button></div>
+  <div class="bar"><button class="pill on" type="button" data-tx="done" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>${TRD.editOf ? "Save changes" : "Complete trade"}</button></div>
   <div class="sm">Your cards count at full market value; theirs at the trade % (set one card's own % in its box). The green or red number is where you stand: trade credit plus cash they add, minus your cards and cash you add. Graded cards use Collectr's price.</div></div>`;
   for (const c of [...TRD.give, ...TRD.get]) { if (c.pxK !== [c.cond, c.var, c.grade].join("|") && !(c.pid && trEach(c) != null)) trPrice(c); trLoadPrints(c); trLive(c); }
 }
@@ -278,6 +278,8 @@ document.addEventListener("click", (e) => {
   const root = e.target.closest && e.target.closest(".tr"); if (!root) return;
   const b = e.target.closest("button"); if (!b) return; const d = b.dataset;
   if (d.tx === "back") { tradeOpen = false; render(); scrollTo(0, 0); }
+  else if (d.tx === "clear" && TRD.editOf) modal({ title: "Cancel this edit?", text: "Your changes are dropped and the trade goes back to how it was.", buttons: [{ label: "Cancel edit", value: true, kind: "danger" }, { label: "Keep editing", value: false, kind: "primary" }] })
+    .then((v) => { if (v) thCancelEdit(); });
   else if (d.tx === "clear") modal({ title: "Clear this trade?", text: "Both sides and the cash are emptied. Your portfolio isn't changed.", buttons: [{ label: "Clear", value: true, kind: "danger" }, { label: "Keep", value: false, kind: "primary" }] })
     .then((v) => { if (v) { TRD = { give: [], get: [], pct: TRD.pct, cashPct: TRD.cashPct, cashIn: 0, cashOut: 0 }; trSave(); render(); } });
   else if (d.tx === "scan") { sqTarget = "trade"; sqOpen(); }
@@ -378,28 +380,238 @@ function trSummary() {
    added, less cash they added) becomes the cost of their cards, shared out by market value. */
 async function trComplete() {
   const m = trMath(); if (!TRD.give.length && !TRD.get.length) return;
+  const old = TRD.editOf ? TH.find((r) => r.id === TRD.editOf && r.st === "edit") : null;
   const gave = Math.max(0, m.give + (+TRD.cashOut || 0) - (+TRD.cashIn || 0)), share = (c) => (m.getMk > 0 ? ((trEach(c) || 0) * trQ(c)) / m.getMk : TRD.get.length ? 1 / TRD.get.length : 0);
   const costEach = (c) => Math.round((gave * share(c) / trQ(c)) * 100) / 100;
-  const pfs = [...new Set(P.items.filter((x) => x.qty > 0 && x.pf).map((x) => x.pf))].sort();
+  let pfs = [...new Set(P.items.filter((x) => x.qty > 0 && x.pf).map((x) => x.pf))].sort();
+  if (old && old.pf) pfs = [old.pf, ...pfs.filter((p) => p !== old.pf)];
   const li = (a) => a.length ? `<ul class="mg-l">${a.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : `<div class="mu" style="font-size:13px">None</div>`;
   const out = TRD.give.filter((c) => c.pid).map((c) => `${c.name} ×${trQ(c)}`), notOwned = TRD.give.filter((c) => !c.pid).length;
   const inn = TRD.get.map((c) => `${c.name}${c.grade ? " · " + shortGrade(c.grade) : " · " + (COND_CODE[c.cond] || c.cond)} ×${trQ(c)} · cost ${money(costEach(c))} each`);
-  const pf = await modal({ title: "Complete this trade?",
-    text: `<b>Leaving your portfolio</b>${li(out)}${notOwned ? `<div class="mu" style="font-size:12.5px">${notOwned} card${notOwned === 1 ? " isn't" : "s aren't"} in your portfolio, so nothing to remove.</div>` : ""}<b>Coming in</b>${li(inn)}<div class="mu" style="font-size:12.5px">Their cards' cost is what you traded for them (${money(gave)}), shared by market value. You can undo this afterward. Add them to:</div>`,
+  const pf = await modal({ title: old ? "Save changes to this trade?" : "Complete this trade?",
+    text: `<b>Leaving your portfolio</b>${li(out)}${notOwned ? `<div class="mu" style="font-size:12.5px">${notOwned} card${notOwned === 1 ? " isn't" : "s aren't"} in your portfolio, so nothing to remove.</div>` : ""}<b>Coming in</b>${li(inn)}<div class="mu" style="font-size:12.5px">Their cards' cost is what you traded for them (${money(gave)}), shared by market value. ${old ? "The trade keeps its date and place in your history." : "It's saved in your trade history, where you can edit or revert it."} Add them to:</div>`,
     buttons: [...(pfs.length ? pfs : ["Trades"]).map((p, i) => ({ label: p, value: p, kind: i === 0 ? "primary" : "" })), ...(pfs.length && !pfs.includes("Trades") ? [{ label: "New: Trades", value: "Trades" }] : []), { label: "Cancel", value: null, kind: "plain" }] });
   if (pf == null) return;
-  try { localStorage.setItem(UNDO_KEY, JSON.stringify({ at: Date.now(), source: "trade", P })); } catch {}
-  for (const c of TRD.give) { const x = trSrc(c); if (x) x.qty = Math.max(0, x.qty - trQ(c)); }
-  P.items = P.items.filter((x) => x.qty > 0 || x.watch);
-  for (const c of TRD.get) {
-    const each = trEach(c), g = trGraded(c);
-    P.items.push({ id: uid(), pf, cat: "Pokemon", set: c.set, name: c.name, num: c.num, rarity: "", var: c.var, grade: g ? c.grade : "Ungraded", cond: c.cond, qty: trQ(c), cost: costEach(c),
-      mkt: each ?? null, ...(g ? {} : c.px > 0 ? { mktV: 2, pT: Date.now() } : {}), ovr: 0, watch: false, added: today(), notes: "From a trade", img: c.img || undefined, tcgId: c.tcgId || undefined });
-  }
-  TRD = { give: [], get: [], pct: TRD.pct, cashPct: TRD.cashPct, cashIn: 0, cashOut: 0 }; trSave(); tradeOpen = false;
+  thBackup(old ? "trade edit" : "trade");
+  const rec = { pf, pct: TRD.pct, cashPct: TRD.cashPct, cashIn: +TRD.cashIn || 0, cashOut: +TRD.cashOut || 0,
+    give: TRD.give.map((c) => ({ ...thClean(c), each: trEach(c) })),
+    get: TRD.get.map((c) => { const each = trEach(c), g = trGraded(c);
+      return { ...thClean(c), each, item: { pf, cat: "Pokemon", set: c.set, name: c.name, num: c.num, rarity: "", var: c.var, grade: g ? c.grade : "Ungraded", cond: c.cond, cost: costEach(c),
+        mkt: each ?? null, ...(g ? {} : c.px > 0 ? { mktV: 2, pT: Date.now() } : {}), ovr: 0, watch: false, added: today(), notes: "From a trade", img: c.img || undefined, tcgId: c.tcgId || undefined } }; }) };
+  rec.val = { give: m.give, getMk: m.getMk, credit: m.credit, pos: m.pos };
+  thApply(rec);
+  if (old) { Object.assign(rec, { id: old.id, at: old.at, note: old.note || "", st: "done", log: [...(old.log || []), { at: Date.now(), what: thDiff(old, rec) }] }); TH = TH.map((r) => (r.id === old.id ? rec : r)); }
+  else { Object.assign(rec, { id: uid(), at: Date.now(), note: "", st: "done", log: [{ at: Date.now(), what: "Trade logged from the analyzer" }] }); TH.unshift(rec); }
+  thSave();
+  TRD = { give: [], get: [], pct: TRD.pct, cashPct: TRD.cashPct, cashIn: 0, cashOut: 0 }; trSave(); tradeOpen = false; trView = "an";
   store(); snap(); render(); fillPrices(); scrollTo(0, 0);
-  toast("Trade completed", { label: "Undo", run: undoImport });
+  toast(old ? "Trade updated" : "Trade completed", { label: "Undo", run: undoImport });
 }
+
+/* ---------- trade history ----------
+   Every completed trade is kept on this device: what you gave and got, the prices and trade % used, and the cash.
+   Revert puts your cards back and takes theirs out (the trade stays in history, marked Reverted, and can be restored).
+   Edit reverts it, loads it back into the analyzer, and Save changes re-applies it in place, with a change log.
+   If one of their cards has since left your portfolio (sold or traded on), that's flagged and skipped, never doubled. */
+const TH_KEY = "pp_trade_hist", TH_MAX = 300;
+let TH = (() => { try { const h = JSON.parse(localStorage.getItem(TH_KEY) || "[]"); return Array.isArray(h) ? h : []; } catch { return []; } })();
+let trView = "an", trDet = null, thFilt = "all", thY = 0;
+function thSave() { if (TH.length > TH_MAX) TH = TH.slice(0, TH_MAX); try { localStorage.setItem(TH_KEY, JSON.stringify(TH)); } catch { toast("Couldn't save trade history: this device's storage is full."); } }
+function thBackup(source) { try { localStorage.setItem(UNDO_KEY, JSON.stringify({ at: Date.now(), source, P, TH, TRD })); } catch {} }
+// a trade card as saved in history (working fields dropped)
+function thClean(c) { const o = { ...c }; delete o.pxNote; delete o.liveT; delete o.each; delete o.took; delete o.snap; delete o.item; delete o.newId; return o; }
+// make the portfolio changes a trade describes: your cards out (remembering how many and the card as it was), theirs in
+function thApply(rec) {
+  let short = 0;
+  for (const c of rec.give) { c.took = 0; delete c.snap; const x = c.pid && P.items.find((y) => y.id === c.pid);
+    if (x) { c.snap = { ...x }; c.took = Math.min(x.qty, trQ(c)); x.qty -= c.took; if (c.took < trQ(c)) short += trQ(c) - c.took; } }
+  P.items = P.items.filter((x) => x.qty > 0 || x.watch);
+  for (const c of rec.get) { c.newId = c.newId || uid(); const y = P.items.find((x) => x.id === c.newId);
+    if (y) y.qty += trQ(c); else P.items.push({ ...c.item, id: c.newId, qty: trQ(c) }); }
+  return short;
+}
+// how many of their cards are no longer in your portfolio (sold, traded on, or edited away)
+function thMissing(rec) { return rec.get.reduce((a, c) => { const y = P.items.find((x) => x.id === c.newId); return a + Math.max(0, trQ(c) - (y ? y.qty : 0)); }, 0); }
+// undo a trade's portfolio changes; their cards that are already gone are skipped
+function thRevert(rec) {
+  let miss = 0;
+  for (const c of rec.get) { const y = P.items.find((x) => x.id === c.newId), take = y ? Math.min(y.qty, trQ(c)) : 0; if (y) y.qty -= take; miss += trQ(c) - take; }
+  P.items = P.items.filter((x) => x.qty > 0 || x.watch);
+  for (const c of rec.give) { if (!(c.took > 0)) continue; const x = P.items.find((y) => y.id === c.pid);
+    if (x) x.qty += c.took; else if (c.snap) P.items.push({ ...c.snap, qty: c.took }); }
+  return miss;
+}
+const thLab = (c) => `${c.name} ${c.grade ? shortGrade(c.grade) : COND_CODE[c.cond] || c.cond || "NM"}`;
+// a short description of what an edit changed
+function thDiff(a, b) {
+  const out = [];
+  for (const [side, who] of [["give", "your"], ["get", "their"]]) {
+    const cnt = (list) => { const mp = new Map(); for (const c of list) { const k = thLab(c) + "|" + (c.var || ""); const e = mp.get(k) || { c, q: 0 }; e.q += trQ(c); mp.set(k, e); } return mp; };
+    const A = cnt(a[side]), B = cnt(b[side]);
+    for (const [k, e] of B) { const p = A.get(k)?.q || 0; if (e.q > p) out.push(`added ${e.q - p > 1 ? (e.q - p) + "× " : ""}${thLab(e.c)} (${who} side)`); }
+    for (const [k, e] of A) { const n = B.get(k)?.q || 0; if (e.q > n) out.push(`removed ${e.q - n > 1 ? (e.q - n) + "× " : ""}${thLab(e.c)} (${who} side)`); }
+  }
+  if (a.pct !== b.pct) out.push(`trade % ${a.pct}% → ${b.pct}%`);
+  if ((a.cashIn || 0) !== (b.cashIn || 0)) out.push(`cash they add ${money(a.cashIn || 0)} → ${money(b.cashIn || 0)}`);
+  if ((a.cashOut || 0) !== (b.cashOut || 0)) out.push(`cash you add ${money(a.cashOut || 0)} → ${money(b.cashOut || 0)}`);
+  const pr = (r) => r.give.concat(r.get).map((c) => (c.own > 0 ? c.own : "") + "/" + (c.pct ?? "")).join(",");
+  if (!out.length && pr(a) !== pr(b)) out.push("prices or per-card % changed");
+  return out.length ? "Edited: " + out.join("; ") : "Saved with no changes";
+}
+// today's value of one history card: their card's portfolio price while you still have it, else a looked-up price
+function thNowEach(c) {
+  if (c.side === "get") { const y = P.items.find((x) => x.id === c.newId); if (y && (y.ovr > 0 || y.mkt != null)) return unit(y); }
+  return c.nowPx > 0 ? c.nowPx : null;
+}
+// market difference for a trade: what you got (plus cash in) minus what you gave (plus cash out); "now" falls back to trade-time prices
+function thNet(r, now) {
+  let est = false; const v = (c) => { const n = now ? thNowEach(c) : null; if (now && n == null) est = true; return (n ?? c.each ?? 0) * trQ(c); };
+  const net = r.get.reduce((a, c) => a + v(c), 0) - r.give.reduce((a, c) => a + v(c), 0) + (r.cashIn || 0) - (r.cashOut || 0);
+  return { net, est };
+}
+// look up today's prices for cards that aren't in your portfolio (your traded-away cards; theirs once sold). Every 6 hours at most.
+let thBusy = false;
+async function thRefresh(list) {
+  if (thBusy) return; thBusy = true; let changed = false;
+  try {
+    for (const r of list) for (const c of [...r.give, ...r.get]) {
+      if (c.side === "get" && P.items.some((x) => x.id === c.newId)) continue;
+      if (c.nowT && Date.now() - c.nowT < 6 * 3600e3) continue;
+      c.nowT = Date.now();
+      if (trGraded(c)) { const g = shortGrade(c.grade).toLowerCase(), m = P.items.find((x) => isGraded(x) && x.mkt > 0 && mName(x.name) === mName(c.name) && mNum(x.num) === mNum(c.num) && shortGrade(x.grade).toLowerCase() === g); if (m) { c.nowPx = m.mkt; changed = true; } continue; }
+      if (!c.tcgId) continue;
+      try { const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: c.tcgId, cond: c.cond || "Near Mint", print: c.var || "", jp: /japan/i.test(c.set || "") ? "1" : "" })); if (j.market > 0) { c.nowPx = j.market; changed = true; } } catch { c.nowT = 0; }
+    }
+  } finally { thBusy = false; }
+  if (changed) { thSave(); if (tradeOpen && trView === "hist" && !(document.activeElement && document.activeElement.id === "th-note")) render(); }
+}
+const thDate = (t, time) => new Date(t).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", ...(time ? { hour: "numeric", minute: "2-digit" } : {}) });
+const thSign = (v) => `${v >= -0.005 ? "+" : "−"}${money(Math.abs(v))}`;
+const thPic = (c) => c.img || (c.tcgId ? `https://tcgplayer-cdn.tcgplayer.com/product/${c.tcgId}_in_1000x1000.jpg` : "");
+const TH_ST = { done: ["Completed", "ok"], rev: ["Reverted", "rv"], edit: ["Editing", "ed"] };
+const thStat = (r) => (r.st === "done" && (r.log || []).some((l) => /^Edited/.test(l.what)) ? ["Edited", "ed"] : TH_ST[r.st] || TH_ST.done);
+function thThumbs(list) {
+  const pics = list.flatMap((c) => Array(Math.min(trQ(c), 3)).fill(c)).slice(0, 4);
+  return pics.map((c) => { const p = thPic(c); return `<span class="th-pic">${p ? `<img src="${esc(p)}" alt="" loading="lazy">` : `<i>${esc(c.name.slice(0, 10))}</i>`}</span>`; }).join("") + (list.reduce((a, c) => a + trQ(c), 0) > 4 ? `<span class="th-more mu">+${list.reduce((a, c) => a + trQ(c), 0) - 4}</span>` : "");
+}
+function thCardHTML(r) {
+  const [st, cls] = thStat(r), then = thNet(r, false), now = r.st === "done" ? thNet(r, true) : null;
+  const gaveV = r.give.reduce((a, c) => a + (c.each || 0) * trQ(c), 0) + (r.cashOut || 0), gotV = r.get.reduce((a, c) => a + (c.each || 0) * trQ(c), 0) + (r.cashIn || 0);
+  const terms = r.st === "rev" ? `Reverted ${thDate(r.revAt || r.at)} · cards put back` : r.st === "edit" ? "Being edited in the analyzer" : `Their cards at ${r.pct}%${r.cashIn > 0 ? ` · +${money(r.cashIn)} cash in` : ""}${r.cashOut > 0 ? ` · ${money(r.cashOut)} cash out` : ""}`;
+  return `<button type="button" class="th-c${r.st === "rev" ? " rv" : ""}" data-thopen="${r.id}">
+    <span class="th-ch"><span><b>${thDate(r.at)}</b><span class="mu">${esc(r.note || "Add who or where in the trade")}</span></span><span class="th-st ${cls}">${st}</span></span>
+    <span class="th-sides"><span class="th-sd"><span class="th-k">YOU GAVE</span><span class="th-pics">${thThumbs(r.give) || `<span class="mu">Cash only</span>`}</span><b>${money(gaveV)}</b></span>
+      <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h12l-3-3M17 17H5l3 3"></path></svg>
+      <span class="th-sd r"><span class="th-k">YOU GOT</span><span class="th-pics">${thThumbs(r.get) || `<span class="mu">Cash only</span>`}</span><b>${money(gotV)}</b></span></span>
+    <span class="th-ft"><span class="mu">${terms}</span><span class="th-dl">${now ? `<span style="color:var(${now.net >= -0.005 ? "--up" : "--dn"})">${thSign(now.net)}</span> <span class="mu">now${now.est ? "*" : ""}</span>` : `<span class="mu">${thSign(then.net)} at trade</span>`}</span></span>
+  </button>`;
+}
+function renderHist(box) {
+  const days30 = Date.now() - 30 * 864e5, recent = TH.filter((r) => r.st === "done" && r.at >= days30);
+  const sum = recent.reduce((a, r) => { const n = thNet(r, true); a.net += n.net; a.est = a.est || n.est; return a; }, { net: 0, est: false });
+  const list = TH.filter((r) => thFilt === "all" || (thFilt === "ed" ? thStat(r)[1] === "ed" : r.st === thFilt));
+  const fl = [["all", "All"], ["done", "Completed"], ["ed", "Edited"], ["rev", "Reverted"]];
+  box.innerHTML = `<div class="tr th">${trTopHTML()}
+    ${TH.length ? `<div class="th-sum"><span><span class="mu">Last 30 days · ${recent.length} trade${recent.length === 1 ? "" : "s"}</span><span class="mu">Gained or lost since trading${sum.est ? "*" : ""}</span></span><b style="color:var(${sum.net >= -0.005 ? "--up" : "--dn"})">${thSign(sum.net)}</b></div>
+    <div class="tk">${fl.map(([k, l]) => `<button class="pill" type="button" data-thf="${k}" aria-pressed="${thFilt === k}">${l}</button>`).join("")}</div>
+    <div class="th-list">${list.map(thCardHTML).join("") || `<p class="sm">No trades here.</p>`}</div>
+    <div class="sm">“Now” is the market difference at today's prices: their cards at your portfolio's price while you have them, other cards at TCGplayer's (graded at Collectr's).${sum.est || list.some((r) => r.st === "done" && thNet(r, true).est) ? " * Some cards don't have today's price yet, so their trade-time price is used." : ""} Tap a trade to edit or revert it.</div>`
+    : `<p class="sm">No trades yet. When you complete a trade in the analyzer it's saved here, so you can look back at it, edit it, or revert it.</p>`}</div>`;
+  thRefresh(TH.filter((r) => r.st === "done").slice(0, 40));
+}
+function thRowHTML(c) {
+  const now = thNowEach(c), q = trQ(c), p = thPic(c), gone = c.side === "get" && !P.items.some((x) => x.id === c.newId);
+  return `<div class="th-r"><span class="th-pic big">${p ? `<img src="${esc(p)}" alt="" loading="lazy">` : ""}</span>
+    <span class="th-rm"><b class="ptn" data-ptn="h:${c.id}" role="link" tabindex="0">${esc(c.name)}</b><span class="mu">${esc([c.grade ? shortGrade(c.grade) : c.cond || "Near Mint", c.var, c.set].filter(Boolean).join(" · "))}${q > 1 ? ` · ×${q}` : ""}${gone ? " · no longer in your portfolio" : ""}</span></span>
+    <span class="th-rv"><b>${c.each != null ? money(c.each * q) : "—"}</b><span class="mu">now ${now != null ? money(now * q) : "—"}</span></span></div>`;
+}
+function renderHistDetail(box, r) {
+  const [st, cls] = thStat(r), then = thNet(r, false), now = thNet(r, true), miss = r.st === "done" ? thMissing(r) : 0;
+  const gaveV = r.give.reduce((a, c) => a + (c.each || 0) * trQ(c), 0), gotV = r.get.reduce((a, c) => a + (c.each || 0) * trQ(c), 0);
+  box.innerHTML = `<div class="tr th">
+    <div class="cdx-top"><button class="pill" type="button" data-th="list">‹ History</button><span class="th-st ${cls}">${st}</span></div>
+    <h3 class="th-h">Trade · ${thDate(r.at)}</h3>
+    <label class="th-note"><span class="mu">Who or where</span><input id="th-note" type="text" maxlength="80" value="${esc(r.note || "")}" placeholder="e.g. Card show, booth 14" autocomplete="off"></label>
+    <div class="th-sum two"><span><span class="mu">Net at trade</span><b>${thSign(then.net)}</b><span class="mu">their cards at ${r.pct}%${r.val ? ` · position ${thSign(r.val.pos)}` : ""}</span></span>
+      <span><span class="mu">Net today${now.est ? "*" : ""}</span><b style="color:var(${now.net >= -0.005 ? "--up" : "--dn"})">${r.st === "rev" ? "—" : thSign(now.net)}</b><span class="mu">${r.st === "rev" ? "reverted" : "market prices"}</span></span></div>
+    ${miss ? `<div class="th-warn" role="note">${miss === 1 ? "One" : miss} of their cards from this trade ${miss === 1 ? "is" : "are"} no longer in your portfolio (sold, traded on, or edited). Reverting puts your cards back but can't take out a card you don't have.</div>` : ""}
+    <div class="th-box"><h4>You gave · ${money(gaveV)}${r.cashOut > 0 ? ` + ${money(r.cashOut)} cash` : ""}</h4>${r.give.map(thRowHTML).join("") || `<div class="mu th-e">No cards</div>`}</div>
+    <div class="th-box"><h4>You got · ${money(gotV)}${r.cashIn > 0 ? ` + ${money(r.cashIn)} cash` : ""}</h4>${r.get.map(thRowHTML).join("") || `<div class="mu th-e">No cards</div>`}</div>
+    <div class="th-box"><h4>Change history</h4><ul class="th-log">${(r.log || []).slice().reverse().map((l) => `<li><b>${esc(l.what)}</b><span class="mu">${thDate(l.at, true)}</span></li>`).join("")}</ul></div>
+    <div class="th-act">${r.st === "done" ? `<button class="pill dl" type="button" data-th="revert" data-thid="${r.id}">Revert trade</button><button class="pill on" type="button" data-th="edit" data-thid="${r.id}">Edit trade</button>`
+      : r.st === "rev" ? `<button class="pill" type="button" data-th="del" data-thid="${r.id}">Remove from history</button><button class="pill on" type="button" data-th="restore" data-thid="${r.id}">Restore trade</button>`
+      : `<button class="pill on" type="button" data-th="cont">Continue editing</button>`}</div>
+    ${r.st === "done" ? `<div class="sm">Removing a trade from history leaves your portfolio as it is. <button type="button" class="th-lk" data-th="del" data-thid="${r.id}">Remove from history</button></div>` : ""}
+  </div>`;
+  thRefresh([r]);
+}
+function trTopHTML() {
+  const n = TH.length;
+  return `<div class="cdx-top"><button class="pill" type="button" data-tx="back">‹ Portfolio</button>${trView === "an" && (TRD.give.length || TRD.get.length) ? `<button class="pill sm2" type="button" data-tx="clear">${TRD.editOf ? "Cancel edit" : "Clear"}</button>` : "<span></span>"}</div>
+    <div class="seg th-seg" role="group" aria-label="Trade view"><button type="button" data-tx="an" aria-pressed="${trView === "an"}">Analyzer</button><button type="button" data-tx="hist" aria-pressed="${trView === "hist"}">History${n ? ` (${n})` : ""}</button></div>`;
+}
+async function thRevertAsk(id) {
+  const r = TH.find((x) => x.id === id); if (!r || r.st !== "done") return;
+  const miss = thMissing(r);
+  const ok = await modal({ title: "Revert this trade?", text: `Your cards go back into your portfolio and their cards come out.${miss ? ` <b>${miss === 1 ? "One" : miss} of their cards ${miss === 1 ? "is" : "are"} no longer in your portfolio</b>, so ${miss === 1 ? "it's" : "they're"} skipped.` : ""} The trade stays in your history, marked Reverted, and can be restored.`,
+    buttons: [{ label: "Revert", value: true, kind: "danger" }, { label: "Keep", value: false, kind: "primary" }] });
+  if (!ok) return;
+  thBackup("revert"); const m = thRevert(r);
+  r.st = "rev"; r.revAt = Date.now(); (r.log = r.log || []).push({ at: Date.now(), what: "Reverted" + (m ? ` (${m === 1 ? "one" : m} of their cards ${m === 1 ? "was" : "were"} already gone)` : "") });
+  thSave(); store(); snap(); render(); toast("Trade reverted", { label: "Undo", run: undoImport });
+}
+async function thRestore(id) {
+  const r = TH.find((x) => x.id === id); if (!r || r.st !== "rev") return;
+  const ok = await modal({ title: "Restore this trade?", text: "Your cards come out of your portfolio again and their cards go back in.", buttons: [{ label: "Restore", value: true, kind: "primary" }, { label: "Cancel", value: false, kind: "plain" }] });
+  if (!ok) return;
+  thBackup("restore"); const short = thApply(r);
+  r.st = "done"; delete r.revAt; r.log.push({ at: Date.now(), what: "Restored" + (short ? ` (${short === 1 ? "one" : short} of your cards ${short === 1 ? "wasn't" : "weren't"} in your portfolio to take out)` : "") });
+  thSave(); store(); snap(); render(); toast("Trade restored", { label: "Undo", run: undoImport });
+}
+async function thEdit(id) {
+  const r = TH.find((x) => x.id === id); if (!r || r.st !== "done") return;
+  if (TRD.editOf) { toast("Save or cancel the trade you're editing first"); trView = "an"; trDet = null; return render(); }
+  if (TRD.give.length || TRD.get.length) { const ok = await modal({ title: "Replace the trade in the analyzer?", text: "The cards in the analyzer now are cleared to load this trade.", buttons: [{ label: "Replace", value: true, kind: "danger" }, { label: "Keep", value: false, kind: "primary" }] }); if (!ok) return; }
+  const miss = thMissing(r);
+  if (miss) { const ok = await modal({ title: "Some of their cards are gone", text: `${miss === 1 ? "One" : miss} of their cards ${miss === 1 ? "is" : "are"} no longer in your portfolio. Editing still works, but ${miss === 1 ? "that card" : "those cards"} can't be taken out first, so saving may add ${miss === 1 ? "it" : "them"} back.`, buttons: [{ label: "Edit anyway", value: true, kind: "primary" }, { label: "Cancel", value: false, kind: "plain" }] }); if (!ok) return; }
+  thRevert(r); r.st = "edit";
+  const back = (c) => { const o = thClean(c), x = o.pid && P.items.find((y) => y.id === o.pid); o.id = uid(); if (x) o.max = x.qty; return o; };
+  TRD = { give: r.give.map(back), get: r.get.map(back), pct: r.pct, cashPct: r.cashPct, cashIn: r.cashIn || 0, cashOut: r.cashOut || 0, editOf: r.id };
+  thSave(); trSave(); store(); trView = "an"; trDet = null; tradeOpen = true; render(); scrollTo(0, 0);
+  toast("Trade loaded into the analyzer. Change it, then Save changes.");
+}
+// put the trade back exactly as it was before Edit
+function thCancelEdit() {
+  const r = TH.find((x) => x.id === TRD.editOf);
+  if (r && r.st === "edit") { thApply(r); r.st = "done"; thSave(); }
+  TRD = { give: [], get: [], pct: TRD.pct, cashPct: TRD.cashPct, cashIn: 0, cashOut: 0 }; trSave(); store(); snap();
+  if (r) { trView = "hist"; trDet = r.id; } render(); toast("Edit canceled: the trade is back as it was");
+}
+async function thDelete(id) {
+  const r = TH.find((x) => x.id === id); if (!r) return;
+  const ok = await modal({ title: "Remove from history?", text: `${r.st === "rev" ? "This reverted trade" : "This trade"} is removed from your history. Your portfolio isn't changed, and it can't be reverted afterward.`, buttons: [{ label: "Remove", value: true, kind: "danger" }, { label: "Keep", value: false, kind: "primary" }] });
+  if (!ok) return;
+  TH = TH.filter((x) => x.id !== id); thSave(); trDet = null; render();
+}
+document.addEventListener("click", (e) => {
+  const root = e.target.closest && e.target.closest(".tr"); if (!root) return;
+  const b = e.target.closest("button"); if (!b) return; const d = b.dataset;
+  if (d.tx === "an" || d.tx === "hist") { trView = d.tx; trDet = null; render(); scrollTo(0, 0); }
+  else if (d.thf) { thFilt = d.thf; render(); }
+  else if (d.thopen) { trDet = d.thopen; thY = scrollY; render(); scrollTo(0, 0); }
+  else if (d.th === "list") { trDet = null; render(); scrollTo(0, thY || 0); }
+  else if (d.th === "revert") thRevertAsk(d.thid);
+  else if (d.th === "restore") thRestore(d.thid);
+  else if (d.th === "edit") thEdit(d.thid);
+  else if (d.th === "del") thDelete(d.thid);
+  else if (d.th === "cont") { trView = "an"; trDet = null; render(); scrollTo(0, 0); }
+});
+// a card picture that doesn't load leaves the plain placeholder
+document.addEventListener("error", (e) => { if (e.target.tagName === "IMG" && e.target.closest(".th-pic")) e.target.remove(); }, true);
+document.addEventListener("change", (e) => {
+  if (e.target.id !== "th-note") return;
+  const r = TH.find((x) => x.id === trDet); if (!r) return; r.note = e.target.value.trim().slice(0, 80); thSave();
+});
 
 
 function readStore() { try { const x = JSON.parse(localStorage.getItem(KEY) || "null"); return x && Array.isArray(x.items) ? x : { items: [], asOf: null }; } catch { return { items: [], asOf: null }; } }
@@ -616,7 +828,9 @@ async function smartMerge(incoming, source, scopePfs, collectrPfs) {
 function undoImport() {
   let u = null; try { u = JSON.parse(localStorage.getItem(UNDO_KEY) || "null"); } catch {}
   if (!u || !u.P || !Array.isArray(u.P.items)) return toast("Nothing to undo");
-  P = u.P; try { localStorage.removeItem(UNDO_KEY); } catch {} store(); snap(); render(); toast(/^bulk/.test(u.source || "") ? "Undid the change" : u.source === "trade" ? "Undid the trade" : "Undid the last import");
+  P = u.P; if (Array.isArray(u.TH)) { TH = u.TH; thSave(); } if (u.source === "trade edit" && u.TRD && Array.isArray(u.TRD.give)) { TRD = u.TRD; trSave(); }
+  try { localStorage.removeItem(UNDO_KEY); } catch {} store(); snap(); render();
+  toast(/^bulk/.test(u.source || "") ? "Undid the change" : ({ trade: "Undid the trade", "trade edit": "Undid the trade edit", revert: "Undid the revert", restore: "Undid the restore" })[u.source] || "Undid the last import");
 }
 const canUndo = () => { try { const u = JSON.parse(localStorage.getItem(UNDO_KEY) || "null"); return !!(u && Date.now() - u.at < 14 * 864e5); } catch { return false; } };
 async function applyImport(how) {
@@ -760,7 +974,7 @@ function renderList() {
 function render() {
   const box = $("pf"); if (!box) return;
   if (detail) { const x = detailItem(); if (x) return renderDetail(box, x); detail = null; }
-  if (tradeOpen) return renderTrade(box);
+  if (tradeOpen) { if (trView === "hist") { const r = trDet && TH.find((x) => x.id === trDet); if (r) return renderHistDetail(box, r); trDet = null; return renderHist(box); } return renderTrade(box); }
   const o = owned(P.items), T = totals(o), pfs = [...new Set(o.map((x) => x.pf || "Unsorted"))].sort(), w = P.items.filter((x) => x.watch).length;
   if (view !== "all" && view !== "watch" && !pfs.includes(view)) view = "all";
   const list = filtered(), V = view === "all" || view === "watch" ? T : totals(o.filter((x) => (x.pf || "Unsorted") === view));
@@ -2025,7 +2239,7 @@ function exportCSV() {
 }
 // Tapping a card's name anywhere (portfolio list, card page, edit forms, trade, trade summary) opens the TCGplayer
 // tab on that card: its exact TCGplayer product, condition and printing when known. Graded cards open on Near Mint.
-function ptnFind(id) { return P.items.find((y) => y.id === id) || (preview && preview.id === id ? preview : null) || TRD.give.find((c) => c.id === id) || TRD.get.find((c) => c.id === id) || null; }
+function ptnFind(id) { return P.items.find((y) => y.id === id) || (preview && preview.id === id ? preview : null) || TRD.give.find((c) => c.id === id) || TRD.get.find((c) => c.id === id) || (/^h:/.test(id) ? TH.flatMap((r) => [...r.give, ...r.get]).find((c) => "h:" + c.id === id) : null) || null; }
 async function openTcgFor(id) {
   const x = ptnFind(id); if (!x) return;
   if (ED) { await edClose(); if (ED) return; }
