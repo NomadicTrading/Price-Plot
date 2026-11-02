@@ -255,7 +255,9 @@ label.pill{display:inline-block}
 .cf-row{display:flex;gap:6px;align-items:stretch;min-width:0}.tr-f .cf-row{grid-column:1/-1}.cf-row select{flex:1;min-width:0}
 .cf-b{flex:none;width:48px;min-height:36px;font:inherit;font-size:15px;font-weight:700;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:8px;cursor:pointer;padding:0}
 .cf-b[aria-pressed="true"]{background:var(--segon);border-color:var(--segon);color:var(--segfg)}.cf-b:disabled{opacity:.4;cursor:default}
-.cg.cf{border-color:#F59E0B;color:var(--link)}
+.cg.cc{border-color:var(--cc);color:var(--cc);color:color-mix(in srgb,var(--cc) 72%,var(--fg));background:color-mix(in srgb,var(--cc) 13%,transparent)}
+.cg.cc2{border-color:transparent;background:linear-gradient(90deg,color-mix(in srgb,var(--cl) 13%,var(--bg)),color-mix(in srgb,var(--ch) 13%,var(--bg))) padding-box,linear-gradient(90deg,var(--cl),var(--ch)) border-box;color:var(--mut)}
+.cg.cc2 i{font-style:normal}.cg.cc2 i:first-child{color:color-mix(in srgb,var(--cl) 72%,var(--fg))}.cg.cc2 i:last-child{color:color-mix(in srgb,var(--ch) 72%,var(--fg))}
 .cf-ov{align-items:flex-end;padding:0}
 .cf-s{width:100%;max-width:520px;background:var(--bg);color:var(--fg);border-radius:18px 18px 0 0;padding:12px 16px calc(env(safe-area-inset-bottom,0px) + 20px);display:flex;flex-direction:column;gap:14px;box-shadow:0 -8px 30px rgba(0,0,0,.25)}
 .cf-grip{width:40px;height:4px;border-radius:2px;background:var(--line);align-self:center}
@@ -1137,5 +1139,5 @@ $("thm").onclick=e=>{const t=e.target.dataset.th;if(t)setTheme(t,true)};
 setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
-<script src="/portfolio.js?v=132"></script>
+<script src="/portfolio.js?v=133"></script>
 </body></html>

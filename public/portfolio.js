@@ -943,7 +943,7 @@ function rowHTML(x) {
   const g = isGraded(x), line = view === "watch" ? unit(x) : unit(x) * x.qty, gain = x.cost > 0 && x.qty ? (unit(x) - x.cost) * x.qty : null;
   const meta = [x.set, x.num, x.var && x.var !== "Normal" ? x.var : "", x.cat && x.cat !== "Pokemon" ? x.cat : ""].filter(Boolean).map(esc).join(" · ");
   if (editing === x.id) return `<div class="pr" data-id="${x.id}">${form(x)}</div>`;
-  return `<div class="pr${selMode ? " selm" : ""}${selMode && selIds.has(x.id) ? " sel" : ""}" data-id="${x.id}"><button class="prx" type="button" data-trash="${x.id}" tabindex="-1" aria-label="Remove ${esc(x.name)}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></button><div class="prc">${selMode ? `<span class="pr-ck" role="checkbox" aria-checked="${selIds.has(x.id)}" aria-label="Select ${esc(x.name)}"></span>` : ""}${thumb(x)}<div class="pm"><b class="ptn" data-ptn="${x.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(x.name)}</b> <span class="cg ${g ? "gr" : cfOn(x) ? "cf" : ""}">${esc(g ? shortGrade(x.grade) : cfOn(x) ? condLabel(x) : x.cond || "")}</span>
+  return `<div class="pr${selMode ? " selm" : ""}${selMode && selIds.has(x.id) ? " sel" : ""}" data-id="${x.id}"><button class="prx" type="button" data-trash="${x.id}" tabindex="-1" aria-label="Remove ${esc(x.name)}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></button><div class="prc">${selMode ? `<span class="pr-ck" role="checkbox" aria-checked="${selIds.has(x.id)}" aria-label="Select ${esc(x.name)}"></span>` : ""}${thumb(x)}<div class="pm"><b class="ptn" data-ptn="${x.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(x.name)}</b> ${condBadge(x)}
   <div class="mu">${meta}${view === "all" && x.pf ? ` · <i>${esc(x.pf)}</i>` : ""}</div>
   <div class="mu">${view === "watch" ? "" : x.qty + " × "}${x.mkt == null && !(x.ovr > 0) ? "—" : money(unit(x)) + (view !== "watch" && x.qty > 1 ? " = " + money(line) : "")}${x.ovr > 0 ? ` <span title="Your own price, set in Collectr or here">(your price)</span>` : x.mkt == null ? (pfq.includes(x) || pfRunning ? " (looking up price…)" : " (no price)") : x.mktV !== 2 && !isGraded(x) ? ` <span title="Collectr's price until TCGplayer's is found">(Collectr${pfq.includes(x) || (pfRunning && !x.pTry) ? " · looking up TCGplayer…" : x.pWhy ? " · " + esc(x.pWhy) : ""})</span>` : cfOn(x) ? ` <span title="Between TCGplayer's ${esc(x.cond)} and ${esc(cfHi(x.cond))} prices">(est.${x.mktHi > 0 ? "" : " · looking up " + COND_CODE[cfHi(x.cond)] + " price"})</span>` : x.mktEst ? ` <span title="No recent ${esc(x.cond || "")} sales on TCGplayer, so this is the Near Mint price with the usual discount for this condition">(est.)</span>` : ""}</div>${gain != null ? `<div class="mu pr-g">vs. ${money(x.cost)} paid · <span style="color:var(${gain >= 0 ? "--up" : "--dn"});font-weight:600;white-space:nowrap">${gain >= 0 ? "+" : "−"}${money(Math.abs(gain))} (${gain >= 0 ? "+" : "−"}${Math.abs((gain / (x.cost * x.qty)) * 100).toFixed(1)}%)</span></div>` : ""}
   ${x.notes ? `<div class="mu">${esc(x.notes)}</div>` : ""}</div>
@@ -1109,6 +1109,20 @@ function cfName(cond, cp) {
 }
 // the short condition shown on a card: PSA 10, NM, LP+, NM−, LP+/NM−
 const condLabel = (x) => (x.grade && !/^ungraded$/i.test(x.grade) ? shortGrade(x.grade) : cfOn(x) ? cfName(x.cond, x.cp) : COND_CODE[x.cond] || x.cond || "NM");
+// a card's condition badge, in the TCGplayer tab's condition colors (NM blue, LP green, MP amber, HP red, DMG gray).
+// LP+ takes LP's color, NM− takes NM's; exactly 50% (LP+/NM−) shows both.
+function condColor(cond) {
+  const t = [...(typeof TCOND_CARD !== "undefined" ? TCOND_CARD : []), ...(typeof TCOND_SEAL !== "undefined" ? TCOND_SEAL : [])].find((r) => r[0] === cond);
+  return t ? t[2] : "";
+}
+function condBadge(x) {
+  if (isGraded(x)) return `<span class="cg gr">${esc(shortGrade(x.grade))}</span>`;
+  const one = (txt, cond) => { const col = condColor(cond); return `<span class="cg${col ? " cc" : ""}"${col ? ` style="--cc:${col}"` : ""}>${esc(txt)}</span>`; };
+  if (!cfOn(x)) return one(x.cond || "", x.cond);
+  const lo = x.cond, hi = cfHi(lo);
+  if (x.cp === 50) return `<span class="cg cc2" style="--cl:${condColor(lo)};--ch:${condColor(hi)}"><i>${COND_CODE[lo]}+</i>/<i>${COND_CODE[hi]}−</i></span>`;
+  return x.cp < 50 ? one(COND_CODE[lo] + "+", lo) : one(COND_CODE[hi] + "−", hi);
+}
 // the condition dropdown: full conditions and the +/− steps, NM down to DMG
 const CF_STEPS = CONDS.flatMap((c, i) => (i === 0 ? [[c, 0]] : [[c, 67], [c, 33], [c, 0]]));
 const cfVal = (cond, cp) => (cp > 0 && cp < 100 ? cond + "|" + cp : cond);
