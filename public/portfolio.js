@@ -29,8 +29,9 @@ function trEach(c) {
   if (c.own > 0) return c.own;
   const src = trSrc(c);
   const gr = (x) => (x.grade && !/^ungraded$/i.test(x.grade) ? shortGrade(x.grade) : "");
-  if (src && (src.ovr > 0 || src.mkt != null) && (gr(src) ? gr(src) === gr(c) : !gr(c) && (src.cond || "Near Mint") === (c.cond || "Near Mint")) && (src.var || "") === (c.var || "")) return unit(src);
-  return c.px > 0 ? c.px : null;
+  if (src && (src.ovr > 0 || src.mkt != null) && (gr(src) ? gr(src) === gr(c) : !gr(c) && (src.cond || "Near Mint") === (c.cond || "Near Mint") && (cfOn(src) ? src.cp : 0) === (cfOn(c) ? c.cp : 0)) && (src.var || "") === (c.var || "")) return unit(src);
+  if (!(c.px > 0)) return null;
+  return cfOn(c) ? cfBlend(c.px, c.pxHi, c.cp) : c.px;
 }
 const trPctOf = (c) => (c.pct != null ? c.pct : TRD.pct);
 function trMath() {
@@ -56,11 +57,19 @@ async function trPrice(c) {
     if (c.tcgId) { const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: c.tcgId, cond: c.cond || "Near Mint", print: c.var || "", jp: /japan/i.test(c.set || "") ? "1" : "", live: "1" })); if (c.pxK === k) { c.px = j.market > 0 ? j.market : null; c.pxNote = j.market > 0 ? (j.est ? "est." : "") : j.why || "no TCGplayer price"; } }
     else c.pxNote = "not found on TCGplayer";
   } catch { c.pxNote = "TCGplayer didn't answer"; }
-  trSave(); trDraw();
+  trSave(); trDraw(); trPriceHi(c);
+}
+// an in-between trade card's second price: TCGplayer's live price for the next better condition
+async function trPriceHi(c) {
+  if (!cfOn(c) || trGraded(c) || !c.tcgId) return;
+  const k = [c.cond, c.var, c.tcgId].join("|"); if (c.pxHiK === k && c.pxHi > 0) return;
+  if (c.pxHiK !== k) { c.pxHiK = k; c.pxHi = null; }
+  const v = await cfPx(c.tcgId, cfHi(c.cond), c.var, /japan/i.test(c.set || ""), true); // remembered, so asking again costs nothing
+  if (c.pxHiK === k && v !== c.pxHi) { c.pxHi = v; trSave(); trDraw(); const n = document.querySelector(`.tr [data-tc="${c.id}"] .tr-n`); if (n && cfOn(c) && v > 0) n.textContent = `est. between ${COND_CODE[c.cond]} and ${COND_CODE[cfHi(c.cond)]}`; }
 }
 function trCard(src, side) {
   return { id: uid(), side, pid: src.pid || null, name: src.name, set: src.set || "", num: src.num || "", var: src.var || "", cond: src.cond || "Near Mint", grade: src.grade && !/^ungraded$/i.test(src.grade) ? src.grade : "",
-    img: src.img || "", tcgId: src.tcgId || null, qty: src.qty || 1, max: src.max || null, px: src.px ?? null, pxK: src.px != null ? [src.cond || "Near Mint", src.var || "", src.grade || ""].join("|") : null, own: 0, pct: null };
+    img: src.img || "", tcgId: src.tcgId || null, qty: src.qty || 1, max: src.max || null, px: src.px ?? null, cp: cfOn(src) ? src.cp : 0, pxK: src.px != null ? [src.cond || "Near Mint", src.var || "", src.grade || ""].join("|") : null, own: 0, pct: null };
 }
 function trAddFromPortfolio(x) {
   const have = TRD.give.find((c) => c.pid === x.id);
@@ -139,15 +148,15 @@ function trAddFound(s, side) {
 const trMoneyIn = (v) => (v > 0 ? (Math.round(v * 100) / 100).toFixed(2) : "");
 function trRow(c) {
   const each = trEach(c), q = trQ(c), get = c.side === "get", pc = trPctOf(c);
-  const opts = [...CONDS, ...(c.cond === "Sealed" ? ["Sealed"] : []), ...TR_GRADES].map((o) => `<option ${o === (c.grade ? shortGrade(c.grade) : c.cond) ? "selected" : ""}>${o}</option>`).join("");
-  const note = c.own > 0 ? "your price" : trSrc(c) && each != null && c.px == null ? "portfolio value" : c.pxNote || (c.px == null && !trGraded(c) ? "looking up…" : "");
+  const opts = cfOptsHTML(c.grade ? "" : c.cond, c.grade ? 0 : c.cp, [...(c.cond === "Sealed" ? ["Sealed"] : []), ...TR_GRADES], c.grade ? shortGrade(c.grade) : c.cond);
+  const note = c.own > 0 ? "your price" : trSrc(c) && each != null && c.px == null ? "portfolio value" : c.pxNote || (c.px == null && !trGraded(c) ? "looking up…" : cfOn(c) ? (c.pxHi > 0 ? `est. between ${COND_CODE[c.cond]} and ${COND_CODE[cfHi(c.cond)]}` : `looking up ${COND_CODE[cfHi(c.cond)]} price…`) : "");
   return `<div class="tr-r" data-tc="${c.id}">
     <button type="button" class="tr-pic" data-tzm="${c.id}" ${c.img ? "" : "disabled"} aria-label="Enlarge picture">${c.img ? `<img src="${esc(c.img)}" alt="" loading="lazy">` : ""}</button>
     <div class="tr-m"><b class="ptn" data-ptn="${c.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(c.name)}</b><div class="mu">${esc([c.set, c.num].filter(Boolean).join(" · "))}${c.pid ? " · from your portfolio" : ""}</div>
       <div class="tr-v" data-tv="${c.id}">${trValTxt(c)}</div></div>
     <button type="button" class="sq-x" data-tdel="${c.id}" aria-label="Remove from trade">✕</button>
     <div class="tr-f">
-      <select data-tf="cond" data-tid="${c.id}" aria-label="Condition or grade">${opts}</select>
+      <span class="cf-row"><select data-tf="cond" data-tid="${c.id}" aria-label="Condition or grade">${opts}</select>${cfBtn(`data-tcf="${c.id}"`, c.cond, c.grade ? 0 : c.cp, !!c.grade || c.cond === "Sealed")}</span>
       <select data-tf="var" data-tid="${c.id}" aria-label="Printing">${printOpts(printsCache.get(String(c.tcgId)) || (c.tcgId ? (c.var ? [c.var] : []) : PRINTS_ANY), c.var || "")}${!c.var && !printsCache.get(String(c.tcgId)) && c.tcgId ? `<option value="" selected disabled>Printing…</option>` : ""}</select>
       <label class="tr-q">×<input data-tf="qty" data-tid="${c.id}" type="number" min="1" ${c.max ? `max="${c.max}"` : ""} step="1" inputmode="numeric" value="${q}" aria-label="Quantity"></label>
       <label class="tr-p">$<input data-tf="own" data-tid="${c.id}" type="number" min="0" step="any" inputmode="decimal" value="${trMoneyIn(c.own)}" placeholder="${each != null && !(c.own > 0) ? (Math.round(each * 100) / 100).toFixed(2) : "Price"}" aria-label="Price each (leave blank for market)"></label>
@@ -225,7 +234,7 @@ function renderTrade(box) {
     <div class="tr-hits" id="tr-sug-get">${trSugHTML("get")}</div></div>
   <div class="bar"><button class="pill on" type="button" data-tx="done" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>${TRD.editOf ? "Save changes" : "Complete trade"}</button></div>
   <div class="sm">Your cards count at full market value; theirs at the trade % (set one card's own % in its box). The green or red number is where you stand: trade credit plus cash they add, minus your cards and cash you add. Graded cards use Collectr's price.</div></div>`;
-  for (const c of [...TRD.give, ...TRD.get]) { if (c.pxK !== [c.cond, c.var, c.grade].join("|") && !(c.pid && trEach(c) != null)) trPrice(c); trLoadPrints(c); trLive(c); }
+  for (const c of [...TRD.give, ...TRD.get]) { if (c.pxK !== [c.cond, c.var, c.grade].join("|") && !(c.pid && trEach(c) != null)) trPrice(c); trLoadPrints(c); trLive(c); trPriceHi(c); }
 }
 // a live price found for one copy goes to every copy of the same card, condition and printing in all your portfolios
 // (no extra lookups: it's the same TCGplayer price). Graded copies and prices you typed in are left alone.
@@ -321,7 +330,7 @@ document.addEventListener("input", (e) => {
 document.addEventListener("change", (e) => {
   const t = e.target; if (!t.closest || !t.closest(".tr")) return;
   const c = [...TRD.give, ...TRD.get].find((x) => x.id === t.dataset.tid); if (!c) return;
-  if (t.dataset.tf === "cond") { if (TR_GRADES.includes(t.value)) { c.grade = t.value; c.cond = "Near Mint"; } else { c.grade = ""; c.cond = t.value; } trSave(); trPrice(c); render(); }
+  if (t.dataset.tf === "cond") { if (TR_GRADES.includes(t.value)) { c.grade = t.value; c.cond = "Near Mint"; c.cp = 0; } else { const v = cfParse(t.value); c.grade = ""; c.cond = v.cond; c.cp = v.cp; } trSave(); trPrice(c); render(); }
   else if (t.dataset.tf === "var") { c.var = t.value; trSave(); trPrice(c); render(); }
   else if (t.dataset.tf === "qty") { t.value = trQ(c); }
 });
@@ -331,7 +340,7 @@ document.addEventListener("change", (e) => {
 let trSumMine = (() => { try { return localStorage.getItem("pp_trsum_mine") !== "0"; } catch { return true; } })();
 function trSumRow(c, mine) {
   const each = trEach(c), q = trQ(c), tot = each != null ? each * q : null, get = c.side === "get", pc = trPctOf(c);
-  const cond = c.grade ? shortGrade(c.grade) : COND_CODE[c.cond] || c.cond || "NM";
+  const cond = condLabel(c);
   const pic = c.img || (c.tcgId ? `https://tcgplayer-cdn.tcgplayer.com/product/${c.tcgId}_in_1000x1000.jpg` : "");
   return `<div class="ts-r"><span class="ts-pic">${pic ? `<img src="${esc(pic)}" alt="">` : ""}</span>
     <span class="ts-m"><b class="ptn" data-ptn="${c.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(c.name)}</b><span class="mu">${esc([c.set, c.num].filter(Boolean).join(" · "))}</span><span class="ts-tg"><i>${esc(cond)}</i>${c.var ? `<i>${esc(c.var)}</i>` : ""}${q > 1 ? `<i>×${q}</i>` : ""}</span></span>
@@ -387,7 +396,7 @@ async function trComplete() {
   if (old && old.pf) pfs = [old.pf, ...pfs.filter((p) => p !== old.pf)];
   const li = (a) => a.length ? `<ul class="mg-l">${a.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : `<div class="mu" style="font-size:13px">None</div>`;
   const out = TRD.give.filter((c) => c.pid).map((c) => `${c.name} ×${trQ(c)}`), notOwned = TRD.give.filter((c) => !c.pid).length;
-  const inn = TRD.get.map((c) => `${c.name}${c.grade ? " · " + shortGrade(c.grade) : " · " + (COND_CODE[c.cond] || c.cond)} ×${trQ(c)} · cost ${money(costEach(c))} each`);
+  const inn = TRD.get.map((c) => `${c.name} · ${condLabel(c)} ×${trQ(c)} · cost ${money(costEach(c))} each`);
   const pf = await modal({ title: old ? "Save changes to this trade?" : "Complete this trade?",
     text: `<b>Leaving your portfolio</b>${li(out)}${notOwned ? `<div class="mu" style="font-size:12.5px">${notOwned} card${notOwned === 1 ? " isn't" : "s aren't"} in your portfolio, so nothing to remove.</div>` : ""}<b>Coming in</b>${li(inn)}<div class="mu" style="font-size:12.5px">Their cards' cost is what you traded for them (${money(gave)}), shared by market value. ${old ? "The trade keeps its date and place in your history." : "It's saved in your trade history, where you can edit or revert it."} Add them to:</div>`,
     buttons: [...(pfs.length ? pfs : ["Trades"]).map((p, i) => ({ label: p, value: p, kind: i === 0 ? "primary" : "" })), ...(pfs.length && !pfs.includes("Trades") ? [{ label: "New: Trades", value: "Trades" }] : []), { label: "Cancel", value: null, kind: "plain" }] });
@@ -397,7 +406,8 @@ async function trComplete() {
     give: TRD.give.map((c) => ({ ...thClean(c), each: trEach(c) })),
     get: TRD.get.map((c) => { const each = trEach(c), g = trGraded(c);
       return { ...thClean(c), each, item: { pf, cat: "Pokemon", set: c.set, name: c.name, num: c.num, rarity: "", var: c.var, grade: g ? c.grade : "Ungraded", cond: c.cond, cost: costEach(c),
-        mkt: each ?? null, ...(g ? {} : c.px > 0 ? { mktV: 2, pT: Date.now() } : {}), ovr: 0, watch: false, added: today(), notes: "From a trade", img: c.img || undefined, tcgId: c.tcgId || undefined } }; }) };
+        ...(cfOn(c) ? { cp: c.cp, mktHi: c.pxHi > 0 ? c.pxHi : undefined, pHiT: c.pxHi > 0 ? Date.now() : undefined } : {}),
+        mkt: cfOn(c) && !(c.own > 0) ? c.px ?? null : each ?? null, ...(g ? {} : c.px > 0 ? { mktV: 2, pT: Date.now() } : {}), ovr: 0, watch: false, added: today(), notes: "From a trade", img: c.img || undefined, tcgId: c.tcgId || undefined } }; }) };
   rec.val = { give: m.give, getMk: m.getMk, credit: m.credit, pos: m.pos };
   thApply(rec);
   if (old) { Object.assign(rec, { id: old.id, at: old.at, note: old.note || "", st: "done", log: [...(old.log || []), { at: Date.now(), what: thDiff(old, rec) }] }); TH = TH.map((r) => (r.id === old.id ? rec : r)); }
@@ -441,7 +451,7 @@ function thRevert(rec) {
     if (x) x.qty += c.took; else if (c.snap) P.items.push({ ...c.snap, qty: c.took }); }
   return miss;
 }
-const thLab = (c) => `${c.name} ${c.grade ? shortGrade(c.grade) : COND_CODE[c.cond] || c.cond || "NM"}`;
+const thLab = (c) => `${c.name} ${condLabel(c)}`;
 // a short description of what an edit changed
 function thDiff(a, b) {
   const out = [];
@@ -461,7 +471,7 @@ function thDiff(a, b) {
 // today's value of one history card: their card's portfolio price while you still have it, else a looked-up price
 function thNowEach(c) {
   if (c.side === "get") { const y = P.items.find((x) => x.id === c.newId); if (y && (y.ovr > 0 || y.mkt != null)) return unit(y); }
-  return c.nowPx > 0 ? c.nowPx : null;
+  return c.nowPx > 0 ? (cfOn(c) ? cfBlend(c.nowPx, c.nowPxHi, c.cp) : c.nowPx) : null;
 }
 // market difference for a trade: what you got (plus cash in) minus what you gave (plus cash out); "now" falls back to trade-time prices
 function thNet(r, now) {
@@ -480,7 +490,8 @@ async function thRefresh(list) {
       c.nowT = Date.now();
       if (trGraded(c)) { const g = shortGrade(c.grade).toLowerCase(), m = P.items.find((x) => isGraded(x) && x.mkt > 0 && mName(x.name) === mName(c.name) && mNum(x.num) === mNum(c.num) && shortGrade(x.grade).toLowerCase() === g); if (m) { c.nowPx = m.mkt; changed = true; } continue; }
       if (!c.tcgId) continue;
-      try { const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: c.tcgId, cond: c.cond || "Near Mint", print: c.var || "", jp: /japan/i.test(c.set || "") ? "1" : "" })); if (j.market > 0) { c.nowPx = j.market; changed = true; } } catch { c.nowT = 0; }
+      try { const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: c.tcgId, cond: c.cond || "Near Mint", print: c.var || "", jp: /japan/i.test(c.set || "") ? "1" : "" })); if (j.market > 0) { c.nowPx = j.market; changed = true; }
+        if (cfOn(c)) { const h = await cfPx(c.tcgId, cfHi(c.cond), c.var, /japan/i.test(c.set || "")); if (h > 0) c.nowPxHi = h; } } catch { c.nowT = 0; }
     }
   } finally { thBusy = false; }
   if (changed) { thSave(); if (tradeOpen && trView === "hist" && !(document.activeElement && document.activeElement.id === "th-note")) render(); }
@@ -522,7 +533,7 @@ function renderHist(box) {
 function thRowHTML(c) {
   const now = thNowEach(c), q = trQ(c), p = thPic(c), gone = c.side === "get" && !P.items.some((x) => x.id === c.newId);
   return `<div class="th-r"><span class="th-pic big">${p ? `<img src="${esc(p)}" alt="" loading="lazy">` : ""}</span>
-    <span class="th-rm"><b class="ptn" data-ptn="h:${c.id}" role="link" tabindex="0">${esc(c.name)}</b><span class="mu">${esc([c.grade ? shortGrade(c.grade) : c.cond || "Near Mint", c.var, c.set].filter(Boolean).join(" · "))}${q > 1 ? ` · ×${q}` : ""}${gone ? " · no longer in your portfolio" : ""}</span></span>
+    <span class="th-rm"><b class="ptn" data-ptn="h:${c.id}" role="link" tabindex="0">${esc(c.name)}</b><span class="mu">${esc([cfOn(c) ? condLabel(c) : c.grade ? shortGrade(c.grade) : c.cond || "Near Mint", c.var, c.set].filter(Boolean).join(" · "))}${q > 1 ? ` · ×${q}` : ""}${gone ? " · no longer in your portfolio" : ""}</span></span>
     <span class="th-rv"><b>${c.each != null ? money(c.each * q) : "—"}</b><span class="mu">now ${now != null ? money(now * q) : "—"}</span></span></div>`;
 }
 function renderHistDetail(box, r) {
@@ -606,6 +617,28 @@ document.addEventListener("click", (e) => {
   else if (d.th === "del") thDelete(d.thid);
   else if (d.th === "cont") { trView = "an"; trDet = null; render(); scrollTo(0, 0); }
 });
+// the +/− button beside a condition dropdown opens the fine-tune panel
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest && e.target.closest("[data-tcf],[data-pcf]"); if (!b || b.disabled) return;
+  if (b.dataset.tcf) {
+    const c = [...TRD.give, ...TRD.get].find((x) => x.id === b.dataset.tcf); if (!c || c.grade) return;
+    const r = await cfSheet({ cond: c.cond, cp: c.cp }, (cond) => (cond === c.cond && !cfOn(c) && c.px > 0 ? Promise.resolve(c.px) : cfPx(c.tcgId, cond, c.var, /japan/i.test(c.set || ""), true)));
+    if (!r) return; c.cond = r.cond; c.cp = r.cp; trSave(); trPrice(c); render();
+    return;
+  }
+  const fm = b.closest("form.pe"), sel = fm && fm.querySelector('select[name="cond"]'); if (!sel) return;
+  const v = cfParse(sel.value); if (!CONDS.includes(v.cond)) return;
+  const x = P.items.find((y) => y.id === fm.dataset.fid), pr = fm.querySelector('[name="var"]');
+  const r = await cfSheet(v, (cond) => cfPx(x && x.tcgId, cond, pr ? pr.value : x && x.var, x ? isJp(x) : false));
+  if (!r) return; cfSetSel(sel, r.cond, r.cp);
+});
+// redraw a form's condition dropdown on a new choice (a fine-tuned spot goes back to its plain step) and its +/− button
+function cfSetSel(sel, cond, cp) {
+  const extras = [...sel.options].map((o) => o.value).filter((v) => !CONDS.includes(cfParse(v).cond));
+  sel.innerHTML = cfOptsHTML(cond, cp, extras, cond);
+  const b = sel.parentElement.querySelector(".cf-b"); if (b) { b.setAttribute("aria-pressed", cfFine(cp) ? "true" : "false"); b.disabled = !CONDS.includes(cond); }
+}
+document.addEventListener("change", (e) => { const t = e.target; if (t.name !== "cond" || !t.closest || !t.closest("form.pe")) return; const v = cfParse(t.value); cfSetSel(t, v.cond, v.cp); });
 // a card picture that doesn't load leaves the plain placeholder
 document.addEventListener("error", (e) => { if (e.target.tagName === "IMG" && e.target.closest(".th-pic")) e.target.remove(); }, true);
 document.addEventListener("change", (e) => {
@@ -621,7 +654,7 @@ function snap(date) { const h = hist(); h[date || today()] = Math.round(totals(o
 const today = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 const num = (v) => { if (v == null || v === "") return null; if (typeof v === "number") return isFinite(v) ? v : null; const n = parseFloat(String(v).replace(/[$,\s]/g, "")); return isFinite(n) ? n : null; };
-const unit = (x) => (x.ovr > 0 ? x.ovr : x.mkt ?? 0);
+const unit = (x) => (x.ovr > 0 ? x.ovr : (cfOn(x) ? cfBlend(x.mkt, x.mktHi, x.cp) : x.mkt) ?? 0);
 const owned = (a) => a.filter((x) => x.qty > 0);
 const keyOf = (x) => [x.pf, x.cat, x.set, x.name, x.num, x.var, x.grade, x.cond].map((s) => String(s || "").toLowerCase()).join("|");
 function totals(a) { let value = 0, cost = 0, costed = 0, n = 0, graded = 0;
@@ -652,7 +685,7 @@ async function readFile(file) {
   return parseCSV(await file.text());
 }
 // Collectr's columns (any order). Names are matched loosely so small wording changes still work.
-const COLS = { portfolioname: "pf", category: "cat", set: "set", productname: "name", name: "name", cardname: "name", cardnumber: "num", number: "num", rarity: "rarity", variance: "var", printing: "var", grade: "grade", cardcondition: "cond", condition: "cond", averagecostpaid: "cost", costpaid: "cost", quantity: "qty", qty: "qty", priceoverride: "ovr", watchlist: "watch", dateadded: "added", notes: "notes" };
+const COLS = { conditionfinetune: "cp", portfolioname: "pf", category: "cat", set: "set", productname: "name", name: "name", cardname: "name", cardnumber: "num", number: "num", rarity: "rarity", variance: "var", printing: "var", grade: "grade", cardcondition: "cond", condition: "cond", averagecostpaid: "cost", costpaid: "cost", quantity: "qty", qty: "qty", priceoverride: "ovr", watchlist: "watch", dateadded: "added", notes: "notes" };
 function toItems(rows) {
   if (rows.length < 2) throw new Error("the file has no rows");
   const head = rows[0].map((h) => String(h).toLowerCase().replace(/[^a-z0-9]/g, "")), idx = {};
@@ -665,7 +698,8 @@ function toItems(rows) {
     const notes = s(r, "notes").replace(/^[\s;,.\-]+$/, "");
     return { id: uid(), pf: s(r, "pf"), cat: s(r, "cat"), set: s(r, "set"), name, num: s(r, "num"), rarity: s(r, "rarity"), var: s(r, "var"),
       grade: s(r, "grade"), cond: s(r, "cond"), cost: num(g(r, "cost")) || 0, qty: Math.max(0, Math.round(num(g(r, "qty")) || 0)),
-      mkt: num(g(r, "mkt")), ovr: num(g(r, "ovr")) || 0, watch: /^(true|yes|1)$/i.test(s(r, "watch")), added: s(r, "added"), notes };
+      mkt: num(g(r, "mkt")), ovr: num(g(r, "ovr")) || 0, watch: /^(true|yes|1)$/i.test(s(r, "watch")), added: s(r, "added"), notes,
+      ...(() => { const m = /\((\d{1,2})%\)/.exec(s(r, "cp")); return m && +m[1] > 0 ? { cp: +m[1] } : {}; })() };
   }).filter(Boolean);
   if (!items.length) throw new Error("no cards found in the file");
   return { items, asOf };
@@ -905,9 +939,9 @@ function rowHTML(x) {
   const g = isGraded(x), line = view === "watch" ? unit(x) : unit(x) * x.qty, gain = x.cost > 0 && x.qty ? (unit(x) - x.cost) * x.qty : null;
   const meta = [x.set, x.num, x.var && x.var !== "Normal" ? x.var : "", x.cat && x.cat !== "Pokemon" ? x.cat : ""].filter(Boolean).map(esc).join(" · ");
   if (editing === x.id) return `<div class="pr" data-id="${x.id}">${form(x)}</div>`;
-  return `<div class="pr${selMode ? " selm" : ""}${selMode && selIds.has(x.id) ? " sel" : ""}" data-id="${x.id}"><button class="prx" type="button" data-trash="${x.id}" tabindex="-1" aria-label="Remove ${esc(x.name)}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></button><div class="prc">${selMode ? `<span class="pr-ck" role="checkbox" aria-checked="${selIds.has(x.id)}" aria-label="Select ${esc(x.name)}"></span>` : ""}${thumb(x)}<div class="pm"><b class="ptn" data-ptn="${x.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(x.name)}</b> <span class="cg ${g ? "gr" : ""}">${esc(g ? shortGrade(x.grade) : x.cond || "")}</span>
+  return `<div class="pr${selMode ? " selm" : ""}${selMode && selIds.has(x.id) ? " sel" : ""}" data-id="${x.id}"><button class="prx" type="button" data-trash="${x.id}" tabindex="-1" aria-label="Remove ${esc(x.name)}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></button><div class="prc">${selMode ? `<span class="pr-ck" role="checkbox" aria-checked="${selIds.has(x.id)}" aria-label="Select ${esc(x.name)}"></span>` : ""}${thumb(x)}<div class="pm"><b class="ptn" data-ptn="${x.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(x.name)}</b> <span class="cg ${g ? "gr" : cfOn(x) ? "cf" : ""}">${esc(g ? shortGrade(x.grade) : cfOn(x) ? condLabel(x) : x.cond || "")}</span>
   <div class="mu">${meta}${view === "all" && x.pf ? ` · <i>${esc(x.pf)}</i>` : ""}</div>
-  <div class="mu">${view === "watch" ? "" : x.qty + " × "}${x.mkt == null && !(x.ovr > 0) ? "—" : money(unit(x)) + (view !== "watch" && x.qty > 1 ? " = " + money(line) : "")}${x.ovr > 0 ? ` <span title="Your own price, set in Collectr or here">(your price)</span>` : x.mkt == null ? (pfq.includes(x) || pfRunning ? " (looking up price…)" : " (no price)") : x.mktV !== 2 && !isGraded(x) ? ` <span title="Collectr's price until TCGplayer's is found">(Collectr${pfq.includes(x) || (pfRunning && !x.pTry) ? " · looking up TCGplayer…" : x.pWhy ? " · " + esc(x.pWhy) : ""})</span>` : x.mktEst ? ` <span title="No recent ${esc(x.cond || "")} sales on TCGplayer, so this is the Near Mint price with the usual discount for this condition">(est.)</span>` : ""}</div>${gain != null ? `<div class="mu pr-g">vs. ${money(x.cost)} paid · <span style="color:var(${gain >= 0 ? "--up" : "--dn"});font-weight:600;white-space:nowrap">${gain >= 0 ? "+" : "−"}${money(Math.abs(gain))} (${gain >= 0 ? "+" : "−"}${Math.abs((gain / (x.cost * x.qty)) * 100).toFixed(1)}%)</span></div>` : ""}
+  <div class="mu">${view === "watch" ? "" : x.qty + " × "}${x.mkt == null && !(x.ovr > 0) ? "—" : money(unit(x)) + (view !== "watch" && x.qty > 1 ? " = " + money(line) : "")}${x.ovr > 0 ? ` <span title="Your own price, set in Collectr or here">(your price)</span>` : x.mkt == null ? (pfq.includes(x) || pfRunning ? " (looking up price…)" : " (no price)") : x.mktV !== 2 && !isGraded(x) ? ` <span title="Collectr's price until TCGplayer's is found">(Collectr${pfq.includes(x) || (pfRunning && !x.pTry) ? " · looking up TCGplayer…" : x.pWhy ? " · " + esc(x.pWhy) : ""})</span>` : cfOn(x) ? ` <span title="Between TCGplayer's ${esc(x.cond)} and ${esc(cfHi(x.cond))} prices">(est.${x.mktHi > 0 ? "" : " · looking up " + COND_CODE[cfHi(x.cond)] + " price"})</span>` : x.mktEst ? ` <span title="No recent ${esc(x.cond || "")} sales on TCGplayer, so this is the Near Mint price with the usual discount for this condition">(est.)</span>` : ""}</div>${gain != null ? `<div class="mu pr-g">vs. ${money(x.cost)} paid · <span style="color:var(${gain >= 0 ? "--up" : "--dn"});font-weight:600;white-space:nowrap">${gain >= 0 ? "+" : "−"}${money(Math.abs(gain))} (${gain >= 0 ? "+" : "−"}${Math.abs((gain / (x.cost * x.qty)) * 100).toFixed(1)}%)</span></div>` : ""}
   ${x.notes ? `<div class="mu">${esc(x.notes)}</div>` : ""}</div>
   <div class="pv"><b>${x.mkt == null && !(x.ovr > 0) ? "—" : money(unit(x))}</b>${selMode ? "" : `<div><button class="pill sm2" type="button" data-cmp="${x.id}">Comp</button><button class="pill sm2" type="button" data-ed="${x.id}">Edit</button>${view !== "watch" && x.qty > 0 ? `<button class="pill sm2 trb" type="button" data-trd="${x.id}" aria-label="Add ${esc(x.name)} to the trade" title="Add to trade">⇄</button>` : ""}</div>`}</div></div></div>`;
 }
@@ -950,7 +984,7 @@ function form(x) {
   return `<form class="pe" data-fid="${x.id || ""}"><button type="button" class="pe-x" data-cx="1" aria-label="Close without saving">✕</button>
   ${x.id ? `<div class="pe-h"><button type="button" class="pe-pic" data-zm="${x.id}" aria-label="Enlarge the picture of ${esc(x.name)}" ${pic ? "" : "disabled"}>${pic ? `<img src="${esc(x.img || pic)}" alt="">` : ""}</button>
     <div class="pe-hm"><b class="ptn" data-ptn="${x.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(x.name)}</b>${esc([x.set, x.num].filter(Boolean).join(" · "))}</div></div>` : ""}<div class="pg">${f("name", "Card name", x.name, "text", "required")}${f("set", "Set", x.set)}${f("num", "Number", x.num)}${printField(x)}
-  <label>Condition<select name="cond">${[...CONDS, "Sealed", ...(x.cond && !CONDS.includes(x.cond) && x.cond !== "Sealed" ? [x.cond] : [])].map((c) => `<option ${c === (x.cond || "Near Mint") ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
+  <label>Condition<span class="cf-row"><select name="cond">${cfOptsHTML(x.cond || "Near Mint", isGraded(x) ? 0 : x.cp, ["Sealed", ...(x.cond && !CONDS.includes(x.cond) && x.cond !== "Sealed" ? [x.cond] : [])], x.cond || "Near Mint")}</select>${cfBtn('data-pcf="1"', x.cond, isGraded(x) ? 0 : x.cp, x.cond && !CONDS.includes(x.cond))}</span></label>
   ${f("grade", "Grade (blank if raw)", isGraded(x) ? x.grade : "", "text", 'placeholder="e.g. PSA 10"')}
   ${f("qty", "Quantity", x.qty ?? 1, "number", 'min="0" step="1" inputmode="numeric"')}${costField(x)}
   ${f("ovr", "Your price each ($)", x.ovr || "", "number", `min="0" step="any" inputmode="decimal" placeholder="${x.mkt != null ? "Market " + money(x.mkt) : "Value per card"}"`)}
@@ -1055,6 +1089,100 @@ function pump() {
 // Tapping a card opens its comps: a fair price from both sites' sales, one chart of every sale, and each site's numbers.
 // Numbers load only when a card is opened (and are kept for this visit), so the daily lookup limits stretch.
 const COND_CODE = { "Near Mint": "NM", "Lightly Played": "LP", "Moderately Played": "MP", "Heavily Played": "HP", "Damaged": "DMG" };
+
+/* ---------- in-between conditions (portfolio and trade analyzer) ----------
+   A raw card can sit between two neighboring conditions: `cond` stays the lower one (so filters, imports and price
+   lookups work as before) and `cp` is how far (1–99%) it is toward the next better one. NM− is 67% from LP toward NM,
+   LP+ is 33%. Its value is TCGplayer's price for each of the two conditions, blended by that %, and marked est.
+   Names: below 50% it's the lower condition + (LP+), above it the higher one − (NM−), exactly 50% is LP+/NM−. */
+const cfHi = (cond) => CONDS[CONDS.indexOf(cond) - 1] || null;
+const cfOn = (x) => !!x && x.cp > 0 && x.cp < 100 && CONDS.indexOf(x.cond) > 0 && !(x.grade && !/^ungraded$/i.test(x.grade));
+const cfBlend = (lo, hi, cp) => (lo != null && hi > 0 ? lo + (hi - lo) * cp / 100 : lo);
+function cfName(cond, cp) {
+  const c = COND_CODE[cond] || cond || "NM"; if (!(cp > 0 && cp < 100) || CONDS.indexOf(cond) < 1) return c;
+  const h = COND_CODE[cfHi(cond)];
+  return cp === 50 ? `${c}+/${h}−` : cp < 50 ? c + "+" : h + "−";
+}
+// the short condition shown on a card: PSA 10, NM, LP+, NM−, LP+/NM−
+const condLabel = (x) => (x.grade && !/^ungraded$/i.test(x.grade) ? shortGrade(x.grade) : cfOn(x) ? cfName(x.cond, x.cp) : COND_CODE[x.cond] || x.cond || "NM");
+// the condition dropdown: full conditions and the +/− steps, NM down to DMG
+const CF_STEPS = CONDS.flatMap((c, i) => (i === 0 ? [[c, 0]] : [[c, 67], [c, 33], [c, 0]]));
+const cfVal = (cond, cp) => (cp > 0 && cp < 100 ? cond + "|" + cp : cond);
+function cfParse(v) { const [cond, q] = String(v || "").split("|"); const cp = Math.round(+q || 0); return { cond, cp: cp > 0 && cp < 100 && CONDS.indexOf(cond) > 0 ? cp : 0 }; }
+// options for that dropdown. A fine-tuned spot takes the place of its step (it's still called LP+); exactly 50% gets its own entry.
+// `extras` are other choices (Sealed, grades), selected when equal to `extraSel`.
+function cfOptsHTML(cond, cp, extras = [], extraSel = "") {
+  const list = CF_STEPS.map(([c, q]) => ({ c, q }));
+  if (CONDS.indexOf(cond) > 0 && cp > 0 && cp < 100 && cp !== 33 && cp !== 67) {
+    if (cp === 50) list.splice(list.findIndex((s) => s.c === cond && s.q === 33), 0, { c: cond, q: 50 });
+    else { const s = list.find((s) => s.c === cond && s.q === (cp < 50 ? 33 : 67)); if (s) s.q = cp; }
+  }
+  const raw = CONDS.includes(cond) && !extras.includes(extraSel);
+  return list.map((s) => `<option value="${esc(cfVal(s.c, s.q))}" ${raw && s.c === cond && s.q === (cp || 0) ? "selected" : ""}>${esc(s.q ? cfName(s.c, s.q) : s.c)}</option>`).join("")
+    + extras.map((e) => `<option value="${esc(e)}" ${!raw && e === extraSel ? "selected" : ""}>${esc(e)}</option>`).join("");
+}
+// the +/− button beside a condition dropdown; dark when the card sits off the dropdown's own steps
+const cfFine = (cp) => cp > 0 && cp !== 33 && cp !== 67;
+const cfBtn = (attr, cond, cp, off) => `<button type="button" class="cf-b" ${attr} aria-label="Fine-tune condition" aria-pressed="${cfFine(cp) ? "true" : "false"}" ${off ? "disabled" : ""}>+/−</button>`;
+// TCGplayer's price for a card in one condition (remembered for this visit)
+const cfPxCache = new Map();
+function cfPx(tcgId, cond, print, jp, live) {
+  if (!tcgId || !CONDS.includes(cond)) return Promise.resolve(null);
+  const k = [tcgId, cond, print || "", jp ? 1 : 0].join("|");
+  if (!cfPxCache.has(k)) cfPxCache.set(k, getJSON("/api/tcgprice?" + new URLSearchParams({ id: tcgId, cond, print: print || "", jp: jp ? "1" : "", ...(live ? { live: "1" } : {}) }))
+    .then((j) => (j.market > 0 ? j.market : null)).catch(() => { cfPxCache.delete(k); return null; }));
+  return cfPxCache.get(k);
+}
+/* The fine-tune panel. Left: the lower condition ("Better than"); right: the next one up ("Worse than"), always neighbors.
+   The slider is the % from left to right, with lines at 1/6, 33%, 50%, 67% and 5/6; it settles on 33/50/67 when let go
+   within 2%. The exact % rides under the slider while you move it. Resolves { cond, cp } on Done, null if dismissed. */
+function cfSheet(start, priceOf) {
+  return new Promise((done) => {
+    let i = CONDS.indexOf(start.cond); if (i < 0) i = 0;
+    let lo = start.cp > 0 && i > 0 ? i : Math.max(1, i), p = start.cp > 0 && i > 0 ? start.cp : i === 0 ? 100 : 0;
+    const px = {};
+    const ov = document.createElement("div"); ov.className = "ppm-ov cf-ov";
+    const pos = (q) => `calc(10px + (100% - 20px) * ${q / 100})`;
+    ov.innerHTML = `<div class="cf-s" role="dialog" aria-modal="true" aria-labelledby="cf-t">
+      <div class="cf-grip"></div>
+      <div class="cf-hd"><div><span class="mu" id="cf-t">Exact condition</span><b id="cf-l"></b></div><div class="cf-pr"><b id="cf-p"></b><span class="mu" id="cf-e"></span></div></div>
+      <div class="cf-sel"><label>Better than<select id="cf-lo">${CONDS.slice(1).map((c, k) => `<option value="${k + 1}">${COND_CODE[c]}</option>`).join("")}</select></label>
+        <label class="r">Worse than<select id="cf-hi">${CONDS.slice(0, 4).map((c, k) => `<option value="${k}">${COND_CODE[c]}</option>`).join("")}</select></label></div>
+      <div class="cf-sl"><input type="range" id="cf-r" min="0" max="100" step="1">${[16.5, 33, 50, 67, 83.5].map((q) => `<i class="${q % 1 ? "mn" : ""}" data-q="${q}" style="left:${pos(q)}"></i>`).join("")}</div>
+      <div class="cf-bw"><span id="cf-bub"></span></div>
+      <div class="cf-ft"><span id="cf-ln"></span><b id="cf-mid"></b><span id="cf-hn"></span></div>
+      <button type="button" class="ppm-x primary cf-done" data-cfa="done">Done</button></div>`;
+    const $c = (id) => ov.querySelector("#" + id);
+    const need = (k) => { if (k in px) return; px[k] = undefined; priceOf(CONDS[k]).then((v) => { px[k] = v; upd(); }); };
+    const m = (k) => (px[k] === undefined ? "…" : px[k] > 0 ? money(px[k]) : "—");
+    function upd() {
+      const hi = lo - 1; need(lo); need(hi);
+      $c("cf-lo").value = String(lo); $c("cf-hi").value = String(hi); $c("cf-r").value = String(p);
+      const full = p === 0 || p === 100, nm = p === 0 ? CONDS[lo] : p === 100 ? CONDS[hi] : null;
+      $c("cf-l").textContent = nm ? COND_CODE[nm] : cfName(CONDS[lo], p);
+      const a = px[lo], b = px[hi], v = p === 0 ? a : p === 100 ? b : a > 0 && b > 0 ? a + (b - a) * p / 100 : null;
+      $c("cf-p").textContent = v > 0 ? money(v) : a === undefined || b === undefined ? "…" : "—";
+      $c("cf-e").textContent = full ? "TCGplayer market" : `est. between ${COND_CODE[CONDS[lo]]} and ${COND_CODE[CONDS[hi]]}`;
+      $c("cf-ln").innerHTML = `<b>${COND_CODE[CONDS[lo]]}</b> <span class="mu">${m(lo)}</span>`;
+      $c("cf-hn").innerHTML = `<span class="mu">${m(hi)}</span> <b>${COND_CODE[CONDS[hi]]}</b>`;
+      $c("cf-mid").textContent = full ? "" : cfName(CONDS[lo], p);
+      const bub = $c("cf-bub"); bub.textContent = p + "%"; bub.style.left = pos(p);
+      $c("cf-r").setAttribute("aria-label", `Percent of the way from ${CONDS[lo]} to ${CONDS[hi]}`);
+      ov.querySelectorAll(".cf-sl i").forEach((t) => t.classList.toggle("on", +t.dataset.q === p));
+    }
+    const close = (v) => { removeEventListener("keydown", key); ov.remove(); done(v); };
+    const key = (e) => { if (e.key === "Escape") close(null); };
+    ov.addEventListener("click", (e) => { if (e.target === ov) close(null); else if (e.target.closest("[data-cfa=done]")) close(p === 0 ? { cond: CONDS[lo], cp: 0 } : p === 100 ? { cond: CONDS[lo - 1], cp: 0 } : { cond: CONDS[lo], cp: p }); });
+    ov.addEventListener("input", (e) => { if (e.target.id === "cf-r") { p = +e.target.value; upd(); } });
+    ov.addEventListener("change", (e) => {
+      const t = e.target;
+      if (t.id === "cf-r") { let v = +t.value; for (const q of [33, 50, 67]) if (Math.abs(v - q) <= 2) v = q; p = v; }
+      else if (t.id === "cf-lo") lo = +t.value; else if (t.id === "cf-hi") lo = +t.value + 1;
+      upd();
+    });
+    addEventListener("keydown", key); document.body.appendChild(ov); upd(); $c("cf-r").focus();
+  });
+}
 const DRNG = [["14", "2W"], ["30", "1M"], ["90", "3M"], ["365", "1Y"]];
 const compsCache = new Map();
 let detail = null, drng = "30", listY = 0;
@@ -1202,7 +1330,7 @@ function siteCard(name, cls, head, main, S, extra) {
   <div><div class="cdx-k">Cheapest for sale</div><div class="cdx-v">${S.cheap != null ? m0(S.cheap) + ` <span class="mu">of ${S.nAct}</span>` : "—"}</div></div>${extra || ""}</div>`;
 }
 function renderDetail(box, x) {
-  const gi = gradeOf(x), meta = [x.set, x.num, x.var].filter(Boolean).map(esc).join(" · ") + " · " + esc(gi ? shortGrade(x.grade) : COND_CODE[x.cond] || x.cond || "NM");
+  const gi = gradeOf(x), meta = [x.set, x.num, x.var].filter(Boolean).map(esc).join(" · ") + " · " + esc(gi ? shortGrade(x.grade) : condLabel(x));
   const pic = x.img ? `<a class="cdx-pic" href="${esc(x.tcgId ? "https://www.tcgplayer.com/product/" + encodeURIComponent(x.tcgId) : x.big || x.img)}" target="_blank" rel="noopener" aria-label="${esc(x.name)} on TCGplayer"><img src="${esc(x.big || x.img)}" alt="${esc(x.name)}"></a>` : `<span class="cdx-pic none" aria-hidden="true"></span>`;
   const head = (fair) => `<div class="cdx-top"><button class="pill" type="button" data-dx="back">‹ ${x === preview ? "Scan list" : "Portfolio"}</button>${x === preview ? `<span class="mu">Scanned, not in your portfolio yet</span>` : `<button class="pill sm2" type="button" data-ed="${x.id}">Edit</button>`}</div>
   <div class="cdx-hd">${pic}<div class="cdx-hm"><div class="cdx-name"><span class="ptn" data-ptn="${x.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(x.name)}</span></div><div class="mu">${meta}</div>
@@ -1334,7 +1462,7 @@ let pfq = [], pfRunning = 0, pfTotal = 0, pfDone = 0;
 // tried again a day later.
 // TCGplayer's price for every raw card (Japanese included), for its condition and printing, refreshed once a day.
 // Collectr's price shows only until TCGplayer's arrives. Graded cards keep Collectr's: TCGplayer sells no graded cards.
-const needsPrice = (x, now) => x.qty > 0 && !isGraded(x) && (x.mktV !== 2 || now - (x.pT || 0) > 864e5) && !(x.pTry && now - x.pTry < 864e5);
+const needsPrice = (x, now) => x.qty > 0 && !isGraded(x) && (((x.mktV !== 2 || now - (x.pT || 0) > 864e5) && !(x.pTry && now - x.pTry < 864e5)) || (cfOn(x) && !(x.mktHi > 0) && !(x.pHiTry && now - x.pHiTry < 864e5)));
 function fillPrices() {
   const now = Date.now(), want = P.items.filter((x) => needsPrice(x, now) && !pfq.includes(x));
   if (!want.length) return; pfq.push(...want); pfTotal += want.length; pricePump(); pfProgress();
@@ -1356,11 +1484,18 @@ async function priceOne(x) {
     if (j && j.tcgId) { x.tcgId = j.tcgId; if (!x.img && j.img) { x.img = j.img; x.big = j.big; x.imgT = Date.now(); } } }
   if (!x.tcgId) { x.pWhy = "not found on TCGplayer"; return false; }
   // a live price set in the last day (from the trade analyzer) isn't replaced by the slower weekly figure
+  if (cfOn(x) && (!(x.mktHi > 0) || Date.now() - (x.pHiT || 0) > 864e5)) await priceHi(x);
   if (x.mktLive && Date.now() - x.mktLive < 864e5 && x.mkt > 0) return true;
   const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: x.tcgId, cond: x.cond || "Near Mint", print: x.var || "", jp: isJp(x) ? "1" : "" })).catch(() => null);
   if (!j) { x.pWhy = "TCGplayer didn't answer, trying again tomorrow"; return false; }
   if (!(j.market > 0)) { x.pWhy = j.why || "no TCGplayer price"; return false; }
   x.mkt = j.market; x.mktEst = !!j.est; x.mktV = 2; x.pT = Date.now(); delete x.mktSrc; delete x.pWhy; return true;
+}
+// an in-between card's second price: TCGplayer's for the next better condition
+async function priceHi(x) {
+  if (!cfOn(x) || !x.tcgId) return; x.pHiTry = Date.now();
+  const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: x.tcgId, cond: cfHi(x.cond), print: x.var || "", jp: isJp(x) ? "1" : "" })).catch(() => null);
+  if (j && j.market > 0) { x.mktHi = j.market; x.pHiT = Date.now(); }
 }
 function pricePump() {
   while (pfRunning < 2 && pfq.length) {
@@ -2232,8 +2367,8 @@ document.addEventListener("submit", (e) => {
 /* ---------- actions ---------- */
 function exportCSV() {
   const c = (v) => { v = v == null ? "" : String(v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-  const rows = [["Portfolio Name", "Category", "Set", "Product Name", "Card Number", "Rarity", "Variance", "Grade", "Card Condition", "Average Cost Paid", "Quantity", `Market Price (As of ${P.asOf || today()})`, "Price Override", "Watchlist", "Date Added", "Notes"]];
-  for (const x of P.items) rows.push([x.pf, x.cat, x.set, x.name, x.num, x.rarity, x.var, x.grade, x.cond, x.qty ? x.cost : "", x.qty || "", x.mkt ?? "", x.ovr || 0, x.watch, x.added, x.notes]);
+  const rows = [["Portfolio Name", "Category", "Set", "Product Name", "Card Number", "Rarity", "Variance", "Grade", "Card Condition", "Average Cost Paid", "Quantity", `Market Price (As of ${P.asOf || today()})`, "Price Override", "Watchlist", "Date Added", "Notes", "Condition Fine-tune"]];
+  for (const x of P.items) rows.push([x.pf, x.cat, x.set, x.name, x.num, x.rarity, x.var, x.grade, x.cond, x.qty ? x.cost : "", x.qty || "", x.mkt ?? "", x.ovr || 0, x.watch, x.added, x.notes, cfOn(x) ? cfName(x.cond, x.cp) + " (" + x.cp + "%)" : ""]);
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([rows.map((r) => r.map(c).join(",")).join("\n")], { type: "text/csv" }));
   a.download = "price-plot-portfolio-" + today() + ".csv"; document.body.appendChild(a); a.click(); a.remove();
 }
@@ -2268,14 +2403,16 @@ function comp(x) {
   scrollTo({ top: 0, behavior: "smooth" });
 }
 function saveForm(fm) {
-  const d = Object.fromEntries(new FormData(fm)), id = fm.dataset.fid, old = P.items.find((x) => x.id === id);
+  const d = Object.fromEntries(new FormData(fm)), id = fm.dataset.fid, old = P.items.find((x) => x.id === id), cv = cfParse(d.cond);
   if (d.pf === "__new") { d.pf = String(d.pfNew || "").trim(); if (!d.pf) { toast("Type a name for the new portfolio"); const i = fm.querySelector('[name="pfNew"]'); if (i) i.focus(); return; } } delete d.pfNew;
   const x = { ...(old || { id: uid(), cat: "Pokemon", rarity: "", mkt: null, watch: false, added: today() }),
-    name: d.name.trim(), set: d.set.trim(), num: d.num.trim(), var: d.var.trim(), cond: d.cond, grade: d.grade.trim() || "Ungraded",
+    name: d.name.trim(), set: d.set.trim(), num: d.num.trim(), var: d.var.trim(), cond: CONDS.includes(cv.cond) ? cv.cond : d.cond, cp: cv.cp, grade: d.grade.trim() || "Ungraded",
     qty: Math.max(0, Math.round(num(d.qty) ?? 1)), cost: num(d.cost) || 0, ovr: num(d.ovr) || 0, pf: d.pf.trim(), notes: d.notes.trim() };
   if (!x.name) return;
   if (old && (old.name !== x.name || old.set !== x.set || old.num !== x.num)) { x.img = undefined; x.imgT = 0; delete x.tcgId; x.mktV = 0; x.pTry = 0; }
   if (old && x.pT && (old.cond !== x.cond || old.var !== x.var || old.name !== x.name)) { x.mktV = 0; x.pTry = 0; }
+  if (old && (old.cond !== x.cond || old.var !== x.var || old.name !== x.name || !x.cp)) { delete x.mktHi; delete x.pHiT; x.pHiTry = 0; }
+  if (!x.cp) delete x.cp;
   const unpriced = old && old.ovr > 0 && !(x.ovr > 0); if (unpriced) x.pTry = 0;
   if (old) Object.assign(old, x); else P.items.push(x);
   editing = null; store(); snap(); render();
@@ -2285,6 +2422,8 @@ function saveForm(fm) {
     const i = pfq.indexOf(it); if (i >= 0) { pfq.splice(i, 1); pfTotal = Math.max(0, pfTotal - 1); }
     priceOne(it).then((ok) => { it.pTry = Date.now(); store(); snap(); if (!detail && !editing) render(); if (!ok) toast(`TCGplayer has no price for ${it.name} in ${it.cond || "this condition"}`); });
   }
+  // a new in-between condition: look up the better condition's price now
+  if (cfOn(it) && !(it.mktHi > 0) && it.tcgId) priceHi(it).then(() => { store(); snap(); if (!detail && !editing) render(); });
   fillPrices();
 }
 /* ---------- selecting several cards: press and hold a card, then tap others; edit or remove them together ---------- */
@@ -2451,7 +2590,7 @@ function edApply() {
   selBackup("bulk edit");
   for (const x of chg) {
     const d = ED.d.get(x.id), was = [x.cond, x.var, isGraded(x) ? shortGrade(x.grade) : ""].join("|"), px = edPrice(x, d);
-    x.cond = d.cond; x.var = d.var; x.grade = edGr(d) ? d.grade : "Ungraded"; x.qty = Math.max(0, Math.round(+d.qty || 0)); x.cost = Math.round((+d.cost || 0) * 100) / 100; x.pf = d.pf;
+    if (x.cond !== d.cond || edGr(d)) { delete x.cp; delete x.mktHi; delete x.pHiT; } x.cond = d.cond; x.var = d.var; x.grade = edGr(d) ? d.grade : "Ungraded"; x.qty = Math.max(0, Math.round(+d.qty || 0)); x.cost = Math.round((+d.cost || 0) * 100) / 100; x.pf = d.pf;
     if ([x.cond, x.var, isGraded(x) ? shortGrade(x.grade) : ""].join("|") !== was) {
       delete x.mktLive; delete x.pWhy; delete x.pTry;
       if (px > 0 && !(x.ovr > 0)) { x.mkt = px; x.mktEst = false; x.mktV = isGraded(x) ? x.mktV : 2; x.pT = Date.now(); } else { delete x.pT; if (!isGraded(x)) x.mktV = 1; }
