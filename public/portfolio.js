@@ -251,6 +251,10 @@ function pfSetLive(x, px, est, live) {
 // on load: copies of a card that has a live price from the last day take that price too (nothing is looked up)
 function pfSpreadLive() {
   let n = 0;
+  // a card whose condition changed after its live price was set: that price was for the old condition, so look it up again
+  let fixed = 0;
+  for (const x of P.items) if (x.mktLive && x.mktV !== 2) { delete x.mktLive; x.pTry = 0; fixed++; }
+  if (fixed) { store(); setTimeout(fillPrices, 0); }
   const live = P.items.filter((x) => x.mktLive && Date.now() - x.mktLive < 864e5 && x.mkt > 0 && !isGraded(x) && !(x.ovr > 0)).sort((a, b) => b.mktLive - a.mktLive);
   const done = new Set();
   for (const x of live) { if (done.has(x)) continue; const t = x.mktLive; n += pfSetLive(x, x.mkt, x.mktEst, true); x.mktLive = t;
@@ -1485,7 +1489,7 @@ async function priceOne(x) {
   if (!x.tcgId) { x.pWhy = "not found on TCGplayer"; return false; }
   // a live price set in the last day (from the trade analyzer) isn't replaced by the slower weekly figure
   if (cfOn(x) && (!(x.mktHi > 0) || Date.now() - (x.pHiT || 0) > 864e5)) await priceHi(x);
-  if (x.mktLive && Date.now() - x.mktLive < 864e5 && x.mkt > 0) return true;
+  if (x.mktLive && x.mktV === 2 && Date.now() - x.mktLive < 864e5 && x.mkt > 0) return true;
   const j = await getJSON("/api/tcgprice?" + new URLSearchParams({ id: x.tcgId, cond: x.cond || "Near Mint", print: x.var || "", jp: isJp(x) ? "1" : "" })).catch(() => null);
   if (!j) { x.pWhy = "TCGplayer didn't answer, trying again tomorrow"; return false; }
   if (!(j.market > 0)) { x.pWhy = j.why || "no TCGplayer price"; return false; }
@@ -2410,7 +2414,8 @@ function saveForm(fm) {
     qty: Math.max(0, Math.round(num(d.qty) ?? 1)), cost: num(d.cost) || 0, ovr: num(d.ovr) || 0, pf: d.pf.trim(), notes: d.notes.trim() };
   if (!x.name) return;
   if (old && (old.name !== x.name || old.set !== x.set || old.num !== x.num)) { x.img = undefined; x.imgT = 0; delete x.tcgId; x.mktV = 0; x.pTry = 0; }
-  if (old && x.pT && (old.cond !== x.cond || old.var !== x.var || old.name !== x.name)) { x.mktV = 0; x.pTry = 0; }
+  const repriced = old && !isGraded(x) && (old.cond !== x.cond || old.var !== x.var || old.name !== x.name || isGraded(old));
+  if (repriced) { x.mktV = 0; x.pTry = 0; delete x.mktLive; delete x.pWhy; delete x.mktEst; }
   if (old && (old.cond !== x.cond || old.var !== x.var || old.name !== x.name || !x.cp)) { delete x.mktHi; delete x.pHiT; x.pHiTry = 0; }
   if (!x.cp) delete x.cp;
   const unpriced = old && old.ovr > 0 && !(x.ovr > 0); if (unpriced) x.pTry = 0;
@@ -2422,8 +2427,11 @@ function saveForm(fm) {
     const i = pfq.indexOf(it); if (i >= 0) { pfq.splice(i, 1); pfTotal = Math.max(0, pfTotal - 1); }
     priceOne(it).then((ok) => { it.pTry = Date.now(); store(); snap(); if (!detail && !editing) render(); if (!ok) toast(`TCGplayer has no price for ${it.name} in ${it.cond || "this condition"}`); });
   }
-  // a new in-between condition: look up the better condition's price now
-  if (cfOn(it) && !(it.mktHi > 0) && it.tcgId) priceHi(it).then(() => { store(); snap(); if (!detail && !editing) render(); });
+  // a new condition or printing: look its TCGplayer price(s) up now, ahead of the background queue
+  if (repriced && it.tcgId && !unpriced) {
+    const i = pfq.indexOf(it); if (i >= 0) { pfq.splice(i, 1); pfTotal = Math.max(0, pfTotal - 1); }
+    priceOne(it).then(() => { it.pTry = Date.now(); store(); snap(); if (!detail && !editing) render(); });
+  } else if (cfOn(it) && !(it.mktHi > 0) && it.tcgId) priceHi(it).then(() => { store(); snap(); if (!detail && !editing) render(); });
   fillPrices();
 }
 /* ---------- selecting several cards: press and hold a card, then tap others; edit or remove them together ---------- */
