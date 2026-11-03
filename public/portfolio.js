@@ -360,10 +360,10 @@ function trSumHTML() {
   return `<div class="ts-card" id="ts-card">
     <div class="ts-hd"><h3 class="ts-t">Trade summary</h3><span class="ts-br"><img src="/brand/icon-small.svg" width="22" height="22" alt=""><span>Price<span class="pp-dot">·</span>Plot<small class="mu">${esc(d)}</small></span></span></div>
     <div class="ts-cols">
-      <div class="ts-s"><div class="ts-sh"><b>I give</b><span class="mu">${giveQ} card${giveQ === 1 ? "" : "s"}</span></div>
+      <div class="ts-s"><div class="ts-sh"><b>Your items</b><span class="mu">${giveQ} card${giveQ === 1 ? "" : "s"}</span></div>
         ${TRD.give.map((c) => trSumRow(c, mine)).join("") || `<div class="mu ts-e">No cards</div>`}
         ${cout > 0 ? line("+ Cash", money(cout)) : ""}${line("Total (market)", money(giveTot), "tot")}</div>
-      <div class="ts-s them"><div class="ts-sh"><b>I get</b><span class="mu">${getQ} card${getQ === 1 ? "" : "s"}</span></div>
+      <div class="ts-s them"><div class="ts-sh"><b>Their items</b><span class="mu">${getQ} card${getQ === 1 ? "" : "s"}</span></div>
         ${TRD.get.map((c) => trSumRow(c, mine)).join("") || `<div class="mu ts-e">No cards</div>`}
         ${cin > 0 ? line("+ Cash", money(cin)) : ""}${line("Total (market)", money(getTot), "tot")}</div>
     </div>
