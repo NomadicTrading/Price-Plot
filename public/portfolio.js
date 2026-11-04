@@ -168,7 +168,7 @@ function trValTxt(c) {
   if (each == null) return `<span class="mu">no price yet</span>`;
   const tot = each * q;
   if (c.side === "give") return `<b>${money(tot)}</b>${q > 1 ? ` <span class="mu">(${q} × ${money(each)})</span>` : ""}`;
-  return `<b>${money(tot * trPctOf(c) / 100)}</b> <span class="mu">credit · ${money(tot)} at ${trPctOf(c)}%</span>`;
+  return `<b>${money(tot)}</b>${q > 1 ? ` <span class="mu">(${q} × ${money(each)})</span>` : ""}<div class="mu">credit · ${money(tot * trPctOf(c) / 100)} at ${trPctOf(c)}%</div>`;
 }
 function trBalHTML() {
   const m = trMath(), up = m.pos >= -0.005;
