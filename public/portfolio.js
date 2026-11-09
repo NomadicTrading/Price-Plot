@@ -156,7 +156,7 @@ function trRow(c) {
       <div class="tr-v" data-tv="${c.id}">${trValTxt(c)}</div></div>
     <button type="button" class="sq-x" data-tdel="${c.id}" aria-label="Remove from trade">✕</button>
     <div class="tr-f">
-      <span class="cf-row"><select data-tf="cond" data-tid="${c.id}" aria-label="Condition or grade">${opts}</select>${cfBtn(`data-tcf="${c.id}"`, c.cond, c.grade ? 0 : c.cp, !!c.grade || c.cond === "Sealed")}</span>
+      ${isSealed(c) ? "" : `<span class="cf-row"><select data-tf="cond" data-tid="${c.id}" aria-label="Condition or grade">${opts}</select>${cfBtn(`data-tcf="${c.id}"`, c.cond, c.grade ? 0 : c.cp, !!c.grade || c.cond === "Sealed")}</span>`}
       <select data-tf="var" data-tid="${c.id}" aria-label="Printing">${printOpts(printsCache.get(String(c.tcgId)) || (c.tcgId ? (c.var ? [c.var] : []) : PRINTS_ANY), c.var || "")}${!c.var && !printsCache.get(String(c.tcgId)) && c.tcgId ? `<option value="" selected disabled>Printing…</option>` : ""}</select>
       <label class="tr-q">×<input data-tf="qty" data-tid="${c.id}" type="number" min="1" ${c.max ? `max="${c.max}"` : ""} step="1" inputmode="numeric" value="${q}" aria-label="Quantity"></label>
       <label class="tr-p">$<input data-tf="own" data-tid="${c.id}" type="number" min="0" step="any" inputmode="decimal" value="${trMoneyIn(c.own)}" placeholder="${each != null && !(c.own > 0) ? (Math.round(each * 100) / 100).toFixed(2) : "Price"}" aria-label="Price each (leave blank for market)"></label>
@@ -634,7 +634,7 @@ document.addEventListener("click", async (e) => {
   const v = cfParse(sel.value); if (!CONDS.includes(v.cond)) return;
   const x = P.items.find((y) => y.id === fm.dataset.fid), pr = fm.querySelector('[name="var"]');
   const r = await cfSheet(v, (cond) => cfPx(x && x.tcgId, cond, pr ? pr.value : x && x.var, x ? isJp(x) : false));
-  if (!r) return; cfSetSel(sel, r.cond, r.cp);
+  if (!r) return; cfSetSel(sel, r.cond, r.cp); pfFormMkt(fm);
 });
 // redraw a form's condition dropdown on a new choice (a fine-tuned spot goes back to its plain step) and its +/− button
 function cfSetSel(sel, cond, cp) {
@@ -642,7 +642,28 @@ function cfSetSel(sel, cond, cp) {
   sel.innerHTML = cfOptsHTML(cond, cp, extras, cond);
   const b = sel.parentElement.querySelector(".cf-b"); if (b) { b.setAttribute("aria-pressed", cfFine(cp) ? "true" : "false"); b.disabled = !CONDS.includes(cond); }
 }
-document.addEventListener("change", (e) => { const t = e.target; if (t.name !== "cond" || !t.closest || !t.closest("form.pe")) return; const v = cfParse(t.value); cfSetSel(t, v.cond, v.cp); });
+document.addEventListener("change", (e) => { const t = e.target; if (t.name !== "cond" || !t.closest || !t.closest("form.pe")) return; const v = cfParse(t.value); cfSetSel(t, v.cond, v.cp); pfFormMkt(t.closest("form.pe")); });
+document.addEventListener("change", (e) => { const t = e.target; if ((t.name !== "var" && t.name !== "grade") || !t.closest) return; const fm = t.closest("form.pe"); if (fm) pfFormMkt(fm); });
+// the greyed market price in "Your price each" (and the % beside Paid each) follow the condition and printing picked in the edit form
+let pfMkTok = 0;
+async function pfFormMkt(fm) {
+  const x = P.items.find((y) => y.id === fm.dataset.fid), ov = fm.querySelector('[name="ovr"]'), sel = fm.querySelector('select[name="cond"]'); if (!x || !ov || !sel) return;
+  const gr = fm.querySelector('[name="grade"]'), pr = fm.querySelector('[name="var"]'), g = gr ? gr.value.trim() : "";
+  if (g && !/^ungraded$/i.test(g)) return; // graded cards keep Collectr's price
+  const v = cfParse(sel.value), print = pr ? pr.value : x.var || "", tok = ++pfMkTok;
+  let mk = null;
+  if (!isGraded(x) && v.cond === x.cond && (v.cp || 0) === (x.cp || 0) && print === (x.var || "")) mk = cfOn(x) ? cfBlend(x.mkt, x.mktHi, x.cp) : x.mkt;
+  else if (CONDS.includes(v.cond) && x.tcgId) {
+    ov.placeholder = "Looking up market…";
+    const [lo, hi] = await Promise.all([cfPx(x.tcgId, v.cond, print, isJp(x)), v.cp ? cfPx(x.tcgId, cfHi(v.cond), print, isJp(x)) : null]);
+    if (tok !== pfMkTok || !fm.isConnected) return;
+    mk = v.cp ? cfBlend(lo, hi, v.cp) : lo;
+  }
+  ov.placeholder = mk != null ? "Market " + money(mk) + (v.cp ? " (est.)" : "") : "Value per card";
+  const pc = fm.querySelector('[name="costPct"]'), cost = fm.querySelector('[name="cost"]'); if (!pc) return;
+  pc.dataset.mk = mk > 0 ? mk : ""; pc.disabled = !(mk > 0); pc.placeholder = mk > 0 ? "" : "–";
+  pc.value = mk > 0 && cost && +cost.value > 0 ? String(Math.round((+cost.value / mk) * 1000) / 10) : "";
+}
 // a card picture that doesn't load leaves the plain placeholder
 document.addEventListener("error", (e) => { if (e.target.tagName === "IMG" && e.target.closest(".th-pic")) e.target.remove(); }, true);
 document.addEventListener("change", (e) => {
@@ -651,7 +672,14 @@ document.addEventListener("change", (e) => {
 });
 
 
-function readStore() { try { const x = JSON.parse(localStorage.getItem(KEY) || "null"); return x && Array.isArray(x.items) ? x : { items: [], asOf: null }; } catch { return { items: [], asOf: null }; } }
+function readStore() { try { const x = JSON.parse(localStorage.getItem(KEY) || "null"); if (!(x && Array.isArray(x.items))) return { items: [], asOf: null };
+  for (const it of x.items) if (isSealed(it) && it.cond !== "Sealed") { it.cond = "Sealed"; it.sealed = true; delete it.cp; } return x; } catch { return { items: [], asOf: null }; } }
+// sealed products (booster boxes, ETBs, tins...) have no condition. Collectr's file export doesn't always mark them,
+// so a raw item with no card number and a sealed-product name counts as sealed too.
+function isSealed(x) {
+  if (!x) return false; if (x.cond === "Sealed" || x.sealed) return true;
+  return !x.num && !(x.grade && !/^ungraded$/i.test(x.grade)) && /\b(booster (box|bundle|pack|display|case)|sleeved booster|elite trainer box|etb|blister|premium collection|collection box|build (&|and) battle|tin|starter deck|theme deck|battle deck|trainer kit)\b/i.test(x.name || "");
+}
 function store() { try { localStorage.setItem(KEY, JSON.stringify(P)); } catch { status("Couldn't save on this device: storage is full."); } }
 function hist() { try { const h = JSON.parse(localStorage.getItem(HKEY) || "{}"); return h && typeof h === "object" ? h : {}; } catch { return {}; } }
 function snap(date) { const h = hist(); h[date || today()] = Math.round(totals(owned(P.items)).value * 100) / 100; try { localStorage.setItem(HKEY, JSON.stringify(h)); } catch {} }
@@ -890,7 +918,7 @@ const PFF_NAMES = { kind: "Kind", cond: "Condition", lang: "Language", set: "Set
 const langOf = (x) => { const t = [x.set, x.cat, x.name].join(" "); return /japan|\(jp\)/i.test(t) ? "jp" : /chinese|korean|korea|china|\(cn\)|\(kr\)|german|french|italian|spanish|portuguese/i.test(t) ? "other" : "en"; };
 const pffOn = () => Object.entries(PFF).filter(([, v]) => v !== "" && v != null);
 const pffLabel = (k, v) => k === "set" ? v : k === "vmin" ? `≥ ${money(+v)} each` : k === "vmax" ? `≤ ${money(+v)} each` : ((PFF_OPTS[k] || []).find((o) => o[0] === v) || [, v])[1];
-const isSealedX = (x) => x.cond === "Sealed";
+const isSealedX = (x) => isSealed(x);
 function pffOk(x) {
   const f = PFF, g = isGraded(x), u = unit(x);
   if (f.kind === "raw" && (g || isSealedX(x))) return false; if (f.kind === "graded" && !g) return false; if (f.kind === "sealed" && !isSealedX(x)) return false;
@@ -988,8 +1016,8 @@ function form(x) {
   return `<form class="pe" data-fid="${x.id || ""}"><button type="button" class="pe-x" data-cx="1" aria-label="Close without saving">✕</button>
   ${x.id ? `<div class="pe-h"><button type="button" class="pe-pic" data-zm="${x.id}" aria-label="Enlarge the picture of ${esc(x.name)}" ${pic ? "" : "disabled"}>${pic ? `<img src="${esc(x.img || pic)}" alt="">` : ""}</button>
     <div class="pe-hm"><b class="ptn" data-ptn="${x.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(x.name)}</b>${esc([x.set, x.num].filter(Boolean).join(" · "))}</div></div>` : ""}<div class="pg">${f("name", "Card name", x.name, "text", "required")}${f("set", "Set", x.set)}${f("num", "Number", x.num)}${printField(x)}
-  <label>Condition<span class="cf-row"><select name="cond">${cfOptsHTML(x.cond || "Near Mint", isGraded(x) ? 0 : x.cp, ["Sealed", ...(x.cond && !CONDS.includes(x.cond) && x.cond !== "Sealed" ? [x.cond] : [])], x.cond || "Near Mint")}</select>${cfBtn('data-pcf="1"', x.cond, isGraded(x) ? 0 : x.cp, x.cond && !CONDS.includes(x.cond))}</span></label>
-  ${f("grade", "Grade (blank if raw)", isGraded(x) ? x.grade : "", "text", 'placeholder="e.g. PSA 10"')}
+  ${isSealed(x) ? `<input type="hidden" name="cond" value="Sealed"><input type="hidden" name="grade" value="">` : `<label>Condition<span class="cf-row"><select name="cond">${cfOptsHTML(x.cond || "Near Mint", isGraded(x) ? 0 : x.cp, ["Sealed", ...(x.cond && !CONDS.includes(x.cond) && x.cond !== "Sealed" ? [x.cond] : [])], x.cond || "Near Mint")}</select>${cfBtn('data-pcf="1"', x.cond, isGraded(x) ? 0 : x.cp, x.cond && !CONDS.includes(x.cond))}</span></label>
+  ${f("grade", "Grade (blank if raw)", isGraded(x) ? x.grade : "", "text", 'placeholder="e.g. PSA 10"')}`}
   ${f("qty", "Quantity", x.qty ?? 1, "number", 'min="0" step="1" inputmode="numeric"')}${costField(x)}
   ${f("ovr", "Your price each ($)", x.ovr || "", "number", `min="0" step="any" inputmode="decimal" placeholder="${x.mkt != null ? "Market " + money(x.mkt) : "Value per card"}"`)}
   ${pfField(x.pf || (view !== "all" && view !== "watch" ? view : ""), pfs)}
@@ -1116,6 +1144,7 @@ function condColor(cond) {
   return t ? t[2] : "";
 }
 function condBadge(x) {
+  if (isSealed(x)) return "";
   if (isGraded(x)) return `<span class="cg gr">${esc(shortGrade(x.grade))}</span>`;
   const one = (txt, cond) => { const col = condColor(cond); return `<span class="cg${col ? " cc" : ""}"${col ? ` style="--cc:${col}"` : ""}>${esc(txt)}</span>`; };
   if (!cfOn(x)) return one(x.cond || "", x.cond);
@@ -1348,13 +1377,13 @@ function siteCard(name, cls, head, main, S, extra) {
   <div><div class="cdx-k">Cheapest for sale</div><div class="cdx-v">${S.cheap != null ? m0(S.cheap) + ` <span class="mu">of ${S.nAct}</span>` : "—"}</div></div>${extra || ""}</div>`;
 }
 function renderDetail(box, x) {
-  const gi = gradeOf(x), meta = [x.set, x.num, x.var].filter(Boolean).map(esc).join(" · ") + " · " + esc(gi ? shortGrade(x.grade) : condLabel(x));
+  const gi = gradeOf(x), sld = isSealed(x), meta = [x.set, x.num, x.var].filter(Boolean).map(esc).join(" · ") + (sld ? "" : " · " + esc(gi ? shortGrade(x.grade) : condLabel(x)));
   const pic = x.img ? `<a class="cdx-pic" href="${esc(x.tcgId ? "https://www.tcgplayer.com/product/" + encodeURIComponent(x.tcgId) : x.big || x.img)}" target="_blank" rel="noopener" aria-label="${esc(x.name)} on TCGplayer"><img src="${esc(x.big || x.img)}" alt="${esc(x.name)}"></a>` : `<span class="cdx-pic none" aria-hidden="true"></span>`;
   const head = (fair) => `<div class="cdx-top"><button class="pill" type="button" data-dx="back">‹ ${x === preview ? "Scan list" : "Portfolio"}</button>${x === preview ? `<span class="mu">Scanned, not in your portfolio yet</span>` : `<button class="pill sm2" type="button" data-ed="${x.id}">Edit</button>`}</div>
   <div class="cdx-hd">${pic}<div class="cdx-hm"><div class="cdx-name"><span class="ptn" data-ptn="${x.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(x.name)}</span></div><div class="mu">${meta}</div>
     <div class="cdx-frow">${fair}<div class="cdx-hb"><button class="btn" type="button" data-dx="ebay" aria-label="eBay chart">eBay</button><button class="btn o" type="button" data-dx="tcg" aria-label="TCGplayer chart">TCGplayer</button></div></div></div></div>
   <div class="seg cdx-rg" role="group" aria-label="Time range">${DRNG.map(([k, l]) => `<button type="button" data-dr="${k}" aria-pressed="${k === drng}">${l}</button>`).join("")}</div>
-  <div class="tk cdx-cd" role="group" aria-label="Condition">${condOptions(x).map((c) => `<button class="pill" type="button" data-dc="${esc(c)}" aria-pressed="${c === dsel}">${esc(selLabel(c))}${c === ownSel(x) ? " ★" : ""}</button>`).join("")}</div>`;
+  ${sld ? "" : `<div class="tk cdx-cd" role="group" aria-label="Condition">${condOptions(x).map((c) => `<button class="pill" type="button" data-dc="${esc(c)}" aria-pressed="${c === dsel}">${esc(selLabel(c))}${c === ownSel(x) ? " ★" : ""}</button>`).join("")}</div>`}`;
   const sel = dsel, own = sel === ownSel(x), sgi = selGrade(sel);
   box.innerHTML = head(`<div class="cdx-fair"><div class="cdx-fl">Combined market price</div><div class="cdx-fv">…</div><div class="cdx-fs">Loading eBay and TCGplayer sales…</div></div>`);
   loadComps(x, sel).then((R) => {
@@ -1371,7 +1400,7 @@ function renderDetail(box, x) {
     <div class="cdx-lg"><span><i class="cdx-ie"></i>eBay</span><span><i class="cdx-it"></i>TCGplayer</span><span><i class="cdx-ib"></i>Usual range</span></div>
     <div class="cdx-sites">${siteCard("eBay", "cdx-ie", "Median sold", SE.med, SE, E.soldOn ? "" : `<div class="cdx-k">eBay sold data is off</div>`)}${siteCard("TCGplayer", "cdx-it", T.market != null ? "Market price" : "Median sold", T.market ?? ST.med, ST, tcgNote)}</div>
     ${mine}
-    <div class="sm">${esc(sgi ? sel + " sales only." : sel + " raw sales only.")}${own ? "" : " ★ marks your copy's condition."} Tap a dot to open that sale.${E.cut.junk + E.cut.far + E.cut.lang ? ` Left out ${E.cut.junk + E.cut.far + E.cut.lang} eBay result${E.cut.junk + E.cut.far + E.cut.lang === 1 ? "" : "s"} that looked like a different item (jumbo or metal cards, other languages, or prices far from TCGplayer's).` : ""}${R.warn.length ? " " + esc(R.warn.join(" ")) : ""}</div>`;
+    <div class="sm">${sld ? "" : esc(sgi ? sel + " sales only." : sel + " raw sales only.")}${own || sld ? "" : " ★ marks your copy's condition."} Tap a dot to open that sale.${E.cut.junk + E.cut.far + E.cut.lang ? ` Left out ${E.cut.junk + E.cut.far + E.cut.lang} eBay result${E.cut.junk + E.cut.far + E.cut.lang === 1 ? "" : "s"} that looked like a different item (jumbo or metal cards, other languages, or prices far from TCGplayer's).` : ""}${R.warn.length ? " " + esc(R.warn.join(" ")) : ""}</div>`;
   }).catch((e) => { if (detail === x.id) box.innerHTML = head(`<div class="cdx-fair"><div class="cdx-fs">Couldn't load comps: ${esc(e.message)}</div></div>`); });
 }
 function openDetail(id) { if (!P.items.some((y) => y.id === id)) return; listY = scrollY; detail = id; cview = null; dsel = ownSel(P.items.find((y) => y.id === id)); editing = null; try { history.pushState({ ppd: id }, ""); } catch {} render(); scrollTo(0, 0); }
@@ -1542,7 +1571,7 @@ function flat(o, pre = "", out = {}, depth = 0) {
 function pick(f, re, not) { for (const [k, v] of Object.entries(f)) { const leaf = k.split(".").pop(), full = k.replace(/\./g, "_"); if ((re.test(leaf) || re.test(full)) && !(not && not.test(k)) && String(v).trim() !== "") return v; } return null; }
 const COND_NAMES = { nm: "Near Mint", lp: "Lightly Played", mp: "Moderately Played", hp: "Heavily Played", dmg: "Damaged", d: "Damaged" };
 function normCond(c) { const s = String(c || "").trim(), l = s.toLowerCase(); if (!s) return "Near Mint";
-  return l.startsWith("near mint") || l === "mint" ? "Near Mint" : l.startsWith("lightly") ? "Lightly Played" : l.startsWith("moderately") ? "Moderately Played" : l.startsWith("heavily") ? "Heavily Played" : l.startsWith("damaged") ? "Damaged" : COND_NAMES[l] || s; }
+  return l === "sealed" || l === "unopened" ? "Sealed" : l.startsWith("near mint") || l === "mint" ? "Near Mint" : l.startsWith("lightly") ? "Lightly Played" : l.startsWith("moderately") ? "Moderately Played" : l.startsWith("heavily") ? "Heavily Played" : l.startsWith("damaged") ? "Damaged" : COND_NAMES[l] || s; }
 function mapCollectr(o) {
   const f = flat(o);
   const name = pick(f, /^(product_?name|card_?name|name|title)$/, /(collection|portfolio|group|set|user|account|condition|grad|rarity|category|line)[^.]*\./);
@@ -1560,7 +1589,7 @@ function mapCollectr(o) {
     cat: String(pick(f, /^(product_?line(_?name)?|category(_?name)?|game|catalog_?category(_?name)?)$/) || "Pokemon").replace(/^pok[eé]mon.*$/i, "Pokemon"),
     set: String(pick(f, /^(catalog_?group(_?name)?|group_?name|set_?name|expansion(_?name)?|set)$/, /\.id$/) || "").trim(),
     name: String(name).trim(), num: String(pick(f, /^(card_?number|collector_?number|number)$/) || "").trim(), rarity: String(pick(f, /^rarity(_?name)?$/) || ""),
-    var: String(pick(f, /^(variance|printing|variant|(product_?)?sub_?type(_?name)?)$/) || ""), grade, cond: grade === "Ungraded" ? normCond(pick(f, /^(card_?)?condition(_?name)?$/)) : "Near Mint",
+    var: String(pick(f, /^(variance|printing|variant|(product_?)?sub_?type(_?name)?)$/) || ""), grade, cond: o.is_card === false ? "Sealed" : grade === "Ungraded" ? normCond(pick(f, /^(card_?)?condition(_?name)?$/)) : "Near Mint",
     cost: n(pick(f, /^(average_?cost(_?paid)?|avg_?cost|purchase_?price|cost_?paid|cost_?basis|paid)$/)) || 0,
     qty: Math.max(1, Math.round(n(pick(f, /^(quantity|qty|count|owned_?quantity)$/)) || 1)),
     mkt: null, ovr: n(pick(f, /^price_?override$/)) || 0, watch: o.watchlist === true, added: today(), notes: "", sealed: o.is_card === false || undefined,
@@ -2292,11 +2321,12 @@ async function sqCamera() {
   try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }); }
   catch (e) { if (e && e.name === "NotAllowedError") toast("Camera access was blocked, so the regular camera opens instead. Allow camera access for this site in Settings to shoot cards back to back."); return sqPicker(true); }
   sqStream = stream;
+  if (window.ppZoomReset) ppZoomReset();
   const cv = document.createElement("div"); cv.id = "ppcam"; cv.className = "sq-cam";
   cv.innerHTML = `<video playsinline muted autoplay></video><div class="sq-guide" aria-hidden="true"></div><div class="sq-flash"></div>
     <div class="sq-camtop"><span id="sq-camn">Line up a card and tap the button</span></div>
     <div class="sq-cambar"><button type="button" class="sq-camdone" data-qc="done">Done</button><button type="button" class="sq-shut" data-qc="shot" aria-label="Take photo"></button><button type="button" class="sq-camlast" data-qc="done" aria-label="See list"><img alt=""><i></i></button></div>`;
-  document.body.appendChild(cv);
+  document.body.appendChild(cv); sqCamFit();
   const v = cv.querySelector("video"); v.srcObject = stream; v.play().catch(() => {});
   sqCamInfo();
 }
@@ -2313,7 +2343,14 @@ function sqShot() {
   if (navigator.vibrate) navigator.vibrate(30);
   c.toBlob((b) => { if (b) sqAdd([b]).then(sqCamInfo); }, "image/jpeg", 0.92);
 }
-function sqCamClose() { if (sqStream) { sqStream.getTracks().forEach((t) => t.stop()); sqStream = null; } const cv = $("ppcam"); if (cv) cv.remove(); sqRender(); }
+function sqCamClose() { if (sqStream) { sqStream.getTracks().forEach((t) => t.stop()); sqStream = null; } const cv = $("ppcam"); if (cv) cv.remove(); if (window.ppZoomReset) ppZoomReset(); sqRender(); }
+// the camera covers exactly what's on screen, so the capture button stays in view even while the page is zoomed
+function sqCamFit() {
+  const cv = $("ppcam"), vv = window.visualViewport; if (!cv || !vv) return;
+  if (Math.abs(vv.scale - 1) < 0.01 && !vv.offsetLeft && !vv.offsetTop) { cv.style.cssText = ""; return; }
+  cv.style.cssText = `inset:auto;left:${vv.offsetLeft}px;top:${vv.offsetTop}px;width:${vv.width}px;height:${vv.height}px`;
+}
+if (window.visualViewport) { visualViewport.addEventListener("resize", sqCamFit); visualViewport.addEventListener("scroll", sqCamFit); }
 // the phone's own camera or photo library (several photos at once)
 function sqPicker(camera) {
   const id = camera ? "pfcam" : "pflib"; let i = $(id);
@@ -2535,7 +2572,7 @@ function edRowHTML(x) {
     <div class="ed-t"><b class="ptn" data-ptn="${x.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(x.name)}</b><div class="mu">${esc([x.set, x.num].filter(Boolean).join(" · "))}</div><div class="ed-p" data-epx="${x.id}">${edPriceHTML(x, d)}</div></div>
     <button type="button" class="sq-x" data-edrop="${x.id}" aria-label="Take off this list">✕</button>
     <div class="ed-f">
-      <label><span>Condition</span><select data-ef="cond" data-eid="${x.id}">${conds.map((o) => `<option value="${esc(o)}" ${o === cur ? "selected" : ""}>${esc(COND_CODE[o] || o)}</option>`).join("")}</select></label>
+      ${isSealed(x) ? "" : `<label><span>Condition</span><select data-ef="cond" data-eid="${x.id}">${conds.map((o) => `<option value="${esc(o)}" ${o === cur ? "selected" : ""}>${esc(COND_CODE[o] || o)}</option>`).join("")}</select></label>`}
       <label><span>Printing</span><select data-ef="var" data-eid="${x.id}">${printOpts(prints, d.var || "")}</select></label>
       <label><span>Qty</span><input data-ef="qty" data-eid="${x.id}" type="number" min="0" step="1" inputmode="numeric" value="${esc(d.qty)}"></label>
       <label class="ed-pf"><span>Portfolio</span><select data-ef="pf" data-eid="${x.id}">${[...new Set([...pfs, d.pf].filter(Boolean))].map((p) => `<option ${p === d.pf ? "selected" : ""}>${esc(p)}</option>`).join("")}</select></label>

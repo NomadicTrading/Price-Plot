@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Price·Plot</title>
 <link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/brand/favicon-32.png" sizes="32x32" type="image/png">
@@ -57,7 +57,7 @@ header{border-bottom:1px solid var(--line)}
 #rg{margin:10px 0 4px}
 #cw{position:relative;margin-top:6px}
 #chart{position:relative;touch-action:none;-webkit-touch-callout:none;overscroll-behavior:contain}
-html,body{overscroll-behavior-y:none}
+html,body{overscroll-behavior-y:none}html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 svg{display:block;width:100%;height:auto;user-select:none;-webkit-user-select:none}
 .az{position:absolute;touch-action:none;z-index:2}
 .ay{cursor:ns-resize}.ax{cursor:ew-resize}
@@ -847,13 +847,19 @@ document.addEventListener("toggle",e=>{if(e.target&&e.target.id==="tls")tLsOpen=
 /* the card picture, enlarged over the page: the largest picture that loads; tap anywhere or Escape to close */
 let tZoom=[];
 function tcgZoom(){const shown=$("tci");ppZoom([...tZoom,shown&&shown.currentSrc],TM&&TM.cards[tci]?TM.cards[tci].name:"Card")}
+/* puts the page back at its normal size: a pinch on an enlarged picture (or a phone zooming in on a text box) can
+   leave a tab zoomed in, and the camera's capture button then sits off screen. Briefly locking the zoom makes the
+   phone snap back to 100%; the lock comes off again right after, so pinching still works. */
+function ppZoomReset(){const m=document.querySelector('meta[name="viewport"]'),vv=window.visualViewport;if(scrollX)scrollTo(0,scrollY);
+ if(!m||!vv||Math.abs(vv.scale-1)<.01)return;const c=m.getAttribute("content");m.setAttribute("content",c+", user-scalable=no");setTimeout(()=>m.setAttribute("content",c),400)}
+window.ppZoomReset=ppZoomReset;
 /* a card picture enlarged over the page: the first of the pictures that loads; tap anywhere or Escape to close */
 function ppZoom(srcs,name){const list=[...new Set((srcs||[]).filter(Boolean))];if(!list.length)return;
  const ov=document.createElement("div");ov.className="ppm-ov zoom";ov.setAttribute("role","dialog");ov.setAttribute("aria-label","Card picture");
  ov.innerHTML=`<img alt="${esc(name||"Card")} card, enlarged"><button type="button" class="zoom-x" aria-label="Close">✕</button>`;
  const im=ov.querySelector("img");let i=0;im.onerror=()=>{i++;if(i<list.length)im.src=list[i];else close()};im.src=list[0];
  const key=e=>{if(e.key==="Escape")close()};
- function close(){removeEventListener("keydown",key);ov.remove()}
+ function close(){removeEventListener("keydown",key);ov.remove();ppZoomReset()}
  ov.onclick=close;addEventListener("keydown",key);document.body.appendChild(ov);ov.querySelector(".zoom-x").focus()}
 /* ---- TCGplayer sold + listed scatter ---- */
 const TPD=new Map();
@@ -1102,7 +1108,7 @@ async function loadTcg(){
   if(!j.cards||!j.cards.length){TM=null;renderTcgBasic(basic,q,"No condition prices found for this search.");return}
   TM=j;tci=want.id?Math.max(0,j.cards.findIndex(c=>c.tcgId===want.id)):0;tprint=tprintWant;tprintWant="";drawTcg()}
  catch(e){if(q!==$("q").value.trim())return;tcgQ=q;TM=null;renderTcgBasic(basic,q,"Condition prices unavailable ("+e.message+"). Showing TCGplayer's overall prices instead.")}}
-$("tb").onclick=e=>{const k=e.target.dataset.t;if(!k)return;tab=k;
+$("tb").onclick=e=>{const k=e.target.dataset.t;if(!k)return;tab=k;ppZoomReset();
  [...$("tb").children].forEach(b=>b.setAttribute("aria-pressed",b.dataset.t===k));
  $("ebay").hidden=k!=="ebay";$("tcg").hidden=k!=="tcg";$("tip").hidden=k==="tcg";$("pf").hidden=k!=="pf";$("sv").hidden=k==="pf";if(k==="pf")return;if(k==="tcg")loadTcg();else{const q=$("q").value.trim();if(q&&q!==ebayQ)load();else draw()}};
 function pillBar(id,opts,cur,on){$(id).innerHTML=opts.map(([k,l])=>`<button class="pill" type="button" data-k="${k}" aria-pressed="${k===cur}">${l}</button>`).join("");
