@@ -183,6 +183,7 @@ function trDraw() {
   if (!tradeOpen) return;
   const b = $("tr-bal"); if (!b) return render();
   b.innerHTML = trBalHTML();
+  { const sb = $("sv-on"); if (sb) sb.innerHTML = svBanner(); }
   for (const c of [...TRD.give, ...TRD.get]) { const v = document.querySelector(`[data-tv="${c.id}"]`); if (v) v.innerHTML = trValTxt(c); }
   const pr = $("tr-pr"); if (pr) pr.querySelectorAll("[data-tpp]").forEach((x) => x.setAttribute("aria-pressed", String(+x.dataset.tpp === TRD.pct)));
 }
@@ -217,22 +218,22 @@ function trWatchMore() {
 }
 function renderTrade(box) {
   box.innerHTML = `<div class="tr">
-  ${trTopHTML()}${TRD.editOf ? (() => { const r = TH.find((x) => x.id === TRD.editOf); return `<div class="th-warn ed" role="note">Editing the trade from ${r ? thDate(r.at) : "your history"}. Change it, then Save changes, or Cancel edit to put it back as it was.</div>`; })() : ""}
+  ${trTopHTML()}${TRD.savedId && !TRD.editOf ? `<div class="sv-on" id="sv-on" role="note">${svBanner()}</div>` : ""}${TRD.editOf ? (() => { const r = TH.find((x) => x.id === TRD.editOf); return `<div class="th-warn ed" role="note">Editing the trade from ${r ? thDate(r.at) : "your history"}. Change it, then Save changes, or Cancel edit to put it back as it was.</div>`; })() : ""}
   <div class="tr-bal" id="tr-bal">${trBalHTML()}</div>
   <div class="tr-sec"><div class="tr-h"><b>Their trade %</b><label class="sq-pn"><input id="tr-pct" type="number" min="0" step="any" inputmode="decimal" value="${TRD.pct}" aria-label="Trade percent for their cards">%</label></div>
     <input type="range" class="sq-rg" id="tr-rg" min="0" max="100" step="1" value="${Math.min(100, Math.round(TRD.pct))}" aria-label="Trade percent for their cards">
     <div class="sq-pp" id="tr-pr">${SQ_PRESETS.map((x) => `<button type="button" class="sq-pb" data-tpp="${x}" aria-pressed="${TRD.pct === x}">${x}%</button>`).join("")}</div>
     <div class="tr-cash"><label>Cash they add $<input id="tr-cin" type="number" min="0" step="any" inputmode="decimal" value="${trMoneyIn(TRD.cashIn)}" placeholder="0"></label><label>Cash you add $<input id="tr-cout" type="number" min="0" step="any" inputmode="decimal" value="${trMoneyIn(TRD.cashOut)}" placeholder="0"></label><label>Cash offer %<input id="tr-cpct" type="number" min="0" step="any" inputmode="decimal" value="${TRD.cashPct}"></label></div></div>
   <div class="tr-sec tr-you"><div class="tr-h"><b>Your cards</b><span class="mu">${TRD.give.length} card${TRD.give.length === 1 ? "" : "s"}</span></div>
-    ${TRD.give.map(trRow).join("")}
-    <div class="tr-add"><input id="tr-find" type="search" placeholder="Add from your portfolio…" value="${esc(trFind)}" autocomplete="off"><button type="button" class="pill" data-tx="scang">📷 Scan</button></div>
+    <div class="tr-srch"><div class="tr-add"><input id="tr-find" type="search" placeholder="Add from your portfolio…" value="${esc(trFind)}" autocomplete="off"><button type="button" class="pill" data-tx="scang">📷 Scan</button></div>
     <div class="tr-hits" id="tr-hits">${trPickHTML()}</div>
     <input id="tr-sq-give" type="search" placeholder="…or search TCGplayer" autocomplete="off"><div class="tr-hits" id="tr-sug-give">${trSugHTML("give")}</div></div>
+    ${TRD.give.map(trRow).join("")}</div>
   <div class="tr-sec tr-them"><div class="tr-h"><b>Their cards</b><span class="mu">${TRD.get.length} card${TRD.get.length === 1 ? "" : "s"}</span></div>
-    ${TRD.get.map(trRow).join("")}
-    <div class="tr-add"><input id="tr-sq-get" type="search" placeholder="Search their card on TCGplayer" autocomplete="off"><button type="button" class="pill" data-tx="scan">📷 Scan</button></div>
+    <div class="tr-srch"><div class="tr-add"><input id="tr-sq-get" type="search" placeholder="Search their card on TCGplayer" autocomplete="off"><button type="button" class="pill" data-tx="scan">📷 Scan</button></div>
     <div class="tr-hits" id="tr-sug-get">${trSugHTML("get")}</div></div>
-  <div class="bar"><button class="pill on" type="button" data-tx="done" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>${TRD.editOf ? "Save changes" : "Complete trade"}</button></div>
+    ${TRD.get.map(trRow).join("")}</div>
+  <div class="bar"><button class="pill on" type="button" data-tx="done" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>${TRD.editOf ? "Save changes" : "Complete trade"}</button>${TRD.editOf ? "" : `<button class="pill" type="button" data-tx="save" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>${TRD.savedId ? "Update saved trade" : "Save for later"}</button>`}</div>
   <div class="sm">Your cards count at full market value; theirs at the trade % (set one card's own % in its box). The green or red number is where you stand: trade credit plus cash they add, minus your cards and cash you add. Graded cards use Collectr's price.</div></div>`;
   for (const c of [...TRD.give, ...TRD.get]) { if (c.pxK !== [c.cond, c.var, c.grade].join("|") && !(c.pid && trEach(c) != null)) trPrice(c); trLoadPrints(c); trLive(c); trPriceHi(c); }
 }
@@ -293,11 +294,12 @@ document.addEventListener("click", (e) => {
   if (d.tx === "back") { tradeOpen = false; render(); scrollTo(0, 0); }
   else if (d.tx === "clear" && TRD.editOf) modal({ title: "Cancel this edit?", text: "Your changes are dropped and the trade goes back to how it was.", buttons: [{ label: "Cancel edit", value: true, kind: "danger" }, { label: "Keep editing", value: false, kind: "primary" }] })
     .then((v) => { if (v) thCancelEdit(); });
-  else if (d.tx === "clear") modal({ title: "Clear this trade?", text: "Both sides and the cash are emptied. Your portfolio isn't changed.", buttons: [{ label: "Clear", value: true, kind: "danger" }, { label: "Keep", value: false, kind: "primary" }] })
+  else if (d.tx === "clear") modal({ title: "Clear this trade?", text: `Both sides and the cash are emptied. Your portfolio isn't changed.${TRD.savedId && SV.some((r) => r.id === TRD.savedId) ? " The saved copy stays in Saved." : ""}`, buttons: [{ label: "Clear", value: true, kind: "danger" }, { label: "Keep", value: false, kind: "primary" }] })
     .then((v) => { if (v) { TRD = { give: [], get: [], pct: TRD.pct, cashPct: TRD.cashPct, cashIn: 0, cashOut: 0 }; trSave(); render(); } });
   else if (d.tx === "scan") { sqTarget = "trade"; sqOpen(); }
   else if (d.tx === "scang") { sqTarget = "tradeGive"; sqOpen(); }
   else if (d.tx === "done") trComplete();
+  else if (d.tx === "save") svSave();
   else if (d.tx === "sum") trSummary();
   else if (d.tpick) { const x = P.items.find((y) => y.id === d.tpick); if (x) { trAddFromPortfolio(x); trFind = ""; render(); } }
   else if (d.tsmore) trSugMoreLoad(d.tsmore);
@@ -417,9 +419,87 @@ async function trComplete() {
   if (old) { Object.assign(rec, { id: old.id, at: old.at, note: old.note || "", st: "done", log: [...(old.log || []), { at: Date.now(), what: thDiff(old, rec) }] }); TH = TH.map((r) => (r.id === old.id ? rec : r)); }
   else { Object.assign(rec, { id: uid(), at: Date.now(), note: "", st: "done", log: [{ at: Date.now(), what: "Trade logged from the analyzer" }] }); TH.unshift(rec); }
   thSave();
+  if (TRD.savedId) { SV = SV.filter((r) => r.id !== TRD.savedId); svStore(); }
   TRD = { give: [], get: [], pct: TRD.pct, cashPct: TRD.cashPct, cashIn: 0, cashOut: 0 }; trSave(); tradeOpen = false; trView = "an";
   store(); snap(); render(); fillPrices(); scrollTo(0, 0);
   toast(old ? "Trade updated" : "Trade completed", { label: "Undo", run: undoImport });
+}
+
+/* ---------- saved trades ----------
+   A trade still being worked out can be saved under a name and opened again later from the Saved view.
+   Saved trades only hold the analyzer's contents (cards, prices you typed, trade %, cash): your portfolio isn't touched
+   until you Complete the trade, which also takes it off the Saved list. Kept on this device. */
+const SV_KEY = "pp_trade_saved";
+let SV = (() => { try { const a = JSON.parse(localStorage.getItem(SV_KEY) || "[]"); return Array.isArray(a) ? a : []; } catch { return []; } })();
+function svStore() { try { localStorage.setItem(SV_KEY, JSON.stringify(SV)); } catch { toast("Couldn't save: this device's storage is full."); } }
+// what's kept of the analyzer: each card without its looked-up prices (those are fetched fresh when it's opened)
+const svCard = (c) => { const o = thClean(c); delete o.px; delete o.pxK; delete o.pxHi; delete o.pxHiK; delete o.est; delete o.live; return o; };
+const svSnap = () => ({ give: TRD.give.map(svCard), get: TRD.get.map(svCard), pct: TRD.pct, cashPct: TRD.cashPct, cashIn: +TRD.cashIn || 0, cashOut: +TRD.cashOut || 0 });
+const svKey = (t) => JSON.stringify([t.give.map((c) => [c.name, c.set, c.num, c.cond, c.cp || 0, c.var, c.grade || "", trQ(c), c.own || 0, c.pct ?? null, c.pid || ""]), t.get.map((c) => [c.name, c.set, c.num, c.cond, c.cp || 0, c.var, c.grade || "", trQ(c), c.own || 0, c.pct ?? null]), +t.pct, +t.cashPct, +t.cashIn || 0, +t.cashOut || 0]);
+const svBanner = () => `Saved trade: <b>${esc(TRD.savedName || "Untitled")}</b> <span class="mu">· ${svDirty() ? "changes not saved yet" : "up to date"}</span>`;
+function svDirty() { const r = SV.find((x) => x.id === TRD.savedId); return !r || svKey(r.trd) !== svKey(svSnap()); }
+// a small box asking for the trade's name
+function svAskName(title, def, extra) {
+  return new Promise((done) => {
+    const ov = document.createElement("div"); ov.className = "ppm-ov";
+    ov.innerHTML = `<form class="ppm sv-f" role="dialog" aria-modal="true" aria-labelledby="sv-t"><h3 id="sv-t">${esc(title)}</h3>
+      <input class="sv-in" name="n" maxlength="60" value="${esc(def)}" placeholder="e.g. Mike at the card show" aria-label="Trade name" autocomplete="off">
+      <div class="ppm-b"><button type="submit" class="ppm-x primary">Save</button>${extra ? `<button type="button" class="ppm-x" data-sv="new">${esc(extra)}</button>` : ""}<button type="button" class="ppm-x plain" data-sv="x">Cancel</button></div></form>`;
+    const f = ov.querySelector("form"), inp = ov.querySelector("input"), close = (v) => { removeEventListener("keydown", key); ov.remove(); done(v); };
+    const key = (e) => { if (e.key === "Escape") close(null); };
+    const val = () => inp.value.trim() || def;
+    f.addEventListener("submit", (e) => { e.preventDefault(); close({ name: val() }); });
+    ov.addEventListener("click", (e) => { const b = e.target.closest("[data-sv]"); if (b) close(b.dataset.sv === "new" ? { name: val(), asNew: true } : null); else if (e.target === ov) close(null); });
+    addEventListener("keydown", key); document.body.appendChild(ov); inp.focus(); inp.select();
+  });
+}
+async function svSave() {
+  if (TRD.editOf || (!TRD.give.length && !TRD.get.length)) return;
+  const have = TRD.savedId && SV.find((r) => r.id === TRD.savedId);
+  const def = have ? have.name : `Trade ${new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+  const a = await svAskName(have ? "Update saved trade" : "Save trade for later", def, have ? "Save as a new trade" : ""); if (!a) return;
+  const now = Date.now(), trd = svSnap();
+  if (have && !a.asNew) { have.name = a.name; have.upd = now; have.trd = trd; SV = [have, ...SV.filter((r) => r !== have)]; }
+  else { const r = { id: uid(), name: a.name, at: now, upd: now, trd }; SV.unshift(r); TRD.savedId = r.id; }
+  TRD.savedName = a.name; svStore(); trSave(); render();
+  toast(`Saved “${a.name}”. Open it again from Saved.`);
+}
+async function svOpen(id) {
+  const r = SV.find((x) => x.id === id); if (!r) return;
+  if (TRD.editOf) { toast("Save or cancel the trade you're editing first"); trView = "an"; return render(); }
+  const busy = (TRD.give.length || TRD.get.length) && TRD.savedId !== id && !(TRD.savedId && !svDirty());
+  if (busy) {
+    const v = await modal({ title: "Replace the trade in the analyzer?", text: "The analyzer has a trade that isn't saved. Save it first to keep it.", buttons: [{ label: "Save it first", value: "save", kind: "primary" }, { label: "Replace it", value: "go", kind: "danger" }, { label: "Cancel", value: null, kind: "plain" }] });
+    if (!v) return; if (v === "save") { await svSave(); if (TRD.savedId && svDirty()) return; }
+  }
+  const back = (c) => { const o = { ...c, id: uid() }, x = o.pid && P.items.find((y) => y.id === o.pid); if (o.pid && !x) delete o.pid; else if (x) o.max = x.qty; return o; };
+  TRD = { give: r.trd.give.map(back), get: r.trd.get.map(back), pct: r.trd.pct, cashPct: r.trd.cashPct, cashIn: r.trd.cashIn || 0, cashOut: r.trd.cashOut || 0, savedId: r.id, savedName: r.name };
+  trSave(); trView = "an"; render(); scrollTo(0, 0); toast(`Opened “${r.name}”`);
+}
+async function svRename(id) {
+  const r = SV.find((x) => x.id === id); if (!r) return;
+  const a = await svAskName("Rename trade", r.name); if (!a) return;
+  r.name = a.name; if (TRD.savedId === id) { TRD.savedName = a.name; trSave(); } svStore(); render();
+}
+async function svDelete(id) {
+  const r = SV.find((x) => x.id === id); if (!r) return;
+  const ok = await modal({ title: "Delete this saved trade?", text: `“${esc(r.name)}” is removed from Saved. Your portfolio isn't changed.`, buttons: [{ label: "Delete", value: true, kind: "danger" }, { label: "Keep", value: false, kind: "primary" }] });
+  if (!ok) return; SV = SV.filter((x) => x.id !== id); if (TRD.savedId === id) { delete TRD.savedId; delete TRD.savedName; trSave(); } svStore(); render();
+}
+function renderSaved(box) {
+  const val = (a) => a.reduce((s, c) => s + (c.own > 0 ? c.own : 0) * trQ(c), 0);
+  box.innerHTML = `<div class="tr th">${trTopHTML()}
+    ${SV.length ? `<div class="th-list">${SV.map((r) => { const t = r.trd, n1 = t.give.reduce((a, c) => a + trQ(c), 0), n2 = t.get.reduce((a, c) => a + trQ(c), 0);
+      return `<div class="th-c sv-c${TRD.savedId === r.id ? " sv-cur" : ""}">
+      <button type="button" class="sv-open" data-svopen="${r.id}" aria-label="Open ${esc(r.name)}">
+        <span class="th-ch"><span><b>${esc(r.name)}</b><span class="mu">Saved ${thDate(r.upd || r.at, true)}</span></span>${TRD.savedId === r.id ? `<span class="th-st ed">In analyzer</span>` : ""}</span>
+        <span class="th-sides"><span class="th-sd"><span class="th-k">YOU GIVE · ${n1}</span><span class="th-pics">${thThumbs(t.give) || `<span class="mu">${t.cashOut > 0 ? "Cash only" : "Nothing yet"}</span>`}</span></span>
+          <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h12l-3-3M17 17H5l3 3"></path></svg>
+          <span class="th-sd r"><span class="th-k">YOU GET · ${n2}</span><span class="th-pics">${thThumbs(t.get) || `<span class="mu">${t.cashIn > 0 ? "Cash only" : "Nothing yet"}</span>`}</span></span></span>
+        <span class="th-ft"><span class="mu">Their cards at ${t.pct}%${t.cashIn > 0 ? ` · +${money(t.cashIn)} cash in` : ""}${t.cashOut > 0 ? ` · ${money(t.cashOut)} cash out` : ""}</span></span></button>
+      <span class="sv-b"><button class="pill sm2" type="button" data-svopen="${r.id}">Open</button><button class="pill sm2" type="button" data-svren="${r.id}">Rename</button><button class="pill sm2 dl" type="button" data-svdel="${r.id}">Delete</button></span></div>`; }).join("")}</div>
+    <div class="sm">Saved trades stay on this device. Opening one loads it into the analyzer with today's prices; completing it moves it to History.</div>`
+    : `<p class="sm">No saved trades. In the analyzer, tap Save for later to keep a trade you're still working out, give it a name, and open it here anytime.</p>`}</div>`;
 }
 
 /* ---------- trade history ----------
@@ -563,7 +643,7 @@ function renderHistDetail(box, r) {
 function trTopHTML() {
   const n = TH.length;
   return `<div class="cdx-top"><button class="pill" type="button" data-tx="back">‹ Portfolio</button>${trView === "an" && (TRD.give.length || TRD.get.length) ? `<button class="pill sm2" type="button" data-tx="clear">${TRD.editOf ? "Cancel edit" : "Clear"}</button>` : "<span></span>"}</div>
-    <div class="seg th-seg" role="group" aria-label="Trade view"><button type="button" data-tx="an" aria-pressed="${trView === "an"}">Analyzer</button><button type="button" data-tx="hist" aria-pressed="${trView === "hist"}">History${n ? ` (${n})` : ""}</button></div>`;
+    <div class="seg th-seg" role="group" aria-label="Trade view"><button type="button" data-tx="an" aria-pressed="${trView === "an"}">Analyzer</button><button type="button" data-tx="saved" aria-pressed="${trView === "saved"}">Saved${SV.length ? ` (${SV.length})` : ""}</button><button type="button" data-tx="hist" aria-pressed="${trView === "hist"}">History${n ? ` (${n})` : ""}</button></div>`;
 }
 async function thRevertAsk(id) {
   const r = TH.find((x) => x.id === id); if (!r || r.st !== "done") return;
@@ -611,7 +691,10 @@ async function thDelete(id) {
 document.addEventListener("click", (e) => {
   const root = e.target.closest && e.target.closest(".tr"); if (!root) return;
   const b = e.target.closest("button"); if (!b) return; const d = b.dataset;
-  if (d.tx === "an" || d.tx === "hist") { trView = d.tx; trDet = null; render(); scrollTo(0, 0); }
+  if (d.tx === "an" || d.tx === "hist" || d.tx === "saved") { trView = d.tx; trDet = null; render(); scrollTo(0, 0); }
+  else if (d.svopen) svOpen(d.svopen);
+  else if (d.svren) svRename(d.svren);
+  else if (d.svdel) svDelete(d.svdel);
   else if (d.thf) { thFilt = d.thf; render(); }
   else if (d.thopen) { trDet = d.thopen; thY = scrollY; render(); scrollTo(0, 0); }
   else if (d.th === "list") { trDet = null; render(); scrollTo(0, thY || 0); }
@@ -1040,7 +1123,7 @@ function renderList() {
 function render() {
   const box = $("pf"); if (!box) return;
   if (detail) { const x = detailItem(); if (x) return renderDetail(box, x); detail = null; }
-  if (tradeOpen) { if (trView === "hist") { const r = trDet && TH.find((x) => x.id === trDet); if (r) return renderHistDetail(box, r); trDet = null; return renderHist(box); } return renderTrade(box); }
+  if (tradeOpen) { if (trView === "saved") return renderSaved(box); if (trView === "hist") { const r = trDet && TH.find((x) => x.id === trDet); if (r) return renderHistDetail(box, r); trDet = null; return renderHist(box); } return renderTrade(box); }
   const o = owned(P.items), T = totals(o), pfs = [...new Set(o.map((x) => x.pf || "Unsorted"))].sort(), w = P.items.filter((x) => x.watch).length;
   if (view !== "all" && view !== "watch" && !pfs.includes(view)) view = "all";
   const list = filtered(), V = view === "all" || view === "watch" ? T : totals(o.filter((x) => (x.pf || "Unsorted") === view));
