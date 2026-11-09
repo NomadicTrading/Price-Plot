@@ -534,7 +534,8 @@ async function tcgScan(q, opts = {}) {
 }
 // Finds candidate cards for a name and number: pokemontcg.io first, TCGplayer's search as a second source.
 async function matchCards(name, n, d, opts = {}) {
-  const nn = /^\d+$/.test(n) ? String(+n) : n, words = norm(name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length > 1);
+  // one-letter words count too: the V in "Pikachu V" (or the trainer card N); dropping it made plain Pikachu match just as well
+  const nn = /^\d+$/.test(n) ? String(+n) : n, words = norm(name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
   const errors = [];
   // pokemontcg.io and TCGplayer are asked at the same time: pokemontcg.io is often slow or down, and waiting
   // for it to fail first left only TCGplayer's fuzzy "did you mean" results (Houndour for Houndoom)
@@ -574,6 +575,24 @@ const scoreCard = (c, nn, d, words, extra) => {
   let sc = hit * 2 + (words.length && hit === words.length ? 6 : 0) - (words.length && !hit ? 8 : 0);
   const cn = String(c.number || "").toLowerCase().replace(/^0+(?=\d)/, ""); if (nn && cn === nn.toLowerCase()) sc += 5; if (d && String(c.printedTotal) === d) sc += 5;
   return sc + (extra ? extra(c) : 0);
+};
+// Ranking for a search typed into the scan list by hand: what was typed comes first, in this order:
+// 1. every typed word is in the card's name (Pikachu V, not plain Pikachu or Pikachu VMAX)
+// 2. the typed number, then the typed set total
+// 3. the name is exactly what was typed, with no extra words (Charizard before Charizard ex)
+// Words in brackets on TCGplayer's names, like (Full Art) or (Shadowless), don't count as extra words.
+const scoreTyped = (c, nn, d, words) => {
+  const core = norm(String(c.name || "").replace(/\([^)]*\)/g, " ")).replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
+  const hit = words.filter((w) => core.includes(w)).length, full = words.length > 0 && hit === words.length;
+  const extra = core.filter((w) => !words.includes(w)).length;
+  let sc = words.length ? (full ? 1000 : hit * 100 - (hit ? 0 : 2000)) : 0;
+  const cn = String(c.number || "").toLowerCase().replace(/^0+(?=\d)/, "");
+  const numOk = !nn || cn === nn.toLowerCase();
+  if (nn) sc += numOk ? 500 : -50;
+  // the set total only counts alongside the right number (a different card from the same set isn't closer)
+  if (d && numOk) sc += String(c.printedTotal || "").replace(/^0+(?=\d)/, "") === d ? 200 : 0;
+  sc += full && !extra ? 80 : -10 * extra;
+  return sc;
 };
 // Search bar suggestions: TCGplayer's matches for what's typed, one row per printing with its Near Mint market price.
 // Printing prices come from each card's price history (remembered 24 hours), looked up for the top few cards only.
@@ -649,12 +668,14 @@ app.get("/api/scan-edition", async (req, res) => {
 
 app.get("/api/scan-match", async (req, res) => {
   const name = String(req.query.name || "").replace(/["\\*:()]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
-  const n = String(req.query.n || "").replace(/[^a-z0-9]/gi, "").slice(0, 8), d = String(req.query.d || "").replace(/\D/g, "").slice(0, 4);
+  const n = String(req.query.n || "").replace(/[^a-z0-9]/gi, "").slice(0, 8), d = String(+String(req.query.d || "").replace(/\D/g, "").slice(0, 4) || "") || "";
+  // m=1: typed in by hand, so ranked by exactly what was typed
+  const typed = req.query.m === "1";
   if (!name && !n) return res.status(400).json({ error: "Nothing to look up" });
-  const key = [name.toLowerCase(), n, d].join("|"), hit = scanCache.get(key);
+  const key = [name.toLowerCase(), n, d, typed ? "m" : ""].join("|"), hit = scanCache.get(key);
   if (hit && hit.exp > Date.now()) return res.json(hit.data);
   const { list: all, errors, nn, words } = await matchCards(name, n, d);
-  const list = all.map((c) => ({ c, s: scoreCard(c, nn, d, words) })).sort((a, b) => b.s - a.s).slice(0, 30).map(({ c }) => c);
+  const list = all.map((c) => ({ c, s: typed ? scoreTyped(c, nn, d, words) : scoreCard(c, nn, d, words) })).sort((a, b) => b.s - a.s).slice(0, 30).map(({ c }) => c);
   if (!list.length && errors.length) return res.status(502).json({ error: "The card lookup didn't answer. Try again in a moment.", detail: errors });
   const data = { cards: list };
   if (list.length) { scanCache.set(key, { exp: Date.now() + 864e5, data }); if (scanCache.size > 2000) scanCache.delete(scanCache.keys().next().value); }

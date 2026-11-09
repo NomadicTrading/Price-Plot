@@ -1503,13 +1503,13 @@ function openDetail(id) { if (!P.items.some((y) => y.id === id)) return; listY =
 // toTab: leaving for the eBay or TCGplayer tab, so a scanned card's page doesn't reopen the scan list on top of it
 function closeDetail(viaHistory, toTab) { if (!detail) return; const wasPreview = !!(preview && preview.id === detail); detail = null; preview = null; render(); scrollTo(0, listY); if (!viaHistory && history.state && history.state.ppd) try { history.back(); } catch {}
   // a scanned card's comps go back to the tab you were on, with the scan list open again
-  if (wasPreview && !toTab) { const b = previewTab && previewTab !== "pf" && $("tb").querySelector(`[data-t="${previewTab}"]`); if (b) b.click(); sqOpen(); } }
+  if (wasPreview && !toTab) { const b = previewTab && previewTab !== "pf" && $("tb").querySelector(`[data-t="${previewTab}"]`); if (b) b.click(); sqOpen(true); } }
 // comps for a card in the scan list, before it's added to the portfolio
 function sqComp(id) {
   const it = sqItem(id), c = it && it.pick >= 0 ? it.cards[it.pick] : null; if (!c) return;
   const x = { ...sqToItem(it, ""), id: "scan-" + it.id + "-" + it.pick, qty: 0 };
   if (!x.tcgId && c.tcgId) x.tcgId = c.tcgId;
-  previewTab = typeof tab === "string" ? tab : ""; const ov = $("ppscan"); if (ov) ov.remove(); sqView = null; syncScrollLock();
+  previewTab = typeof tab === "string" ? tab : ""; sqListMark(); const ov = $("ppscan"); if (ov) ov.remove(); sqView = null; syncScrollLock();
   const b = $("tb").querySelector('[data-t="pf"]'); if (b && tab !== "pf") b.click();
   preview = x; listY = 0; detail = x.id; cview = null; dsel = ownSel(x); editing = null; try { history.pushState({ ppd: x.id }, ""); } catch {} render(); scrollTo(0, 0);
 }
@@ -1843,6 +1843,19 @@ function parseCardText(text) {
   }
   return { name, n, d };
 }
+// what was typed in the scan list's search: "Pikachu V 43/185", "pikachu v 043", "4/102 Charizard", "Umbreon VMAX TG23/TG30", "Pikachu SWSH061"
+function sqParseTyped(q) {
+  let s = String(q || "").replace(/\s+/g, " ").trim(), n = "", d = "";
+  const sl = /(?:^|\s)#?([a-z]{0,5}\d{1,4}[a-z]?)\s*\/\s*([a-z]{0,5}\d{1,4})(?=\s|$)/i.exec(s);
+  if (sl) { n = sl[1]; d = /^\d+$/.test(sl[2]) ? String(+sl[2]) : ""; s = (s.slice(0, sl.index) + " " + s.slice(sl.index + sl[0].length)).trim(); }
+  else {
+    // a lone collector number (the last one typed): digits, or a promo/gallery code like SWSH061 or TG05
+    const re = /(?:^|\s)#?([a-z]{0,5}\d{1,4}[a-z]?)(?=\s|$)/gi; let m, last = null; while ((m = re.exec(s))) last = m;
+    if (last) { n = last[1]; s = (s.slice(0, last.index) + " " + s.slice(last.index + last[0].length)).trim(); }
+  }
+  n = /^\d/.test(n) ? n.toLowerCase() : n.toUpperCase(); // 25a stays 25a; swsh061 becomes SWSH061
+  return { name: s.replace(/\s+/g, " ").trim(), n, d };
+}
 /* Scan queue: take photos one after another (or pick several from the photo library). Each card is read in the
    background while you take the next, and the results build up in one list you can check, edit and add
    individually or all at once. The list is kept on this device (with small thumbnails) until you clear it. */
@@ -1853,6 +1866,8 @@ let scanQ = (() => { try { const q = JSON.parse(localStorage.getItem(SQ_KEY) || 
 for (const it of scanQ) if (it.px === undefined) it.pxK = null;
 for (const it of scanQ) if (it.st === "wait" || it.st === "reading") { it.st = "error"; it.err = "The photo was lost when the page closed. Scan this card again."; }
 const sqPhotos = new Map(); // id -> { photo, canvas }, kept only until the card is read
+// sqListY: where the scan list was scrolled to before you opened a card to change it (or its comps)
+let sqListY = null;
 let sqView = null, sqBusy = 0, sqDefaults = (() => { try { return JSON.parse(localStorage.getItem(SQ_KEY + "_d") || "{}"); } catch { return {}; } })();
 function sqSave() {
   try { localStorage.setItem(SQ_KEY, JSON.stringify(scanQ.slice(-SQ_MAX))); localStorage.setItem(SQ_KEY + "_d", JSON.stringify(sqDefaults)); }
@@ -1920,9 +1935,11 @@ async function sqRead(it) {
   await sqFind(it, parseCardText(data.text));
   it.unsure = true;
 }
-async function sqFind(it, read) {
+// typed: a search typed in by hand, so the matches are ranked by exactly what was typed (Pikachu V before Pikachu,
+// the typed number before other numbers)
+async function sqFind(it, read, typed) {
   it.read = read; it.err = ""; it.note = ""; it.manual = false; it.okPf = false; sqGridN = 12;
-  try { const j = await getJSON("/api/scan-match?" + new URLSearchParams({ name: read.name || "", n: read.n || "", d: read.d || "" })); it.cards = j.cards || []; }
+  try { const j = await getJSON("/api/scan-match?" + new URLSearchParams({ name: read.name || "", n: read.n || "", d: read.d || "", ...(typed ? { m: "1" } : {}) })); it.cards = j.cards || []; }
   catch (e) { it.cards = []; it.err = e.message; }
   it.pick = it.cards.length ? 0 : -1; if (!it.cards.length && !it.err) it.err = "No matching cards found. Tap Fix to search.";
   it.st = "ready"; it.pxK = null;
@@ -2156,7 +2173,9 @@ function sqSetOffer(it, amt, from) {
 }
 
 // --- the list window ---
-function sqOpen() { sqView = null; sqRender(); }
+// keep: coming back to the list (from a card's comps), so it opens where you left it instead of at the top
+function sqOpen(keep) { if (!keep) sqListY = null; sqView = null; sqRender(); }
+function sqListMark() { const ov = $("ppscan"), m = ov && ov.dataset.v === "list" && ov.querySelector(".ppm"); if (m) sqListY = m.scrollTop; }
 // scanning your own cards for a trade: the scan finds the card, your portfolio says which copy (condition, grade, printing, value)
 function sqMine(it, c) {
   const n = mName(c.name), k = mNum(sqNum(c));
@@ -2299,7 +2318,9 @@ function sqBar() {
 }
 function sqRender() {
   let ov = $("ppscan"); if (!ov) { ov = document.createElement("div"); ov.id = "ppscan"; ov.className = "ppm-ov"; document.body.appendChild(ov); }
-  if (sqView) { sqDetail(ov); sqGridWatch(); return; }
+  if (sqView) { ov.dataset.v = "card"; sqDetail(ov); sqGridWatch(); return; }
+  // the list stays where it was: redrawn in place, or back from changing a card
+  const was = ov.dataset.v === "list" && ov.querySelector(".ppm"), keepY = sqListY != null ? sqListY : was ? was.scrollTop : 0; sqListY = null; ov.dataset.v = "list";
   const pfs = sqPfs(), has = scanQ.length;
   ov.innerHTML = `<div class="ppm sqm" role="dialog" aria-modal="true" aria-labelledby="sc-t">
     <div class="sq-h"><h3 id="sc-t">${sqTarget === "select" ? "Find your cards" : sqTarget === "tradeGive" ? "Scan your cards" : sqTarget === "trade" ? "Scan their cards" : "Scan cards"}</h3><button type="button" class="ppm-x plain sq-close" data-qa="close">Close</button></div>
@@ -2316,6 +2337,7 @@ function sqRender() {
       <p class="mu" style="margin:0">Or choose photos you've already taken. You can pick several at once.</p>`}
   </div>`;
   sqBar(); sqPriceAll();
+  if (keepY) ov.querySelector(".ppm").scrollTop = keepY; // after the list is filled in, so it lands on the same cards
 }
 function sqDetail(ov) {
   const it = sqItem(sqView); if (!it) { sqView = null; return sqRender(); }
@@ -2329,10 +2351,10 @@ function sqDetail(ov) {
     ${it.thumb ? `<img class="sc-photo" src="${it.thumb}" alt="Your photo">` : ""}
     ${saw ? `<p class="sc-saw"><span class="mu">Read:</span> ${saw}${a._by ? ` <span class="mu">(${esc(String(a._by).split(" ")[0])}${a._secs ? ", " + (+a._secs).toFixed(1) + "s" : ""})</span>` : ""}</p>` : it.aiErr ? `<p class="sc-saw" style="color:var(--dn)">${esc(it.aiErr)}. Used basic text reading instead, which can't tell printings apart.</p>` : ""}
     ${c ? `<div class="ppm-b" style="margin:0 0 12px"><button type="button" class="ppm-x" data-qc="${it.id}">See comps for ${esc(c.name)}</button></div>` : ""}
-    ${sqOwnMode() && !own.length ? `<p><b>None of the matches are cards in your portfolio.</b> <span class="mu">Search again below${sqTarget === "tradeGive" ? ", or use “Add from your portfolio” in the trade" : ""}.</span></p>`
+    <form id="sq-search" class="cimp-c" style="margin:0 0 12px"><input name="q" type="search" enterkeyhint="search" value="${esc([r.name, r.n && (r.n + (r.d ? "/" + r.d : ""))].filter(Boolean).join(" "))}" placeholder="Name and number, e.g. Pikachu V 43/185" aria-label="Card name and number" autocomplete="off" style="letter-spacing:0;text-transform:none"><button type="submit" class="ppm-x">Search</button></form>
+    ${sqOwnMode() && !own.length ? `<p><b>None of the matches are cards in your portfolio.</b> <span class="mu">Search again above${sqTarget === "tradeGive" ? ", or use “Add from your portfolio” in the trade" : ""}.</span></p>`
       : it.cards.length ? `<p class="mu">${sqOwnMode() ? "Tap your card (only cards in your portfolio):" : "Tap your card:"}</p><div class="sc-grid">${it.cards.map((x, i) => (sqOwnMode() && !own.includes(i)) || !gridShow.has(i) ? "" : `<button type="button" data-qp="${i}"${i === it.pick ? ' class="best"' : ""}>${i === it.pick ? `<i class="sc-best">${a && i === 0 ? "Best match" : "Chosen"}</i>` : ""}<img src="${esc(x.image)}" alt="" loading="lazy"><b>${esc(x.name)}</b><span>${esc(x.set || "")} · ${esc(sqNum(x))}</span></button>`).join("")}</div>${gridRest > 0 ? `<button type="button" class="sug-more" data-qmore="1">Show more (${gridRest})</button>` : ""}`
       : `<p><b>${esc(it.err || "No matching cards found.")}</b></p>`}
-    <form id="sq-search" class="cimp-c" style="margin-top:12px"><input name="q" value="${esc([r.name, r.n && (r.n + (r.d ? "/" + r.d : ""))].filter(Boolean).join(" "))}" placeholder="Name and number, e.g. Charizard 4/102" aria-label="Card name and number" style="letter-spacing:0;text-transform:none"><button type="submit" class="ppm-x">Search</button></form>
     <div class="ppm-b"><button type="button" class="ppm-x plain" data-qa="list">Back to list</button></div>
   </div>`;
 }
@@ -2460,9 +2482,9 @@ document.addEventListener("click", (e) => {
   const cam = $("ppcam");
   if (cam && cam.contains(e.target)) { const q = e.target.closest("[data-qc]")?.dataset.qc; if (q === "shot") sqShot(); else if (q === "done") sqCamClose(); return; }
   const ov = $("ppscan"); if (!ov || !ov.contains(e.target)) return;
-  if (e.target === ov) { ov.remove(); return; }
+  if (e.target === ov) { sqListY = null; ov.remove(); return; }
   const b = e.target.closest("button"); if (!b) return; const d = b.dataset;
-  if (d.qa === "close") ov.remove();
+  if (d.qa === "close") { sqListY = null; ov.remove(); }
   else if (d.qa === "trade") sqToTrade();
   else if (d.qa === "apply") sqApplyEdits();
   else if (d.qa === "cam") sqCamera();
@@ -2474,7 +2496,7 @@ document.addEventListener("click", (e) => {
       .then((v) => { if (v) { scanQ = scanQ.filter((x) => !(x.sel && x.pick >= 0)); sqSave(); sqRender(); } }); }
   else if (d.qa === "clear") modal({ title: "Clear the whole list?", text: "Cards you haven't added to your portfolio will be removed from this list.", buttons: [{ label: "Clear list", kind: "danger", value: 1 }, { label: "Cancel", kind: "plain" }] })
     .then((v) => { if (v) { scanQ = scanQ.filter((x) => x.st === "wait" || x.st === "reading"); sqSave(); sqRender(); } });
-  else if (d.qo) { sqView = d.qo; sqGridN = 12; sqRender(); ov.querySelector(".ppm").scrollTop = 0; }
+  else if (d.qo) { sqListMark(); sqView = d.qo; sqGridN = 12; sqRender(); ov.querySelector(".ppm").scrollTop = 0; }
   else if (d.qmore) sqGridMore();
   else if (d.qc) sqComp(d.qc);
   else if (d.qok) { const it = sqItem(d.qok); if (it) { it.okPf = true; sqSave(); const n = ov.querySelector(`#sq-${it.id} .sq-chk`); if (n) n.remove(); } }
@@ -2506,12 +2528,10 @@ document.addEventListener("change", (e) => {
 document.addEventListener("focusout", (e) => { const r = e.target.closest && e.target.closest(".sq-r[data-stale]"); if (r) setTimeout(() => { if (!r.contains(document.activeElement)) { const it = sqItem(r.id.slice(3)); if (it) { delete r.dataset.stale; sqRow(it); } } }, 0); });
 document.addEventListener("submit", (e) => {
   if (e.target.id === "sq-search") { e.preventDefault(); const it = sqItem(sqView); if (!it) return;
-    const q = new FormData(e.target).get("q") || "", r = parseCardText(q);
-    if (!r.n) { const m = /\b([A-Z]{0,4}\d{1,3}[a-z]?)\b\s*$/.exec(q.trim()); if (m) r.n = m[1]; }
-    r.name = q.replace(/\b[A-Z]{0,4}\d{1,3}[a-z]?\s*\/\s*[A-Z]{0,4}\d{1,3}\b/, "").replace(/\b[A-Z]{0,4}\d{1,3}[a-z]?\b\s*$/, "").trim() || r.name;
+    const q = new FormData(e.target).get("q") || "", r = sqParseTyped(q); if (!r.name && !r.n) return;
     const btn = e.target.querySelector("button"); btn.textContent = "Searching…"; btn.disabled = true;
     it.ai = it.ai ? { ...it.ai, _by: "" } : null;
-    sqFind(it, r).then(() => { it.unsure = false; sqSave(); if (sqView === it.id) sqRender(); }); }
+    sqFind(it, r, true).then(() => { it.unsure = false; sqSave(); if (sqView === it.id) { sqRender(); const m = $("ppscan") && $("ppscan").querySelector(".ppm"); if (m) m.scrollTop = 0; } }); }
   else if (e.target.id === "sq-bar") { e.preventDefault(); sqAddSelected(e.target); }
 });
 
