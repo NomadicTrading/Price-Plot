@@ -172,7 +172,7 @@ function trValTxt(c) {
 }
 function trBalHTML() {
   const m = trMath(), up = m.pos >= -0.005;
-  return `<div class="tr-top"><div class="tr-pos" style="color:var(${up ? "--up" : "--dn"})">${up ? "+" : "−"}${money(Math.abs(m.pos))}</div><button class="pill" type="button" data-tx="sum" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>Trade summary</button></div>
+  return `<div class="tr-top"><div class="tr-pos" style="color:var(${up ? "--up" : "--dn"})">${up ? "+" : "−"}${money(Math.abs(m.pos))}</div><div class="tr-btns"><button class="pill" type="button" data-tx="sum" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>Trade summary</button>${TRD.editOf ? "" : `<button class="pill" type="button" data-tx="new" ${TRD.give.length || TRD.get.length || +TRD.cashIn || +TRD.cashOut ? "" : "disabled"}>New trade</button>`}</div></div>
     <div class="tr-st"><span>Your cards <b>${money(m.give)}</b></span><span>Their cards <b>${money(m.getMk)}</b> <span class="mu">= ${money(m.credit)} credit</span></span>
     <span>Their cards need <b>${m.need != null ? money(m.need) : "—"}</b> <span class="mu">at ${TRD.pct}%</span></span>
     <span>Cash offer for their cards <b>${money(m.cash)}</b> <span class="mu">at ${TRD.cashPct}%</span></span></div>
@@ -300,6 +300,7 @@ document.addEventListener("click", (e) => {
   else if (d.tx === "scang") { sqTarget = "tradeGive"; sqOpen(); }
   else if (d.tx === "done") trComplete();
   else if (d.tx === "save") svSave();
+  else if (d.tx === "new") trNew();
   else if (d.tx === "sum") trSummary();
   else if (d.tpick) { const x = P.items.find((y) => y.id === d.tpick); if (x) { trAddFromPortfolio(x); trFind = ""; render(); } }
   else if (d.tsmore) trSugMoreLoad(d.tsmore);
@@ -454,15 +455,27 @@ function svAskName(title, def, extra) {
   });
 }
 async function svSave() {
-  if (TRD.editOf || (!TRD.give.length && !TRD.get.length)) return;
+  if (TRD.editOf || (!TRD.give.length && !TRD.get.length)) return false;
   const have = TRD.savedId && SV.find((r) => r.id === TRD.savedId);
   const def = have ? have.name : `Trade ${new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
-  const a = await svAskName(have ? "Update saved trade" : "Save trade for later", def, have ? "Save as a new trade" : ""); if (!a) return;
+  const a = await svAskName(have ? "Update saved trade" : "Save trade for later", def, have ? "Save as a new trade" : ""); if (!a) return false;
   const now = Date.now(), trd = svSnap();
   if (have && !a.asNew) { have.name = a.name; have.upd = now; have.trd = trd; SV = [have, ...SV.filter((r) => r !== have)]; }
   else { const r = { id: uid(), name: a.name, at: now, upd: now, trd }; SV.unshift(r); TRD.savedId = r.id; }
   TRD.savedName = a.name; svStore(); trSave(); render();
-  toast(`Saved “${a.name}”. Open it again from Saved.`);
+  toast(`Saved “${a.name}”. Open it again from Saved.`); return true;
+}
+// New trade: save the one in the analyzer (named, to Saved) or clear it, then start with an empty analyzer
+async function trNew() {
+  if (TRD.editOf) return;
+  const saved = TRD.savedId && SV.some((r) => r.id === TRD.savedId) && !svDirty();
+  const v = await modal({ title: "Start a new trade?", text: saved ? `“${esc(TRD.savedName || "This trade")}” is already saved, so it stays in Saved either way.` : "Save this trade to open it again later from Saved, or clear the list to start over. Your portfolio isn't changed.",
+    buttons: [{ label: "Save trade", value: "save", kind: "primary" }, { label: "Clear list", value: "clear", kind: "danger" }, { label: "Cancel", value: null, kind: "plain" }] });
+  if (!v) return;
+  if (v === "save" && !saved && !(await svSave())) return;
+  const name = TRD.savedName;
+  TRD = { give: [], get: [], pct: TRD.pct, cashPct: TRD.cashPct, cashIn: 0, cashOut: 0 }; trFind = ""; trSave(); render(); scrollTo(0, 0);
+  toast(v === "save" ? `“${name}” is in Saved. New trade started.` : "List cleared. New trade started.");
 }
 async function svOpen(id) {
   const r = SV.find((x) => x.id === id); if (!r) return;
