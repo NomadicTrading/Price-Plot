@@ -1923,7 +1923,7 @@ async function sqRead(it) {
     if (r.ok) { const a = j.read || {};
       it.ai = a; it.print = j.print || ""; it.grade = j.grade || "";
       it.read = { name: a.name_english || a.name || "", n: a.number || "", d: a.set_total || "" };
-      it.cards = j.cards || []; it.pick = it.cards.length ? 0 : -1;
+      it.cards = j.cards || []; it.typed = false; it.pick = it.cards.length ? 0 : -1;
       it.unsure = a.found === false || !it.cards.length || (a.confidence != null && +a.confidence < 0.6);
       it.err = a.found === false ? "Couldn't find a card in that photo. Try again closer, with less glare." : !it.cards.length ? "No matching cards found. Tap Fix to search." : "";
       it.st = "ready"; return; }
@@ -1939,7 +1939,9 @@ async function sqRead(it) {
 // the typed number before other numbers)
 async function sqFind(it, read, typed) {
   it.read = read; it.err = ""; it.note = ""; it.manual = false; it.okPf = false; sqGridN = 12;
-  try { const j = await getJSON("/api/scan-match?" + new URLSearchParams({ name: read.name || "", n: read.n || "", d: read.d || "", ...(typed ? { m: "1" } : {}) })); it.cards = j.cards || []; }
+  // a typed search also sends what the scan read (set, set total, language): it only orders cards that are equal on what was typed
+  const a = it.ai || {}, hint = typed ? { m: "1", s: a.set_name || "", t: a.set_total || "", ...(/japan/i.test(a.language || "") ? { jp: "1" } : {}) } : {};
+  try { const j = await getJSON("/api/scan-match?" + new URLSearchParams({ name: read.name || "", n: read.n || "", d: read.d || "", ...hint })); it.cards = j.cards || []; it.typed = !!typed; }
   catch (e) { it.cards = []; it.err = e.message; }
   it.pick = it.cards.length ? 0 : -1; if (!it.cards.length && !it.err) it.err = "No matching cards found. Tap Fix to search.";
   it.st = "ready"; it.pxK = null;
@@ -2351,9 +2353,9 @@ function sqDetail(ov) {
     ${it.thumb ? `<img class="sc-photo" src="${it.thumb}" alt="Your photo">` : ""}
     ${saw ? `<p class="sc-saw"><span class="mu">Read:</span> ${saw}${a._by ? ` <span class="mu">(${esc(String(a._by).split(" ")[0])}${a._secs ? ", " + (+a._secs).toFixed(1) + "s" : ""})</span>` : ""}</p>` : it.aiErr ? `<p class="sc-saw" style="color:var(--dn)">${esc(it.aiErr)}. Used basic text reading instead, which can't tell printings apart.</p>` : ""}
     ${c ? `<div class="ppm-b" style="margin:0 0 12px"><button type="button" class="ppm-x" data-qc="${it.id}">See comps for ${esc(c.name)}</button></div>` : ""}
-    <form id="sq-search" class="cimp-c" style="margin:0 0 12px"><input name="q" type="search" enterkeyhint="search" value="${esc([r.name, r.n && (r.n + (r.d ? "/" + r.d : ""))].filter(Boolean).join(" "))}" placeholder="Name and number, e.g. Pikachu V 43/185" aria-label="Card name and number" autocomplete="off" style="letter-spacing:0;text-transform:none"><button type="submit" class="ppm-x">Search</button></form>
+    <form id="sq-search" class="cimp-c" style="margin:0 0 12px"><input name="q" type="search" enterkeyhint="search" value="${esc([r.name, r.n && (r.n + (r.d ? "/" + r.d : ""))].filter(Boolean).join(" "))}" placeholder="Name, number, set, e.g. Jigglypuff 134/214" aria-label="Card name and number" autocomplete="off" style="letter-spacing:0;text-transform:none"><button type="submit" class="ppm-x">Search</button></form>
     ${sqOwnMode() && !own.length ? `<p><b>None of the matches are cards in your portfolio.</b> <span class="mu">Search again above${sqTarget === "tradeGive" ? ", or use “Add from your portfolio” in the trade" : ""}.</span></p>`
-      : it.cards.length ? `<p class="mu">${sqOwnMode() ? "Tap your card (only cards in your portfolio):" : "Tap your card:"}</p><div class="sc-grid">${it.cards.map((x, i) => (sqOwnMode() && !own.includes(i)) || !gridShow.has(i) ? "" : `<button type="button" data-qp="${i}"${i === it.pick ? ' class="best"' : ""}>${i === it.pick ? `<i class="sc-best">${a && i === 0 ? "Best match" : "Chosen"}</i>` : ""}<img src="${esc(x.image)}" alt="" loading="lazy"><b>${esc(x.name)}</b><span>${esc(x.set || "")} · ${esc(sqNum(x))}</span></button>`).join("")}</div>${gridRest > 0 ? `<button type="button" class="sug-more" data-qmore="1">Show more (${gridRest})</button>` : ""}`
+      : it.cards.length ? `<p class="mu">${sqOwnMode() ? "Tap your card (only cards in your portfolio):" : "Tap your card:"}</p><div class="sc-grid">${it.cards.map((x, i) => (sqOwnMode() && !own.includes(i)) || !gridShow.has(i) ? "" : `<button type="button" data-qp="${i}"${i === it.pick ? ' class="best"' : ""}>${i === it.pick ? `<i class="sc-best">${it.manual ? "Chosen" : it.typed ? "Top result" : a && i === 0 ? "Best match" : "Chosen"}</i>` : ""}<img src="${esc(x.image)}" alt="" loading="lazy"><b>${esc(x.name)}</b><span>${esc(x.set || "")} · ${esc(sqNum(x))}</span></button>`).join("")}</div>${gridRest > 0 ? `<button type="button" class="sug-more" data-qmore="1">Show more (${gridRest})</button>` : ""}`
       : `<p><b>${esc(it.err || "No matching cards found.")}</b></p>`}
     <div class="ppm-b"><button type="button" class="ppm-x plain" data-qa="list">Back to list</button></div>
   </div>`;

@@ -562,9 +562,24 @@ async function matchCards(name, n, d, opts = {}) {
   // Shadowless, Japanese, stamps): TCGplayer lists those as separate products
   const tcg = (await tcgJob).flat();
   const fullName = (c) => { const cw = norm(c.name).replace(/[^a-z0-9 ]/g, " ").split(/\s+/); return words.length && words.every((w) => cw.includes(w)); };
-  if (!list.length || opts.alsoTcg || !list.some(fullName)) {
-    const seen = new Set(list.map((c) => (c.name + "|" + c.set + "|" + c.number).toLowerCase()));
-    for (const c of tcg) { const k = (c.name + "|" + c.set + "|" + c.number).toLowerCase(); if (!seen.has(k)) { seen.add(k); list.push(c); } }
+  const seen = new Set(list.map((c) => (c.name + "|" + c.set + "|" + c.number).toLowerCase()));
+  const add = (arr) => { for (const c of arr) { const k = (c.name + "|" + c.set + "|" + c.number).toLowerCase(); if (!seen.has(k)) { seen.add(k); list.push(c); } } };
+  if (!list.length || opts.alsoTcg || !list.some(fullName)) add(tcg);
+  // Deep search. pokemontcg.io (the source that looks cards up by number) is often down, and TCGplayer's search
+  // ignores "134/214" and returns the 24 best-selling cards with that name: Jigglypuff 134/214 from Lost Thunder never
+  // showed up. So when no card with the read or typed number came back, TCGplayer is asked again: the name with the
+  // set (when the set is known), and the name alone, several pages deep, so every printing of that card is there to rank.
+  const cnum = (c) => String(c.number || "").toLowerCase().replace(/^0+(?=\d)/, "");
+  const numHit = (c) => nn && cnum(c) === nn.toLowerCase() && (!words.length || norm(c.name).includes(words[0]));
+  if (nn && nm && !list.some(numHit)) {
+    const lines = opts.jp ? undefined : ["pokemon"], jobs = [];
+    // pages of 50; if TCGplayer won't give 50 at once, the same range in two pages of 25
+    const page = (q, from) => tcgScan(q, { from, size: 50, lines }).catch(() => Promise.all([tcgScan(q, { from, size: 25, lines }), tcgScan(q, { from: from + 25, size: 25, lines })]).then((x) => x.flat()));
+    if (opts.setName) jobs.push(page(`${words[0]} ${String(opts.setName).replace(/&/g, " ")}`, 0));
+    for (let p = 0; p < 4; p++) jobs.push(page(nm, p * 50));
+    const more = (await Promise.all(jobs.map((j) => j.catch((e) => { errors.push("TCGplayer: " + e.message); return []; })))).flat();
+    // only cards with the right number are worth adding from this deep a search (the rest is noise)
+    add(more.filter((c) => cnum(c) === nn.toLowerCase() || (opts.setName && sameWords(opts.setName, c.set || "") >= 0.5)));
   }
   if (list.length) errors.length = 0;
   return { list, errors, nn, words };
@@ -581,9 +596,12 @@ const scoreCard = (c, nn, d, words, extra) => {
 // 2. the typed number, then the typed set total
 // 3. the name is exactly what was typed, with no extra words (Charizard before Charizard ex)
 // Words in brackets on TCGplayer's names, like (Full Art) or (Shadowless), don't count as extra words.
-const scoreTyped = (c, nn, d, words) => {
+// Typed words can also name the set ("Jigglypuff Lost Thunder"). hint: what the scan read (set, set total, language),
+// used only to order cards that are equal on everything typed.
+const scoreTyped = (c, nn, d, words, hint = {}) => {
   const core = norm(String(c.name || "").replace(/\([^)]*\)/g, " ")).replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
-  const hit = words.filter((w) => core.includes(w)).length, full = words.length > 0 && hit === words.length;
+  const setW = norm(String(c.set || "")).replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
+  const hit = words.filter((w) => core.includes(w) || setW.includes(w)).length, full = words.length > 0 && hit === words.length;
   const extra = core.filter((w) => !words.includes(w)).length;
   let sc = words.length ? (full ? 1000 : hit * 100 - (hit ? 0 : 2000)) : 0;
   const cn = String(c.number || "").toLowerCase().replace(/^0+(?=\d)/, "");
@@ -592,6 +610,9 @@ const scoreTyped = (c, nn, d, words) => {
   // the set total only counts alongside the right number (a different card from the same set isn't closer)
   if (d && numOk) sc += String(c.printedTotal || "").replace(/^0+(?=\d)/, "") === d ? 200 : 0;
   sc += full && !extra ? 80 : -10 * extra;
+  if (hint.set) sc += Math.round(sameWords(hint.set, c.set || "") * 60);
+  if (hint.total && !d) sc += String(c.printedTotal || "").replace(/^0+(?=\d)/, "") === hint.total ? 40 : 0;
+  if (!hint.jp && c.jp) sc -= 40; // a Japanese printing only when the card was read as Japanese
   return sc;
 };
 // Search bar suggestions: TCGplayer's matches for what's typed, one row per printing with its Near Mint market price.
@@ -672,10 +693,13 @@ app.get("/api/scan-match", async (req, res) => {
   // m=1: typed in by hand, so ranked by exactly what was typed
   const typed = req.query.m === "1";
   if (!name && !n) return res.status(400).json({ error: "Nothing to look up" });
-  const key = [name.toLowerCase(), n, d, typed ? "m" : ""].join("|"), hit = scanCache.get(key);
+  // hints from the scan of this card: set name, set total, Japanese
+  const hint = { set: String(req.query.s || "").replace(/["\\*:()]/g, " ").replace(/\s+/g, " ").trim().slice(0, 50), total: String(+String(req.query.t || "").replace(/\D/g, "").slice(0, 4) || "") || "", jp: req.query.jp === "1" };
+  if (hint.total === "0") hint.total = "";
+  const key = [name.toLowerCase(), n, d, typed ? "m" : "", hint.set.toLowerCase(), hint.total, hint.jp ? "jp" : ""].join("|"), hit = scanCache.get(key);
   if (hit && hit.exp > Date.now()) return res.json(hit.data);
-  const { list: all, errors, nn, words } = await matchCards(name, n, d);
-  const list = all.map((c) => ({ c, s: typed ? scoreTyped(c, nn, d, words) : scoreCard(c, nn, d, words) })).sort((a, b) => b.s - a.s).slice(0, 30).map(({ c }) => c);
+  const { list: all, errors, nn, words } = await matchCards(name, n, d, typed ? { alsoTcg: true, setName: hint.set, jp: hint.jp } : {});
+  const list = all.map((c) => ({ c, s: typed ? scoreTyped(c, nn, d, words, hint) : scoreCard(c, nn, d, words) })).sort((a, b) => b.s - a.s).slice(0, 30).map(({ c }) => c);
   if (!list.length && errors.length) return res.status(502).json({ error: "The card lookup didn't answer. Try again in a moment.", detail: errors });
   const data = { cards: list };
   if (list.length) { scanCache.set(key, { exp: Date.now() + 864e5, data }); if (scanCache.size > 2000) scanCache.delete(scanCache.keys().next().value); }
@@ -803,7 +827,7 @@ app.post("/api/scan-ai", express.json({ limit: "4mb" }), async (req, res) => {
   const d = String(read.set_total || "").replace(/\D/g, "").slice(0, 4), jp = /japan/i.test(read.language || ""), ed = String(read.edition || ""), stamp = String(read.stamp || "");
   const special = jp || /1st|shadowless/i.test(ed) || !!stamp;
   const num = /^\d+$/.test(n) ? String(+n) : n;
-  const { list: all, errors, nn, words } = await matchCards(name, n, d, { alsoTcg: special, setName: String(read.set_name || "").replace(/["\\*:()]/g, " ").slice(0, 40),
+  const { list: all, errors, nn, words } = await matchCards(name, n, d, { alsoTcg: special, jp, setName: String(read.set_name || "").replace(/["\\*:()]/g, " ").slice(0, 40),
     tcgQuery: [name, /shadowless/i.test(ed) ? "Shadowless" : "", /1st/i.test(ed) ? "1st Edition" : "", num && d ? `${num}/${d}` : num].filter(Boolean).join(" ") });
   const setGuess = String(read.set_name || "");
   const extra = (c) => {
