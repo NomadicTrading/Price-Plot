@@ -34,12 +34,17 @@ function trEach(c) {
   return cfOn(c) ? cfBlend(c.px, c.pxHi, c.cp) : c.px;
 }
 const trPctOf = (c) => (c.pct != null ? c.pct : TRD.pct);
+// Cash they add / cash you add fill themselves with whatever evens the trade at the trade %, until you type in one
+// of them (a trade that already has cash typed in stays as it is). "Fill automatically" turns it back on.
+const trCashAuto = () => TRD.cashAuto ?? !(+TRD.cashIn || +TRD.cashOut);
 function trMath() {
   const give = TRD.give.reduce((a, c) => a + (trEach(c) || 0) * trQ(c), 0);
   const getMk = TRD.get.reduce((a, c) => a + (trEach(c) || 0) * trQ(c), 0);
   const credit = TRD.get.reduce((a, c) => a + (trEach(c) || 0) * trQ(c) * trPctOf(c) / 100, 0);
+  const auto = trCashAuto();
+  if (auto) { const left = Math.round((credit - give) * 100) / 100; TRD.cashIn = left < 0 ? -left : 0; TRD.cashOut = left > 0 ? left : 0; TRD.cashAuto = true; }
   const cin = +TRD.cashIn || 0, cout = +TRD.cashOut || 0;
-  const pos = credit + cin - give - cout, owed = Math.max(0, give + cout - cin);
+  const pos = credit + cin - give - cout, owed = auto ? give : Math.max(0, give + cout - cin);
   const missing = [...TRD.give, ...TRD.get].filter((c) => !(trEach(c) > 0)).length;
   return { give, getMk, credit, pos, need: TRD.pct > 0 ? owed / (TRD.pct / 100) : null, cash: getMk * (TRD.cashPct || 0) / 100, missing };
 }
@@ -201,6 +206,8 @@ function trDraw() {
   { const sb = $("sv-on"); if (sb) sb.innerHTML = svBanner(); }
   for (const c of [...TRD.give, ...TRD.get]) { const v = document.querySelector(`[data-tv="${c.id}"]`); if (v) v.innerHTML = trValTxt(c); }
   const pr = $("tr-pr"); if (pr) pr.querySelectorAll("[data-tpp]").forEach((x) => x.setAttribute("aria-pressed", String(+x.dataset.tpp === TRD.pct)));
+  const au = $("tr-cauto"); if (au) au.checked = trCashAuto();
+  if (trCashAuto()) for (const [id, k] of [["tr-cin", "cashIn"], ["tr-cout", "cashOut"]]) { const i = $(id); if (i && document.activeElement !== i) i.value = trMoneyIn(TRD[k]); }
 }
 function trPickHTML() {
   const w = trFind.toLowerCase().split(/\s+/).filter(Boolean);
@@ -235,10 +242,12 @@ function renderTrade(box) {
   box.innerHTML = `<div class="tr">
   ${trTopHTML()}${shBanner()}${TRD.savedId && !TRD.editOf ? `<div class="sv-on" id="sv-on" role="note">${svBanner()}</div>` : ""}${TRD.editOf ? (() => { const r = TH.find((x) => x.id === TRD.editOf); return `<div class="th-warn ed" role="note">Editing the trade from ${r ? thDate(r.at) : "your history"}. Change it, then Save changes, or Cancel edit to put it back as it was.</div>`; })() : ""}
   <div class="tr-bal" id="tr-bal">${trBalHTML()}</div>
-  <div class="tr-sec"><div class="tr-h"><b>Their trade %</b><label class="sq-pn"><input id="tr-pct" type="number" min="0" step="any" inputmode="decimal" value="${TRD.pct}" aria-label="Trade percent for their cards">%</label></div>
+  <div class="tr-sec tr-pctsec">
+    <div class="tr-cash"><label>Cash they add $<input id="tr-cin" type="number" min="0" step="any" inputmode="decimal" value="${trMoneyIn(TRD.cashIn)}" placeholder="0"></label><label>Cash you add $<input id="tr-cout" type="number" min="0" step="any" inputmode="decimal" value="${trMoneyIn(TRD.cashOut)}" placeholder="0"></label><label>Cash offer %<input id="tr-cpct" type="number" min="0" step="any" inputmode="decimal" value="${TRD.cashPct}"></label>
+      <label class="tr-auto"><input type="checkbox" id="tr-cauto" ${trCashAuto() ? "checked" : ""}> Fill cash automatically to even the trade at the trade %</label></div>
+    <div class="tr-h"><b>Their trade %</b><label class="sq-pn"><input id="tr-pct" type="number" min="0" step="any" inputmode="decimal" value="${TRD.pct}" aria-label="Trade percent for their cards">%</label></div>
     <input type="range" class="sq-rg" id="tr-rg" min="0" max="100" step="1" value="${Math.min(100, Math.round(TRD.pct))}" aria-label="Trade percent for their cards">
-    <div class="sq-pp" id="tr-pr">${SQ_PRESETS.map((x) => `<button type="button" class="sq-pb" data-tpp="${x}" aria-pressed="${TRD.pct === x}">${x}%</button>`).join("")}</div>
-    <div class="tr-cash"><label>Cash they add $<input id="tr-cin" type="number" min="0" step="any" inputmode="decimal" value="${trMoneyIn(TRD.cashIn)}" placeholder="0"></label><label>Cash you add $<input id="tr-cout" type="number" min="0" step="any" inputmode="decimal" value="${trMoneyIn(TRD.cashOut)}" placeholder="0"></label><label>Cash offer %<input id="tr-cpct" type="number" min="0" step="any" inputmode="decimal" value="${TRD.cashPct}"></label></div></div>
+    <div class="sq-pp" id="tr-pr">${SQ_PRESETS.map((x) => `<button type="button" class="sq-pb" data-tpp="${x}" aria-pressed="${TRD.pct === x}">${x}%</button>`).join("")}</div></div>
   <div class="tr-cols">
   <div class="tr-sec tr-you"><div class="tr-h"><b>Your cards</b><span class="mu">${TRD.give.length} card${TRD.give.length === 1 ? "" : "s"}</span></div>
     <div class="tr-srch"><div class="tr-add"><input id="tr-find" type="search" placeholder="Your portfolio…" value="${esc(trFind)}" autocomplete="off"><button type="button" class="pill tr-cam" data-tx="scang" aria-label="Scan your card">📷</button></div>
@@ -332,7 +341,8 @@ function trRowsPct() { document.querySelectorAll('.tr [data-tf="pct"]').forEach(
 document.addEventListener("input", (e) => {
   const t = e.target; if (!t.closest || !t.closest(".tr")) return;
   if (t.id === "tr-pct" || t.id === "tr-rg") { if (t.value === "" || !Number.isFinite(+t.value)) return; TRD.pct = Math.max(0, Math.round(+t.value * 10) / 10); const o = t.id === "tr-pct" ? $("tr-rg") : $("tr-pct"); if (o) o.value = t.id === "tr-pct" ? Math.min(100, Math.round(TRD.pct)) : TRD.pct; trSave(); trDraw(); trRowsPct(); return; }
-  if (t.id === "tr-cin" || t.id === "tr-cout" || t.id === "tr-cpct") { const v = Math.max(0, +t.value || 0); if (t.id === "tr-cin") TRD.cashIn = v; else if (t.id === "tr-cout") TRD.cashOut = v; else TRD.cashPct = v; trSave(); trDraw(); return; }
+  if (t.id === "tr-cin" || t.id === "tr-cout" || t.id === "tr-cpct") { const v = Math.max(0, +t.value || 0); if (t.id === "tr-cin") { TRD.cashIn = v; TRD.cashAuto = false; } else if (t.id === "tr-cout") { TRD.cashOut = v; TRD.cashAuto = false; } else TRD.cashPct = v; trSave(); trDraw(); return; }
+  if (t.id === "tr-cauto") { TRD.cashAuto = t.checked; if (!t.checked) { TRD.cashIn = +TRD.cashIn || 0; TRD.cashOut = +TRD.cashOut || 0; } trSave(); trDraw(); return; }
   if (t.id === "tr-find") { trFind = t.value; trPickN = 20; const h = $("tr-hits"); if (h) h.innerHTML = trPickHTML(); trWatchMore(); return; }
   if (t.id === "tr-sq-give" || t.id === "tr-sq-get") {
     const side = t.id === "tr-sq-give" ? "give" : "get", q = t.value.trim(); clearTimeout(trSugT);
