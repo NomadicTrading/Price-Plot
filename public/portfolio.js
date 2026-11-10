@@ -146,13 +146,15 @@ function trAddFound(s, side) {
 
 /* drawing */
 const trMoneyIn = (v) => (v > 0 ? (Math.round(v * 100) / 100).toFixed(2) : "");
+// "Set · number" on one line: only the set name gets cut off with "…", the number always shows
+const snHTML = (set, num, tag = "span") => (set || num ? `<${tag} class="mu sn">${set ? `<span class="sn-s">${esc(set)}</span>` : ""}${num ? `<span class="sn-n">${set ? "\u00a0·\u00a0" : ""}${esc(num)}</span>` : ""}</${tag}>` : "");
 function trRow(c) {
   const each = trEach(c), q = trQ(c), get = c.side === "get", pc = trPctOf(c);
   const opts = cfOptsHTML(c.grade ? "" : c.cond, c.grade ? 0 : c.cp, [...(c.cond === "Sealed" ? ["Sealed"] : []), ...TR_GRADES], c.grade ? shortGrade(c.grade) : c.cond);
   const note = c.own > 0 ? "your price" : trSrc(c) && each != null && c.px == null ? "portfolio value" : c.pxNote || (c.px == null && !trGraded(c) ? "looking up…" : cfOn(c) ? (c.pxHi > 0 ? `est. between ${COND_CODE[c.cond]} and ${COND_CODE[cfHi(c.cond)]}` : `looking up ${COND_CODE[cfHi(c.cond)]} price…`) : "");
   return `<div class="tr-r" data-tc="${c.id}">
     <button type="button" class="tr-pic" data-tzm="${c.id}" ${c.img ? "" : "disabled"} aria-label="Enlarge picture">${c.img ? `<img src="${esc(c.img)}" alt="" loading="lazy">` : ""}</button>
-    <div class="tr-m"><b class="ptn" data-ptn="${c.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(c.name)}</b><div class="mu">${esc([c.set, c.num].filter(Boolean).join(" · "))}${c.pid ? " · from your portfolio" : ""}</div>
+    <div class="tr-m"><b class="ptn" data-ptn="${c.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(c.name)}</b>${snHTML(c.set, c.num, "div")}${c.pid ? `<div class="mu tr-fp">from your portfolio</div>` : ""}
       <div class="tr-v" data-tv="${c.id}">${trValTxt(c)}</div></div>
     <button type="button" class="sq-x" data-tdel="${c.id}" aria-label="Remove from trade">✕</button>
     <div class="tr-f">
@@ -352,7 +354,7 @@ function trSumRow(c, mine) {
   const cond = condLabel(c);
   const pic = c.img || (c.tcgId ? `https://tcgplayer-cdn.tcgplayer.com/product/${c.tcgId}_in_1000x1000.jpg` : "");
   return `<div class="ts-r"><span class="ts-pic">${pic ? `<img src="${esc(pic)}" alt="">` : ""}</span>
-    <span class="ts-m"><b class="ptn" data-ptn="${c.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(c.name)}</b><span class="mu">${esc([c.set, c.num].filter(Boolean).join(" · "))}</span><span class="ts-tg"><i>${esc(cond)}</i>${c.var ? `<i>${esc(c.var)}</i>` : ""}${q > 1 ? `<i>×${q}</i>` : ""}</span>
+    <span class="ts-m"><b class="ptn" data-ptn="${c.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(c.name)}</b>${snHTML(c.set, c.num)}<span class="ts-tg"><i>${esc(cond)}</i>${c.var ? `<i>${esc(c.var)}</i>` : ""}${q > 1 ? `<i>×${q}</i>` : ""}</span>
     <span class="ts-v"><b>${tot != null ? money(tot) : "—"}</b>${q > 1 && each != null ? `<small>${money(each)} each</small>` : ""}${get && mine && tot != null ? `<small>${pc}% = ${money(tot * pc / 100)}</small>` : ""}</span></span></div>`;
 }
 function trSumHTML() {
