@@ -72,6 +72,17 @@ textarea{width:100%;border:1px solid var(--bd);border-radius:12px;background:var
 .err{color:var(--dn);font-size:13px;margin-top:6px}
 .foot{font-size:11.5px;color:var(--mut);padding:12px 16px 24px;line-height:1.4}
 .empty{padding:48px 20px;text-align:center}
+/* both sides next to each other, like the app's trade summary */
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+.cols .side{margin-top:0;min-width:0}
+.cols .sh{flex-direction:column;align-items:flex-start;gap:0;line-height:1.25;margin-bottom:2px}.cols .sh .mu{font-size:12px}
+.crow{display:grid;grid-template-columns:34px minmax(0,1fr);gap:8px;align-items:start;padding:7px 0;border-bottom:1px solid var(--line)}
+.crow .pic{width:34px;height:47px;border-radius:4px;background-size:16px}
+.crow .nm{font-size:13px}
+.crow .nm .mu{font-size:11.5px;white-space:normal;overflow:visible}
+.cpx{margin-top:3px;font-size:13px;line-height:1.3}.cpx b{white-space:nowrap}.cpx small{display:block;font-size:11.5px;color:var(--mut)}
+.ctot{display:flex;justify-content:space-between;gap:6px;padding:6px 0 0;margin-top:2px;border-top:1px solid var(--bd);font-size:13.5px}.ctot b{white-space:nowrap}
+@media (min-width:520px){.cols{gap:18px}.crow{grid-template-columns:42px minmax(0,1fr)}.crow .pic{width:42px;height:58px}}
 </style>
 </head>
 <body>
@@ -106,6 +117,12 @@ function row(c, extra) {
   return `<div class="row">${pic(c)}<div class="nm"><b>${esc(c.name)}</b><span class="mu">${esc([c.set, c.num].filter(Boolean).join(" · "))}</span><span class="tg">${tags.map((x) => `<i>${esc(x)}</i>`).join("")}</span></div>
     <div class="v">${c.px > 0 ? money(val(c)) : `<span class="mu">no price</span>`}${q(c) > 1 && c.px > 0 ? `<small>${money(c.px)} each</small>` : ""}${extra || ""}</div></div>`;
 }
+// a card in one of the two columns: picture, then name, set, tags and price stacked so it fits half a phone screen
+function crow(c, extra) {
+  const tags = [c.grade || COND[c.cond] || c.cond, c.var, q(c) > 1 ? "×" + q(c) : ""].filter(Boolean);
+  return `<div class="crow">${pic(c)}<div class="nm"><b>${esc(c.name)}</b><span class="mu">${esc([c.set, c.num].filter(Boolean).join(" · "))}</span><span class="tg">${tags.map((x) => `<i>${esc(x)}</i>`).join("")}</span>
+    <div class="cpx">${c.px > 0 ? `<b>${money(val(c))}</b>${q(c) > 1 ? ` <span class="mu">(${money(c.px)} each)</span>` : ""}` : `<span class="mu">no price</span>`}${extra || ""}</div></div></div>`;
+}
 function draw() {
   const t = D.trade, A = D.allow;
   app.innerHTML = `<div class="hero"><h2>Trade from ${who()}</h2><div class="from">Open until ${when(D.exp, D.exp - D.made < 2 * 864e5)}</div>
@@ -135,10 +152,14 @@ function drawPer() {
 // the numbers that change as sliders move (the sliders themselves aren't redrawn, so dragging keeps working)
 function upd() {
   const t = D.trade, m = math(), even = Math.abs(m.bal) < 0.5;
-  $("cards").innerHTML = `<div class="side them"><div class="sh"><b>Your cards</b><span class="mu">${money(m.mine)} market</span></div>
-      ${t.get.map((c) => row(c, c.px > 0 ? `<small>${money(val(c) * pctOf(c) / 100)} at ${pctOf(c)}%</small>` : "")).join("") || `<div class="mu" style="padding:6px 0">No cards</div>`}</div>
-    <div class="side" style="margin-top:14px"><div class="sh"><b>${Who()}'s cards</b><span class="mu">${money(m.out)} market</span></div>
-      ${t.give.map((c) => row(c)).join("") || `<div class="mu" style="padding:6px 0">No cards</div>`}</div>`;
+  const n = (a) => a.reduce((x, c) => x + q(c), 0), none = `<div class="mu" style="padding:6px 0;font-size:13px">No cards</div>`;
+  $("cards").innerHTML = `<div class="cols">
+    <div class="side them"><div class="sh"><b>Your cards</b><span class="mu">${n(t.get)} card${n(t.get) === 1 ? "" : "s"}</span></div>
+      ${t.get.map((c) => crow(c, c.px > 0 ? `<small>${money(val(c) * pctOf(c) / 100)} at ${pctOf(c)}%</small>` : "")).join("") || none}
+      <div class="ctot"><span>Market</span><b>${money(m.mine)}</b></div></div>
+    <div class="side"><div class="sh"><b>${Who()}'s cards</b><span class="mu">${n(t.give)} card${n(t.give) === 1 ? "" : "s"}</span></div>
+      ${t.give.map((c) => crow(c)).join("") || none}
+      <div class="ctot"><span>Market</span><b>${money(m.out)}</b></div></div></div>`;
   const head = even ? "Even trade" : m.bal > 0 ? `${Who()} owes you ${money(m.bal)}` : `You're ${money(-m.bal)} short`;
   const sub = even ? (Math.abs(m.bal) < 0.005 ? "Both sides match at these numbers." : `Within ${money(Math.abs(m.bal))}, so both sides match.`)
     : m.bal > 0 ? `Your side is worth more at these numbers. Ask for ${money(m.bal)} cash or another card.`
