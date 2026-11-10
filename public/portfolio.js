@@ -224,15 +224,17 @@ function renderTrade(box) {
     <input type="range" class="sq-rg" id="tr-rg" min="0" max="100" step="1" value="${Math.min(100, Math.round(TRD.pct))}" aria-label="Trade percent for their cards">
     <div class="sq-pp" id="tr-pr">${SQ_PRESETS.map((x) => `<button type="button" class="sq-pb" data-tpp="${x}" aria-pressed="${TRD.pct === x}">${x}%</button>`).join("")}</div>
     <div class="tr-cash"><label>Cash they add $<input id="tr-cin" type="number" min="0" step="any" inputmode="decimal" value="${trMoneyIn(TRD.cashIn)}" placeholder="0"></label><label>Cash you add $<input id="tr-cout" type="number" min="0" step="any" inputmode="decimal" value="${trMoneyIn(TRD.cashOut)}" placeholder="0"></label><label>Cash offer %<input id="tr-cpct" type="number" min="0" step="any" inputmode="decimal" value="${TRD.cashPct}"></label></div></div>
+  <div class="tr-cols">
   <div class="tr-sec tr-you"><div class="tr-h"><b>Your cards</b><span class="mu">${TRD.give.length} card${TRD.give.length === 1 ? "" : "s"}</span></div>
-    <div class="tr-srch"><div class="tr-add"><input id="tr-find" type="search" placeholder="Add from your portfolio…" value="${esc(trFind)}" autocomplete="off"><button type="button" class="pill" data-tx="scang">📷 Scan</button></div>
+    <div class="tr-srch"><div class="tr-add"><input id="tr-find" type="search" placeholder="Your portfolio…" value="${esc(trFind)}" autocomplete="off"><button type="button" class="pill tr-cam" data-tx="scang" aria-label="Scan your card">📷</button></div>
     <div class="tr-hits" id="tr-hits">${trPickHTML()}</div>
-    <input id="tr-sq-give" type="search" placeholder="…or search TCGplayer" autocomplete="off"><div class="tr-hits" id="tr-sug-give">${trSugHTML("give")}</div></div>
+    <input id="tr-sq-give" type="search" placeholder="…or TCGplayer" autocomplete="off"><div class="tr-hits" id="tr-sug-give">${trSugHTML("give")}</div></div>
     ${TRD.give.map(trRow).join("")}</div>
   <div class="tr-sec tr-them"><div class="tr-h"><b>Their cards</b><span class="mu">${TRD.get.length} card${TRD.get.length === 1 ? "" : "s"}</span></div>
-    <div class="tr-srch"><div class="tr-add"><input id="tr-sq-get" type="search" placeholder="Search their card on TCGplayer" autocomplete="off"><button type="button" class="pill" data-tx="scan">📷 Scan</button></div>
+    <div class="tr-srch"><div class="tr-add"><input id="tr-sq-get" type="search" placeholder="Search TCGplayer" autocomplete="off"><button type="button" class="pill tr-cam" data-tx="scan" aria-label="Scan their card">📷</button></div>
     <div class="tr-hits" id="tr-sug-get">${trSugHTML("get")}</div></div>
     ${TRD.get.map(trRow).join("")}</div>
+  </div>
   <div class="bar"><button class="pill on" type="button" data-tx="done" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>${TRD.editOf ? "Save changes" : "Complete trade"}</button>${TRD.editOf ? "" : `<button class="pill" type="button" data-tx="save" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>${TRD.savedId ? "Update saved trade" : "Save for later"}</button>`}</div>
   <div class="sm">Your cards count at full market value; theirs at the trade % (set one card's own % in its box). The green or red number is where you stand: trade credit plus cash they add, minus your cards and cash you add. Graded cards use Collectr's price.</div></div>`;
   for (const c of [...TRD.give, ...TRD.get]) { if (c.pxK !== [c.cond, c.var, c.grade].join("|") && !(c.pid && trEach(c) != null)) trPrice(c); trLoadPrints(c); trLive(c); trPriceHi(c); }
@@ -350,8 +352,8 @@ function trSumRow(c, mine) {
   const cond = condLabel(c);
   const pic = c.img || (c.tcgId ? `https://tcgplayer-cdn.tcgplayer.com/product/${c.tcgId}_in_1000x1000.jpg` : "");
   return `<div class="ts-r"><span class="ts-pic">${pic ? `<img src="${esc(pic)}" alt="">` : ""}</span>
-    <span class="ts-m"><b class="ptn" data-ptn="${c.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(c.name)}</b><span class="mu">${esc([c.set, c.num].filter(Boolean).join(" · "))}</span><span class="ts-tg"><i>${esc(cond)}</i>${c.var ? `<i>${esc(c.var)}</i>` : ""}${q > 1 ? `<i>×${q}</i>` : ""}</span></span>
-    <span class="ts-v"><b>${tot != null ? money(tot) : "—"}</b>${q > 1 && each != null ? `<small>${money(each)} each</small>` : ""}${get && mine && tot != null ? `<small>${pc}% = ${money(tot * pc / 100)}</small>` : ""}</span></div>`;
+    <span class="ts-m"><b class="ptn" data-ptn="${c.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(c.name)}</b><span class="mu">${esc([c.set, c.num].filter(Boolean).join(" · "))}</span><span class="ts-tg"><i>${esc(cond)}</i>${c.var ? `<i>${esc(c.var)}</i>` : ""}${q > 1 ? `<i>×${q}</i>` : ""}</span>
+    <span class="ts-v"><b>${tot != null ? money(tot) : "—"}</b>${q > 1 && each != null ? `<small>${money(each)} each</small>` : ""}${get && mine && tot != null ? `<small>${pc}% = ${money(tot * pc / 100)}</small>` : ""}</span></span></div>`;
 }
 function trSumHTML() {
   const m = trMath(), mine = trSumMine, cin = +TRD.cashIn || 0, cout = +TRD.cashOut || 0;
@@ -363,12 +365,12 @@ function trSumHTML() {
   return `<div class="ts-card" id="ts-card">
     <div class="ts-hd"><h3 class="ts-t">Trade summary</h3><span class="ts-br"><img src="/brand/icon-small.svg" width="22" height="22" alt=""><span>Price<span class="pp-dot">·</span>Plot<small class="mu">${esc(d)}</small></span></span></div>
     <div class="ts-cols">
-      <div class="ts-s"><div class="ts-sh"><b>Going out</b><span class="mu">${giveQ} card${giveQ === 1 ? "" : "s"}</span></div>
+      <div class="ts-s"><div class="ts-sh"><b>Your cards</b><span class="mu">${giveQ} card${giveQ === 1 ? "" : "s"}</span></div>
         ${TRD.give.map((c) => trSumRow(c, mine)).join("") || `<div class="mu ts-e">No cards</div>`}
-        ${cout > 0 ? line("+ Cash", money(cout)) : ""}${line("Total (market)", money(giveTot), "tot")}</div>
-      <div class="ts-s them"><div class="ts-sh"><b>Coming in</b><span class="mu">${getQ} card${getQ === 1 ? "" : "s"}</span></div>
+        ${cout > 0 ? line("+ Cash", money(cout)) : ""}${line("Market total", money(giveTot), "tot")}</div>
+      <div class="ts-s them"><div class="ts-sh"><b>Their cards</b><span class="mu">${getQ} card${getQ === 1 ? "" : "s"}</span></div>
         ${TRD.get.map((c) => trSumRow(c, mine)).join("") || `<div class="mu ts-e">No cards</div>`}
-        ${cin > 0 ? line("+ Cash", money(cin)) : ""}${line("Total (market)", money(getTot), "tot")}</div>
+        ${cin > 0 ? line("+ Cash", money(cin)) : ""}${line("Market total", money(getTot), "tot")}</div>
     </div>
     <div class="ts-bal">
       ${mine ? line(`Trade credit for their cards at ${TRD.pct}%${perCard ? " (some cards set separately)" : ""}`, money(m.credit))
