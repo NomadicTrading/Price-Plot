@@ -356,7 +356,7 @@ function trSumRow(c, mine) {
 function trSumHTML() {
   const m = trMath(), mine = trSumMine, cin = +TRD.cashIn || 0, cout = +TRD.cashOut || 0;
   const giveQ = TRD.give.reduce((a, c) => a + trQ(c), 0), getQ = TRD.get.reduce((a, c) => a + trQ(c), 0);
-  const giveTot = m.give + cout, getTot = m.getMk + cin, diff = getTot - giveTot, up = m.pos >= -0.005;
+  const giveTot = m.give + cout, getTot = m.getMk + cin, up = m.pos >= -0.005;
   const perCard = TRD.get.some((c) => c.pct != null && c.pct !== TRD.pct);
   const line = (l, v, cls) => `<div class="ts-l${cls ? " " + cls : ""}"><span>${l}</span><b>${v}</b></div>`;
   const d = new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
@@ -371,10 +371,8 @@ function trSumHTML() {
         ${cin > 0 ? line("+ Cash", money(cin)) : ""}${line("Total (market)", money(getTot), "tot")}</div>
     </div>
     <div class="ts-bal">
-      ${line("Market difference", (diff >= -0.005 ? "+" : "−") + money(Math.abs(diff)) + ` <span class="mu">${Math.abs(diff) < 0.005 ? "even" : diff > 0 ? "in my favor" : "in their favor"}</span>`)}
       ${mine ? line(`Trade credit for their cards at ${TRD.pct}%${perCard ? " (some cards set separately)" : ""}`, money(m.credit))
         + line(`Their cards needed at ${TRD.pct}%`, m.need != null ? money(m.need) : "—")
-        + line("Cash offer for their cards" + ` at ${TRD.cashPct}%`, money(m.cash))
         + `<div class="ts-pos" style="color:var(${up ? "--up" : "--dn"})"><span>My position</span><b>${up ? "+" : "−"}${money(Math.abs(m.pos))}</b></div>` : ""}
     </div>
     <div class="ts-ft mu">Raw cards at TCGplayer market price${TRD.give.concat(TRD.get).some(trGraded) ? ", graded cards at Collectr's price" : ""}${TRD.give.concat(TRD.get).some((c) => c.own > 0) ? ", typed prices where set" : ""}.${m.missing ? ` ${m.missing} card${m.missing === 1 ? " has" : "s have"} no price and count${m.missing === 1 ? "s" : ""} as $0.` : ""}</div>
