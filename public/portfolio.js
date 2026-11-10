@@ -218,7 +218,7 @@ function trWatchMore() {
 }
 function renderTrade(box) {
   box.innerHTML = `<div class="tr">
-  ${trTopHTML()}${TRD.savedId && !TRD.editOf ? `<div class="sv-on" id="sv-on" role="note">${svBanner()}</div>` : ""}${TRD.editOf ? (() => { const r = TH.find((x) => x.id === TRD.editOf); return `<div class="th-warn ed" role="note">Editing the trade from ${r ? thDate(r.at) : "your history"}. Change it, then Save changes, or Cancel edit to put it back as it was.</div>`; })() : ""}
+  ${trTopHTML()}${shBanner()}${TRD.savedId && !TRD.editOf ? `<div class="sv-on" id="sv-on" role="note">${svBanner()}</div>` : ""}${TRD.editOf ? (() => { const r = TH.find((x) => x.id === TRD.editOf); return `<div class="th-warn ed" role="note">Editing the trade from ${r ? thDate(r.at) : "your history"}. Change it, then Save changes, or Cancel edit to put it back as it was.</div>`; })() : ""}
   <div class="tr-bal" id="tr-bal">${trBalHTML()}</div>
   <div class="tr-sec"><div class="tr-h"><b>Their trade %</b><label class="sq-pn"><input id="tr-pct" type="number" min="0" step="any" inputmode="decimal" value="${TRD.pct}" aria-label="Trade percent for their cards">%</label></div>
     <input type="range" class="sq-rg" id="tr-rg" min="0" max="100" step="1" value="${Math.min(100, Math.round(TRD.pct))}" aria-label="Trade percent for their cards">
@@ -382,13 +382,163 @@ function trSummary() {
   const ov = document.createElement("div"); ov.className = "ppm-ov ts-ov";
   const paint = () => { ov.innerHTML = `<div class="ts-wrap" role="dialog" aria-modal="true" aria-label="Trade summary">
     <div class="ts-bar"><label class="ts-tog"><input type="checkbox" data-tsm="1" ${trSumMine ? "checked" : ""}> Show trade % and my position</label><button type="button" class="pill" data-x="1">Close</button></div>
-    ${trSumHTML()}</div>`; };
+    ${trSumHTML()}
+    <button type="button" class="ppm-x primary ts-share" data-share="1">${shFor() ? "Shared with trader ›" : "Share with trader"}</button>
+    <p class="mu ts-shh">${shFor() ? "See the link, QR code and anything they've sent back." : "Makes a link they can open on their own phone, no app or account needed. They can try their own %s and send them back."}</p></div>`; };
   const close = () => { removeEventListener("keydown", key); ov.remove(); }, key = (e) => { if (e.key === "Escape") close(); };
-  ov.onclick = (e) => { if (e.target === ov || e.target.closest("[data-x]")) close(); };
+  ov.onclick = (e) => { if (e.target === ov || e.target.closest("[data-x]")) close(); else if (e.target.closest("[data-share]")) shStart(paint); };
   ov.onchange = (e) => { if (e.target.dataset.tsm) { trSumMine = e.target.checked; try { localStorage.setItem("pp_trsum_mine", trSumMine ? "1" : "0"); } catch {} paint(); } };
   ov.addEventListener("error", (e) => { if (e.target.tagName === "IMG" && e.target.closest(".ts-pic")) e.target.remove(); }, true);
   paint(); addEventListener("keydown", key); document.body.appendChild(ov); ov.querySelector("[data-x]").focus();
 }
+
+/* Share with trader: a short link (and QR code) to a page where the other trader sees this trade, with prices frozen
+   now, tries their own %s and sends them back. The link's code and key are kept on this phone (pp_shares); the key is
+   needed to see activity, change settings or stop it. New counter-offers are checked for in the background. */
+const SH_KEY = "pp_shares";
+let SH = (() => { try { const a = JSON.parse(localStorage.getItem(SH_KEY) || "[]"); return Array.isArray(a) ? a.filter((x) => x && x.code && x.key && x.exp > Date.now()) : []; } catch { return []; } })();
+const shStore = () => { try { localStorage.setItem(SH_KEY, JSON.stringify(SH)); } catch {} };
+const shUrl = (code) => location.origin + "/t/" + code;
+const shLive = (code) => SH.find((x) => x.code === code && x.exp > Date.now());
+const shFor = () => (TRD.shareCode ? shLive(TRD.shareCode) : null);
+let shName = (() => { try { return localStorage.getItem("pp_share_name") || ""; } catch { return ""; } })();
+// what the other trader sees: cards, conditions, prices right now and the %s. Nothing else from the portfolio.
+function shPayload() {
+  const card = (c, get) => ({ id: c.id, name: c.name, set: c.set || "", num: c.num || "", cond: condLabel(c), var: c.var || "", qty: trQ(c), px: trEach(c),
+    img: c.img || (c.tcgId ? `https://tcgplayer-cdn.tcgplayer.com/product/${c.tcgId}_in_1000x1000.jpg` : ""), ...(get && c.pct != null ? { pct: c.pct } : {}) });
+  return { give: TRD.give.map((c) => card(c)), get: TRD.get.map((c) => card(c, true)), pct: TRD.pct, cashPct: TRD.cashPct, cashIn: +TRD.cashIn || 0, cashOut: +TRD.cashOut || 0 };
+}
+// same trade? (cards, conditions, quantities, %s and cash; prices that refresh on their own don't count)
+const shShape = (t) => JSON.stringify({ ...t, give: t.give.map(({ px, img, ...c }) => c), get: t.get.map(({ px, img, ...c }) => c) });
+const shSame = (a, b) => shShape(a) === shShape(b);
+async function shApi(code, method, body) {
+  const x = SH.find((y) => y.code === code);
+  const r = await fetch("/api/share/" + code, { method, headers: { "Content-Type": "application/json", "x-share-key": x ? x.key : "" }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 404 || r.status === 410) { SH = SH.filter((y) => y.code !== code); shStore(); }
+  if (!r.ok) throw new Error(j.error || "Couldn't reach Price Plot. Try again.");
+  return j;
+}
+// Share button in the trade summary: opens this trade's link if it has one, otherwise makes one
+async function shStart(repaint) {
+  const cur = shFor(); if (cur) return shPanel(cur.code, repaint);
+  if (!TRD.give.length && !TRD.get.length) return toast("Add cards to the trade first");
+  const m = trMath(); if (m.missing) { const ok = await modal({ title: "Some cards have no price yet", text: `${m.missing} card${m.missing === 1 ? " has" : "s have"} no price and will show as $0 on their page. Share anyway?`, buttons: [{ label: "Share anyway", value: true, kind: "primary" }, { label: "Wait", value: false, kind: "plain" }] }); if (!ok) return; }
+  const btn = document.querySelector("[data-share]"); if (btn) { btn.disabled = true; btn.textContent = "Making link…"; }
+  try {
+    const payload = shPayload();
+    const r = await fetch("/api/share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trade: payload, opts: { name: shName, days: 7 } }) });
+    const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || "Couldn't make the link. Try again.");
+    const snap = JSON.parse(JSON.stringify({ ...TRD, shareCode: undefined }));
+    SH.unshift({ code: j.code, key: j.key, made: j.made, exp: j.exp, payload, snap, seen: 0, last: j }); SH = SH.slice(0, 40); shStore();
+    TRD.shareCode = j.code; trSave();
+    if (!j.saved) console.warn("Shared trades are kept in memory only (no database set), so links stop working when the server restarts.");
+    if (repaint) repaint(); shPanel(j.code, repaint);
+  } catch (e) { toast(e.message); if (btn) { btn.disabled = false; btn.textContent = "Share with trader"; } }
+}
+const shWhen = (ms) => new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+function shCounterHTML(x, k, i) {
+  const t = (x.last && x.last.trade) || x.payload, was = (a, b, f) => (a !== b ? ` <span class="sh-was">was ${f(b)}</span>` : "");
+  const v = (c) => (c.px > 0 ? c.px * (c.qty || 1) : 0), give = t.give.reduce((a, c) => a + v(c), 0);
+  const per = Object.keys(k.cardPct || {}).length, pc = (c) => (per && k.cardPct[c.id] != null ? k.cardPct[c.id] : k.pct);
+  const credit = t.get.reduce((a, c) => a + v(c) * pc(c) / 100, 0), pos = credit + k.cashIn - give - k.cashOut, up = pos >= -0.005;
+  return `<div class="sh-co${i < (x.last.counters.length - x.seen) ? " new" : ""}"><div class="sh-coh"><b>Counter-offer</b><span class="mu">${shWhen(k.at)}</span></div>
+    ${k.note ? `<div class="sh-q">“${esc(k.note)}”</div>` : ""}
+    <div class="sh-kv"><span>Trade %</span><b>${k.pct}%${was(k.pct, t.pct, (z) => z + "%")}</b><span>Cash %</span><b>${k.cashPct}%${was(k.cashPct, t.cashPct, (z) => z + "%")}</b>
+    ${k.cashIn || t.cashIn ? `<span>Cash they add</span><b>${money(k.cashIn)}${was(k.cashIn, t.cashIn, money)}</b>` : ""}${k.cashOut || t.cashOut ? `<span>Cash you add</span><b>${money(k.cashOut)}${was(k.cashOut, t.cashOut, money)}</b>` : ""}
+    <span>Credit for their cards</span><b>${money(credit)}</b><span>Your position at their numbers</span><b style="color:var(${up ? "--up" : "--dn"})">${up ? "+" : "−"}${money(Math.abs(pos))}</b></div>
+    ${per ? `<div class="mu" style="font-size:12px;margin-top:4px">Card by card: ${t.get.map((c) => `${esc(c.name)} ${pc(c)}%`).join(" · ")}</div>` : ""}
+    <button type="button" class="ppm-x primary" data-shload="${i}" style="width:100%;margin-top:10px">Open in trade analyzer</button></div>`;
+}
+// the share panel: link, QR code, settings, activity
+function shPanel(code, repaint) {
+  const x = SH.find((y) => y.code === code); if (!x) return;
+  const old = $("ppshare"); if (old) old.remove();
+  const ov = document.createElement("div"); ov.className = "ppm-ov"; ov.id = "ppshare";
+  let busy = false, timer = null;
+  const close = () => { clearInterval(timer); removeEventListener("keydown", key); ov.remove(); if (repaint) repaint(); renderIfTrade(); }, key = (e) => { if (e.key === "Escape") close(); };
+  const paint = () => {
+    const L = x.last || {}, o = L.opts || { name: shName, days: 7, allow: { pct: true, cash: true, money: true, send: true } }, A = o.allow, url = shUrl(code);
+    const changed = TRD.shareCode === code && !shSame(shPayload(), x.payload);
+    const evs = (L.events || []).slice().reverse().map((e) => `<div class="sh-ev"><i></i><div><b>${e.t === "made" ? "Link made" : e.t === "open" ? "They opened the link" : "You updated the trade"}</b><div class="mu">${shWhen(e.at)}</div></div></div>`).join("");
+    const cos = (L.counters || []).slice().reverse().map((k, i) => shCounterHTML(x, k, i)).join("");
+    const tog = (k, label) => `<label class="sh-opt"><span>${label}</span><span class="sh-sw"><input type="checkbox" data-sha="${k}" ${A[k] ? "checked" : ""}><span></span></span></label>`;
+    ov.innerHTML = `<div class="ppm sh" role="dialog" aria-modal="true" aria-label="Shared trade">
+      <div class="sh-hd"><h3>Shared with trader</h3><button type="button" class="pill" data-shx="1">Done</button></div>
+      <div class="mu" style="font-size:12.5px">Link works until ${shWhen(x.exp)}</div>
+      ${changed ? `<div class="sh-chg">You've changed this trade since sharing it. <button type="button" class="pill" data-shup="1">Update the link</button></div>` : ""}
+      <div class="sh-link"><span>${esc(url.replace(/^https?:\/\//, "").replace(/\/t\/.*/, "/t/"))}<b>${code}</b></span><button type="button" class="pill" data-shcp="1">Copy</button></div>
+      <div class="sh-acts">${navigator.share ? `<button type="button" class="pill" data-shsend="1">Send…</button>` : ""}<a class="pill" href="${url}?me=1" target="_blank" rel="noopener">Preview their page</a></div>
+      <div class="sh-qr" aria-label="QR code for the link">${typeof qrSVG === "function" ? qrSVG(url, 200) : ""}</div>
+      <p class="mu" style="font-size:12.5px;text-align:center;margin:0 0 6px">Have them scan this with their phone camera</p>
+      <div class="sh-set">
+        <label class="sh-opt"><span>Show as</span><input data-shname="1" value="${esc(o.name)}" placeholder="Your name or shop" maxlength="40" autocomplete="off"></label>
+        <div class="sh-opt sh-optw"><span>Link works for</span><span class="sh-chips">${[[1, "24 hours"], [7, "7 days"], [30, "30 days"]].map(([d, l]) => `<button type="button" class="sh-chip" data-shd="${d}" aria-pressed="${o.days === d}">${l}</button>`).join("")}</span></div>
+        ${tog("pct", "They can change trade %")}${tog("cash", "They can change cash %")}${tog("money", "They can add cash")}${tog("send", "They can send numbers back")}
+      </div>
+      <p class="mu" style="font-size:11.5px;margin:8px 0 0">They see both sides' cards and the market prices from when you shared. They never see your position or anything else in your app.</p>
+      <h4 class="sh-h4">Activity</h4>${cos}${evs || `<div class="mu" style="font-size:13px">Nothing yet.</div>`}
+      <button type="button" class="ppm-x danger" data-shstop="1" style="width:100%;margin-top:14px">Stop sharing</button></div>`;
+  };
+  const save = async (body) => { if (busy) return; busy = true; try { x.last = await shApi(code, "PUT", body); x.exp = x.last.exp; if (body.trade) { x.payload = body.trade; x.snap = JSON.parse(JSON.stringify({ ...TRD, shareCode: undefined })); } shStore(); } catch (e) { toast(e.message); if (!SH.includes(x)) return close(); } busy = false; paint(); };
+  const refresh = async () => { try { x.last = await shApi(code, "GET"); x.exp = x.last.exp; shStore(); paint(); x.seen = (x.last.counters || []).length; shStore(); shBadge(); } catch (e) { if (!SH.includes(x)) { toast(e.message); close(); } } };
+  ov.addEventListener("click", async (e) => {
+    const t = e.target;
+    if (t === ov || t.closest("[data-shx]")) return close();
+    if (t.closest("[data-shcp]")) { try { await navigator.clipboard.writeText(shUrl(code)); toast("Link copied"); } catch { toast(shUrl(code)); } }
+    else if (t.closest("[data-shsend]")) { try { await navigator.share({ title: "Trade proposal", text: "Here's the trade. Try your own %s and send them back:", url: shUrl(code) }); } catch {} }
+    else if (t.closest("[data-shd]")) save({ opts: { ...(x.last && x.last.opts), days: +t.closest("[data-shd]").dataset.shd } });
+    else if (t.closest("[data-shup]")) save({ trade: shPayload() });
+    else if (t.closest("[data-shload]")) { const L = x.last.counters.slice().reverse()[+t.closest("[data-shload]").dataset.shload]; if (await shLoad(x, L)) close(); }
+    else if (t.closest("[data-shstop]")) {
+      if (!(await modal({ title: "Stop sharing this trade?", text: "The link stops working right away and anything they sent is cleared.", buttons: [{ label: "Stop sharing", value: true, kind: "danger" }, { label: "Keep it", value: false, kind: "primary" }] }))) return;
+      try { await shApi(code, "DELETE"); } catch {} SH = SH.filter((y) => y.code !== code); shStore(); if (TRD.shareCode === code) { delete TRD.shareCode; trSave(); } toast("Sharing stopped. The link no longer opens."); close();
+    }
+  });
+  ov.addEventListener("change", (e) => {
+    const t = e.target;
+    if (t.dataset.sha) save({ opts: { ...(x.last && x.last.opts), allow: { ...((x.last && x.last.opts && x.last.opts.allow) || {}), [t.dataset.sha]: t.checked } } });
+    else if (t.dataset.shname) { shName = t.value.trim(); try { localStorage.setItem("pp_share_name", shName); } catch {} save({ opts: { ...(x.last && x.last.opts), name: shName } }); }
+  });
+  paint(); addEventListener("keydown", key); document.body.appendChild(ov);
+  refresh(); timer = setInterval(() => { const f = document.activeElement; if (!document.hidden && !busy && !(f && f.matches && f.matches("input[data-shname]"))) refresh(); }, 15000);
+}
+// a counter-offer's numbers into the trade analyzer: the same trade if it's still open there, otherwise the shared copy
+async function shLoad(x, k) {
+  const apply = (t) => { t.pct = k.pct; t.cashPct = k.cashPct; t.cashIn = k.cashIn; t.cashOut = k.cashOut; const per = Object.keys(k.cardPct || {}).length; t.get.forEach((c) => { c.pct = per && k.cardPct[c.id] != null ? k.cardPct[c.id] : null; }); };
+  if (TRD.shareCode !== x.code) {
+    if (TRD.editOf) { toast("Save or cancel the trade you're editing first"); return false; }
+    if (TRD.give.length || TRD.get.length) {
+      const v = await modal({ title: "Replace the trade in the analyzer?", text: "The shared trade, with their numbers, replaces what's in the analyzer now. Save it first to keep it.", buttons: [{ label: "Replace it", value: true, kind: "danger" }, { label: "Cancel", value: false, kind: "plain" }] });
+      if (!v) return false;
+    }
+    const back = (c) => { const o = { ...c }, src = o.pid && P.items.find((y) => y.id === o.pid); if (o.pid && !src) delete o.pid; else if (src) o.max = src.qty; return o; };
+    const s = x.snap || {}; TRD = { give: (s.give || []).map(back), get: (s.get || []).map(back), pct: s.pct ?? 80, cashPct: s.cashPct ?? 70, cashIn: s.cashIn || 0, cashOut: s.cashOut || 0, shareCode: x.code };
+  }
+  apply(TRD); trSave();
+  const ts = document.querySelector(".ts-ov"); if (ts) ts.remove();
+  trView = "an"; trGoOpen(); toast(`Loaded their numbers: ${k.pct}% trade, ${k.cashPct}% cash`);
+  return true;
+}
+function renderIfTrade() { shBadge(); }
+// new counter-offers on any of this phone's links
+const shUnseen = () => SH.filter((x) => x.exp > Date.now() && x.last && (x.last.counters || []).length > (x.seen || 0));
+function shBanner() { const n = shUnseen(); return n.length ? `<div class="sv-on sh-new" id="tr-shnew" role="note"><span><b>New counter-offer</b> on ${n.length === 1 ? "your shared trade" : n.length + " shared trades"}</span><button type="button" class="pill" data-shopen="${n[0].code}">View</button></div>` : `<span id="tr-shnew" hidden></span>`; }
+function shBadge() { const b = $("tr-shnew"); if (b) b.outerHTML = shBanner(); }
+let shPolling = false;
+async function shPoll() {
+  if (shPolling || document.hidden) return; shPolling = true;
+  SH = SH.filter((x) => x.exp > Date.now()); shStore();
+  for (const x of SH.slice(0, 15)) {
+    try {
+      const before = x.last ? (x.last.counters || []).length : 0; x.last = await shApi(x.code, "GET"); x.exp = x.last.exp;
+      const n = (x.last.counters || []).length; if (n > before && n > (x.seen || 0) && !$("ppshare")) toast("New counter-offer on a shared trade", { label: "View", run: () => shPanel(x.code) });
+    } catch {}
+  }
+  shStore(); shBadge(); shPolling = false;
+}
+document.addEventListener("click", (e) => { const b = e.target.closest("[data-shopen]"); if (b) shPanel(b.dataset.shopen); });
+setTimeout(shPoll, 3000); setInterval(shPoll, 60000); document.addEventListener("visibilitychange", () => { if (!document.hidden) shPoll(); });
 
 /* Complete trade: your cards leave the portfolio, theirs come in. What you gave (your cards at market, plus cash you
    added, less cash they added) becomes the cost of their cards, shared out by market value. */

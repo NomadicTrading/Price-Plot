@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Trade proposal · Price Plot</title>
+<link rel="icon" href="/brand/icon-small.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&display=swap">
+<style>
+/* The page a trader opens from a shared trade link (/t/CODE). Standalone: nothing from the app loads here. */
+:root{--bg:#fff;--fg:#191919;--mut:#707070;--soft:#f2f3f5;--line:#e5e5e5;--bd:#767676;--blue:#F59E0B;--link:#B45309;--onb:#14213D;--up:#1a7f37;--dn:#d92d20;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#121212;--fg:#f1f1f1;--mut:#a0a0a0;--soft:#232323;--line:#333;--bd:#8a8a8a;--link:#F7B84B;--up:#4ccf74;--dn:#ff6b5e}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 "Helvetica Neue",Helvetica,Arial,sans-serif;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+button,input,textarea{font:inherit;color:inherit}
+.mu{color:var(--mut);font-weight:400}
+.wrap{max-width:560px;margin:0 auto}
+.top{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.brand{display:inline-flex;align-items:center;gap:8px;font:700 19px/1 "Space Grotesk","Helvetica Neue",Arial,sans-serif;letter-spacing:-.5px;color:var(--fg);text-decoration:none}
+.brand .d{color:var(--blue)}
+.pad{padding:14px 16px}
+h2{margin:0;font-size:21px;letter-spacing:-.3px}
+h3{margin:0;font-size:15px}
+.hero{padding:16px 16px 6px}
+.from{font-size:13px;color:var(--mut);margin-top:2px}
+.frz{font-size:12px;color:var(--mut);margin-top:6px}
+.side{border-top:3px solid #9aa0a6;padding-top:6px;margin-top:6px}
+.side.them{border-top-color:var(--blue)}
+.sh{display:flex;justify-content:space-between;align-items:baseline;font-size:14px;margin-bottom:2px}
+.row{display:grid;grid-template-columns:46px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.pic{width:46px;height:64px;border-radius:5px;background:var(--soft) center/20px no-repeat url("/brand/icon-small.svg");overflow:hidden}
+.pic img{width:100%;height:100%;object-fit:contain;display:block;background:var(--soft)}
+.nm{min-width:0;display:flex;flex-direction:column;font-size:13.5px;line-height:1.25}
+.nm b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nm .mu{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tg{display:flex;gap:3px;margin-top:3px;flex-wrap:wrap}.tg i{font-style:normal;font-size:10.5px;font-weight:700;padding:1px 5px;border-radius:4px;background:var(--soft)}
+.v{text-align:right;font-size:14px;white-space:nowrap;font-weight:700}.v small{display:block;font-size:11.5px;color:var(--mut);font-weight:400}
+.ln{display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:13.5px}.ln b{white-space:nowrap}
+.res{margin:12px 16px;padding:14px;border-radius:16px;background:var(--soft)}
+.lbl{font-size:12px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.4px}
+.big{font-size:24px;font-weight:800;letter-spacing:-.6px;line-height:1.15;margin-top:2px}
+.msg{font-size:14px;margin-top:4px}
+.sep{border-top:1px solid var(--line);margin-top:6px;padding-top:6px}
+.ctl{padding:4px 16px}
+.sl{padding:12px 0;border-top:1px solid var(--line)}
+.sl-h{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.sl-h b{font-size:15px}
+.sl-v{display:flex;align-items:center;gap:4px;font-weight:800;font-size:17px}
+.sl-v input{width:62px;text-align:right;border:1px solid var(--bd);border-radius:8px;background:var(--bg);padding:4px 6px;font-weight:800;font-size:16px}
+input[type=range]{width:100%;accent-color:#F59E0B;margin:10px 0 2px}
+.prop{display:flex;justify-content:space-between;font-size:12px;color:var(--mut)}
+.prop button{border:0;background:none;color:var(--link);font-weight:700;cursor:pointer;padding:0;font-size:12.5px}
+.chk{display:flex;align-items:center;gap:8px;font-size:13.5px;margin:2px 0 8px}
+.chk input{width:18px;height:18px;margin:0}
+.pc{margin-top:4px;padding:4px 10px;border-radius:10px;background:var(--soft)}
+.pc .row{border-bottom:1px solid var(--line);grid-template-columns:34px minmax(0,1fr) 84px}
+.pc .row:last-child{border-bottom:0}
+.pc .pic{width:34px;height:47px}
+.pc input[type=range]{margin:4px 0 0}
+.locked{font-size:12px;color:var(--mut);margin-top:2px}
+.cash{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+.cash label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--mut)}
+.cash .in{display:flex;align-items:center;border:1px solid var(--bd);border-radius:10px;padding:0 10px;background:var(--bg);color:var(--fg)}
+.cash input{width:100%;border:0;background:transparent;padding:10px 0 10px 4px;font-weight:700;font-size:16px;outline:none}
+textarea{width:100%;border:1px solid var(--bd);border-radius:12px;background:var(--bg);padding:10px;min-height:68px;resize:vertical;font-size:16px}
+.btn{display:block;width:100%;border:0;border-radius:999px;padding:13px 16px;font-weight:700;cursor:pointer;background:var(--blue);color:var(--onb);font-size:15px;margin-top:10px}
+.btn[disabled]{opacity:.6;cursor:default}
+.ok{margin:0 16px 4px;padding:12px 14px;border-radius:14px;border:2px solid var(--up);font-size:14px}
+.err{color:var(--dn);font-size:13px;margin-top:6px}
+.foot{font-size:11.5px;color:var(--mut);padding:12px 16px 24px;line-height:1.4}
+.empty{padding:48px 20px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><a class="brand" href="/" aria-label="Price Plot"><img src="/brand/icon-small.svg" width="26" height="26" alt="">Price<span class="d">·</span>Plot</a><span class="mu" style="font-size:12.5px">Trade proposal</span></div>
+  <main id="app"><div class="empty mu">Loading the trade…</div></main>
+</div>
+<script>
+const code = (location.pathname.match(/\/t\/([a-z2-9]{5})/) || [])[1] || "", me = new URLSearchParams(location.search).get("me") === "1";
+const $ = (id) => document.getElementById(id), app = $("app");
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const money = (n) => "$" + (Math.round((+n || 0) * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const COND = { "Near Mint": "NM", "Lightly Played": "LP", "Moderately Played": "MP", "Heavily Played": "HP", Damaged: "DMG" };
+const when = (ms, time) => new Date(ms).toLocaleString(undefined, time ? { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" } : { month: "short", day: "numeric" });
+let D = null, C = null, KEY = "pp_tview_" + code;
+const q = (c) => Math.max(1, +c.qty || 1), val = (c) => (c.px > 0 ? c.px * q(c) : 0);
+const who = () => (D.name ? esc(D.name) : "the trader"), Who = () => (D.name ? esc(D.name) : "The trader");
+const pctOf = (c) => (C.per && C.cardPct[c.id] != null ? C.cardPct[c.id] : C.pct);
+function math() {
+  const t = D.trade, out = t.give.reduce((a, c) => a + val(c), 0), mine = t.get.reduce((a, c) => a + val(c), 0);
+  const credit = t.get.reduce((a, c) => a + val(c) * pctOf(c) / 100, 0), bal = credit + C.cashIn - out - C.cashOut;
+  return { out, mine, credit, bal, need: C.pct > 0 ? Math.max(0, out + C.cashOut - C.cashIn) / (C.pct / 100) : null, cash: mine * C.cashPct / 100 };
+}
+function fresh() {
+  const t = D.trade, cardPct = {}; t.get.forEach((c) => { if (c.pct != null && c.pct !== t.pct) cardPct[c.id] = c.pct; });
+  return { pct: t.pct, cashPct: t.cashPct, cashIn: t.cashIn || 0, cashOut: t.cashOut || 0, per: Object.keys(cardPct).length > 0, cardPct, note: "", sent: 0 };
+}
+const keep = () => { try { localStorage.setItem(KEY, JSON.stringify({ made: D.made, upd: D.trade, C })); } catch {} };
+function pic(c, small) { const u = c.img || ""; return `<span class="pic">${u ? `<img src="${esc(u)}" alt="" loading="lazy" onerror="this.remove()">` : ""}</span>`; }
+function row(c, extra) {
+  const tags = [c.grade || COND[c.cond] || c.cond, c.var, q(c) > 1 ? "×" + q(c) : ""].filter(Boolean);
+  return `<div class="row">${pic(c)}<div class="nm"><b>${esc(c.name)}</b><span class="mu">${esc([c.set, c.num].filter(Boolean).join(" · "))}</span><span class="tg">${tags.map((x) => `<i>${esc(x)}</i>`).join("")}</span></div>
+    <div class="v">${c.px > 0 ? money(val(c)) : `<span class="mu">no price</span>`}${q(c) > 1 && c.px > 0 ? `<small>${money(c.px)} each</small>` : ""}${extra || ""}</div></div>`;
+}
+function draw() {
+  const t = D.trade, A = D.allow;
+  app.innerHTML = `<div class="hero"><h2>Trade from ${who()}</h2><div class="from">Open until ${when(D.exp, D.exp - D.made < 2 * 864e5)}</div>
+    <div class="frz">🔒 Cards and prices are locked: TCGplayer market price on ${when(D.made, true)}</div></div>
+  <div class="pad" style="padding-top:6px" id="cards"></div>
+  <div class="res" id="res"></div>
+  <div class="ctl"><h3 style="margin:4px 0 2px">Try your own numbers</h3><p class="mu" style="margin:0 0 4px;font-size:12.5px">Only changes this page.${A.send ? " Send them to " + who() + " when you're happy." : ""}</p>
+    ${slider("pct", "Trade % on your cards", A.pct, 40, 100)}
+    ${A.pct && t.get.length > 1 ? `<label class="chk"><input type="checkbox" id="per" ${C.per ? "checked" : ""}> Set % card by card</label><div id="pcs"></div>` : ""}
+    ${slider("cashPct", "Cash % (selling them instead)", A.cash, 20, 100)}
+    ${A.money ? `<div class="sl"><b style="font-size:15px">Cash in the deal</b><div class="cash"><label>You add<span class="in">$<input id="ci" type="number" min="0" step="any" inputmode="decimal" value="${C.cashIn || ""}" placeholder="0"></span></label><label>${Who()} adds<span class="in">$<input id="co" type="number" min="0" step="any" inputmode="decimal" value="${C.cashOut || ""}" placeholder="0"></span></label></div></div>` : ""}
+  </div>
+  <div id="sendbox"></div>
+  <div class="foot">Prices are TCGplayer market prices for each card's condition when ${who()} shared this trade. This page shows only this trade. Made with Price·Plot.</div>`;
+  wire(); upd(); drawPer(); drawSend();
+}
+function slider(k, label, on, lo, hi) {
+  const prop = D.trade[k];
+  return `<div class="sl"><div class="sl-h"><b>${label}</b><span class="sl-v">${on ? `<input type="number" inputmode="decimal" id="${k}n" value="${C[k]}" min="0" max="200" aria-label="${label}">` : C[k]}%</span></div>
+    ${on ? `<input type="range" id="${k}" min="${lo}" max="${hi}" step="1" value="${C[k]}" aria-label="${label}"><div class="prop"><span>Proposed: ${prop}%</span><button type="button" data-reset="${k}" id="${k}r" ${C[k] === prop ? "hidden" : ""}>Reset</button></div>` : `<div class="locked">Set by ${who()}</div>`}</div>`;
+}
+function drawPer() {
+  const b = $("pcs"); if (!b) return;
+  b.innerHTML = C.per ? `<div class="pc">${D.trade.get.map((c) => `<div class="row">${pic(c)}<div class="nm"><b>${esc(c.name)}</b><input type="range" min="40" max="100" step="1" value="${Math.min(100, pctOf(c))}" data-cp="${c.id}" aria-label="Trade % for ${esc(c.name)}"></div><div class="v" data-cpv="${c.id}"></div></div>`).join("")}</div>` : "";
+  b.querySelectorAll("[data-cp]").forEach((r) => (r.oninput = () => { C.cardPct[r.dataset.cp] = +r.value; changed(); }));
+}
+// the numbers that change as sliders move (the sliders themselves aren't redrawn, so dragging keeps working)
+function upd() {
+  const t = D.trade, m = math(), even = Math.abs(m.bal) < 0.5;
+  $("cards").innerHTML = `<div class="side them"><div class="sh"><b>Your cards</b><span class="mu">${money(m.mine)} market</span></div>
+      ${t.get.map((c) => row(c, c.px > 0 ? `<small>${money(val(c) * pctOf(c) / 100)} at ${pctOf(c)}%</small>` : "")).join("") || `<div class="mu" style="padding:6px 0">No cards</div>`}</div>
+    <div class="side" style="margin-top:14px"><div class="sh"><b>${Who()}'s cards</b><span class="mu">${money(m.out)} market</span></div>
+      ${t.give.map((c) => row(c)).join("") || `<div class="mu" style="padding:6px 0">No cards</div>`}</div>`;
+  const head = even ? "Even trade" : m.bal > 0 ? `${Who()} owes you ${money(m.bal)}` : `You're ${money(-m.bal)} short`;
+  const sub = even ? (Math.abs(m.bal) < 0.005 ? "Both sides match at these numbers." : `Within ${money(Math.abs(m.bal))}, so both sides match.`)
+    : m.bal > 0 ? `Your side is worth more at these numbers. Ask for ${money(m.bal)} cash or another card.`
+    : `Add ${money(-m.bal)} cash or more cards.${m.need != null ? ` At ${C.pct}%, you'd need ${money(m.need)} in cards to even it out.` : ""}`;
+  $("res").innerHTML = `<div class="lbl">At your numbers</div><div class="big" style="color:var(${even ? "--fg" : m.bal > 0 ? "--up" : "--dn"})">${head}</div><div class="msg">${sub}</div>
+    <div class="ln sep"><span>Trade credit for your cards</span><b>${money(m.credit)}</b></div>
+    ${C.cashIn ? `<div class="ln"><span>+ Cash you add</span><b>${money(C.cashIn)}</b></div>` : ""}
+    <div class="ln"><span>${Who()}'s cards</span><b>${money(m.out)}</b></div>
+    ${C.cashOut ? `<div class="ln"><span>+ Cash ${who()} adds</span><b>${money(C.cashOut)}</b></div>` : ""}
+    <div class="ln sep"><span>Or sell your cards for cash at ${C.cashPct}%</span><b>${money(m.cash)}</b></div>`;
+  for (const k of ["pct", "cashPct"]) { const n = $(k + "n"); if (n && document.activeElement !== n) n.value = C[k]; const r = $(k + "r"); if (r) r.hidden = C[k] === D.trade[k] && !(k === "pct" && C.per); }
+  document.querySelectorAll("[data-cpv]").forEach((v) => { const c = D.trade.get.find((x) => x.id === v.dataset.cpv); v.innerHTML = `${pctOf(c)}%<small>${c.px > 0 ? money(val(c) * pctOf(c) / 100) : ""}</small>`; });
+}
+function drawSend() {
+  const b = $("sendbox"); if (!b || !D.allow.send) return;
+  b.innerHTML = `${C.sent ? `<div class="ok"><b>Sent to ${who()}.</b><div class="mu" style="font-size:13px;margin-top:2px">They'll see your numbers${C.lastNote ? " and note" : ""}. You can keep adjusting and send again.</div></div>` : ""}
+    <div class="pad"><textarea id="nt" maxlength="500" placeholder="Add a note (optional)">${esc(C.note)}</textarea>
+    <button class="btn" type="button" id="send">${C.sent ? "Send updated numbers" : `Send my numbers to ${who()}`}</button><div class="err" id="err" role="alert"></div></div>`;
+  $("nt").oninput = (e) => { C.note = e.target.value; keep(); };
+  $("send").onclick = send;
+}
+function changed() { keep(); upd(); }
+function wire() {
+  for (const k of ["pct", "cashPct"]) {
+    const r = $(k), n = $(k + "n"); if (!r) continue;
+    r.oninput = () => { C[k] = +r.value; if (k === "pct" && C.per) document.querySelectorAll("[data-cp]").forEach((x) => { if (C.cardPct[x.dataset.cp] == null) x.value = C.pct; }); changed(); };
+    n.onchange = () => { const v = Math.min(200, Math.max(0, Math.round((+n.value || 0) * 100) / 100)); C[k] = v; r.value = Math.min(+r.max, Math.max(+r.min, v)); changed(); };
+  }
+  const per = $("per"); if (per) per.onchange = () => { C.per = per.checked; if (!C.per) C.cardPct = {}; drawPer(); changed(); };
+  for (const [id, k] of [["ci", "cashIn"], ["co", "cashOut"]]) { const i = $(id); if (i) i.oninput = () => { C[k] = Math.max(0, Math.round((+i.value || 0) * 100) / 100); changed(); }; }
+  app.querySelectorAll("[data-reset]").forEach((b) => (b.onclick = () => { const k = b.dataset.reset; C[k] = D.trade[k]; if (k === "pct") { C.per = false; C.cardPct = {}; const p = $("per"); if (p) p.checked = false; drawPer(); } const r = $(k); if (r) r.value = C[k]; changed(); }));
+}
+async function send() {
+  const b = $("send"), err = $("err"); b.disabled = true; err.textContent = "";
+  try {
+    const r = await fetch(`/api/share/${code}/counter`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pct: C.pct, cashPct: C.cashPct, cashIn: C.cashIn, cashOut: C.cashOut, cardPct: C.per ? C.cardPct : {}, note: C.note }) });
+    const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || "Couldn't send. Try again.");
+    C.sent++; C.lastNote = !!C.note.trim(); keep(); drawSend();
+  } catch (e) { b.disabled = false; err.textContent = e.message || "Couldn't send. Check your connection and try again."; }
+}
+(async () => {
+  if (!code) { app.innerHTML = `<div class="empty"><h2>No trade here</h2><p class="mu">This link isn't complete. Ask the trader to send it again.</p></div>`; return; }
+  try {
+    const r = await fetch(`/api/share/${code}/view${me ? "?me=1" : ""}`), j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || "This trade link has expired or was stopped.");
+    D = j;
+  } catch (e) { app.innerHTML = `<div class="empty"><h2>Trade not available</h2><p class="mu">${esc(e.message)} Ask the trader for a new link.</p></div>`; return; }
+  try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s && s.made === D.made && JSON.stringify(s.upd) === JSON.stringify(D.trade)) C = s.C; } catch {}
+  if (!C) C = fresh();
+  // what they can't change always follows the trade as shared
+  if (!D.allow.pct) { const f = fresh(); C.pct = f.pct; C.per = f.per; C.cardPct = f.cardPct; } if (!D.allow.cash) C.cashPct = D.trade.cashPct; if (!D.allow.money) { C.cashIn = D.trade.cashIn || 0; C.cashOut = D.trade.cashOut || 0; }
+  draw();
+})();
+</script>
+</body>
+</html>

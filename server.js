@@ -127,6 +127,7 @@ const kv = {
     catch (e) { console.error("saved data write failed:", e.message); }
   },
 };
+kv.del = async function (k) { if (!this.on) return; try { await this.cmd(["DEL", "pp:" + k]); } catch (e) { console.error("saved data delete failed:", e.message); } };
 console.log("Saved data:", kv.on ? "Upstash database" : "local files (lost on restart)");
 
 let store = {};
@@ -1289,5 +1290,85 @@ app.get("/ebay/deletion", (req, res) => {
   res.status(200).json({ challengeResponse });
 });
 app.post("/ebay/deletion", (req, res) => res.sendStatus(200));
+
+/* Shared trades. "Share with trader" in the trade summary saves a frozen copy of the trade (cards, conditions,
+   prices at that moment, the proposed %s) under a 5-letter code. /t/CODE is a plain page for the other trader:
+   no app, no account. They can move the %s you allow and send their numbers back as a counter-offer, which shows
+   in your share's Activity. The copy deletes itself when the link expires (24 hours, 7 or 30 days), or right away
+   with Stop sharing. Only the phone that made the link holds its key, which is needed to see activity, change
+   settings or stop it. */
+const SHARE_DAYS = [1, 7, 30], SHARE_ABC = "abcdefghjkmnpqrstuvwxyz23456789";
+const shareMem = new Map(); // used when there's no database (lost on restart)
+const shareGet = async (code) => { if (kv.on) return kv.get("share:" + code); const x = shareMem.get(code); return x && x.exp > Date.now() ? x : null; };
+const sharePut = async (code, x) => { const ttl = (x.exp - Date.now()) / 1000; if (ttl <= 0) return shareDel(code); if (kv.on) await kv.set("share:" + code, x, ttl); else shareMem.set(code, x); };
+const shareDel = async (code) => { if (kv.on) await kv.del("share:" + code); else shareMem.delete(code); };
+const shareHash = (key) => crypto.createHash("sha256").update(String(key || "")).digest("hex");
+const shareCode = (s) => (/^[a-z2-9]{5}$/.test(String(s || "")) ? String(s) : "");
+const str = (v, n) => String(v == null ? "" : v).replace(/[\u0000-\u001f]/g, " ").trim().slice(0, n);
+const numIn = (v, lo, hi) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n * 100) / 100)) : null; };
+// only what the other trader should see: no portfolio ids, costs or notes
+function shareTrade(t) {
+  const card = (c, side) => ({
+    id: str(c.id, 24) || crypto.randomBytes(4).toString("hex"), name: str(c.name, 80), set: str(c.set, 80), num: str(c.num, 24), cond: str(c.cond, 24), var: str(c.var, 40),
+    qty: Math.max(1, Math.min(999, Math.round(+c.qty || 1))), px: numIn(c.px, 0, 1e7), img: /^https:\/\/[^\s"'<>]{4,400}$/.test(String(c.img || "")) ? String(c.img) : "",
+    ...(side === "get" && c.pct != null ? { pct: numIn(c.pct, 0, 200) } : {}),
+  });
+  const give = (Array.isArray(t && t.give) ? t.give : []).slice(0, 150).map((c) => card(c, "give")), get = (Array.isArray(t && t.get) ? t.get : []).slice(0, 150).map((c) => card(c, "get"));
+  return { give, get, pct: numIn(t && t.pct, 0, 200) ?? 80, cashPct: numIn(t && t.cashPct, 0, 200) ?? 70, cashIn: numIn(t && t.cashIn, 0, 1e7) || 0, cashOut: numIn(t && t.cashOut, 0, 1e7) || 0 };
+}
+function shareOpts(o, old = {}) {
+  const a = (o && o.allow) || {}, oa = old.allow || { pct: true, cash: true, money: true, send: true };
+  return { name: o && "name" in o ? str(o.name, 40) : old.name || "", days: SHARE_DAYS.includes(+(o && o.days)) ? +o.days : old.days || 7,
+    allow: Object.fromEntries(["pct", "cash", "money", "send"].map((k) => [k, k in a ? !!a[k] : oa[k] !== false])) };
+}
+const shareOwner = (x) => ({ code: x.code, made: x.made, exp: x.exp, opts: x.opts, events: x.events, counters: x.counters, trade: x.trade });
+async function shareMine(req, res) {
+  const code = shareCode(req.params.code), x = code && (await shareGet(code));
+  if (!x) { res.status(404).json({ error: "This link has expired or was stopped." }); return null; }
+  if (x.key !== shareHash(req.get("x-share-key") || req.query.key)) { res.status(403).json({ error: "This phone didn't make that link." }); return null; }
+  return x;
+}
+app.post("/api/share", express.json({ limit: "1mb" }), async (req, res) => {
+  const trade = shareTrade(req.body && req.body.trade);
+  if (!trade.give.length && !trade.get.length) return res.status(400).json({ error: "Add cards to the trade first." });
+  const opts = shareOpts(req.body && req.body.opts);
+  let code = ""; for (let i = 0; i < 8 && !code; i++) { const c = Array.from(crypto.randomBytes(5), (b) => SHARE_ABC[b % SHARE_ABC.length]).join(""); if (!(await shareGet(c))) code = c; }
+  if (!code) return res.status(503).json({ error: "Couldn't make a link right now. Try again." });
+  const key = crypto.randomBytes(18).toString("base64url"), made = Date.now();
+  const x = { code, key: shareHash(key), made, exp: made + opts.days * 864e5, opts, trade, events: [{ t: "made", at: made }], counters: [] };
+  await sharePut(code, x);
+  res.json({ ...shareOwner(x), key, saved: kv.on });
+});
+// your view of a link: settings, who opened it, counter-offers
+app.get("/api/share/:code", async (req, res) => { const x = await shareMine(req, res); if (x) res.json(shareOwner(x)); });
+// change settings (name, how long it works, what they can change) or put an updated trade on the same link
+app.put("/api/share/:code", express.json({ limit: "1mb" }), async (req, res) => {
+  const x = await shareMine(req, res); if (!x) return;
+  if (req.body.opts) { x.opts = shareOpts(req.body.opts, x.opts); x.exp = x.made + x.opts.days * 864e5; }
+  if (req.body.trade) { const t = shareTrade(req.body.trade); if (t.give.length || t.get.length) { x.trade = t; x.events.push({ t: "updated", at: Date.now() }); x.events = x.events.slice(-60); } }
+  if (x.exp <= Date.now()) { await shareDel(x.code); return res.status(410).json({ error: "That makes the link already expired, so it was stopped." }); }
+  await sharePut(x.code, x); res.json(shareOwner(x));
+});
+app.delete("/api/share/:code", async (req, res) => { const x = await shareMine(req, res); if (!x) return; await shareDel(x.code); res.json({ ok: true }); });
+// the other trader's page asks for the trade; opening it shows in your Activity (at most once every 15 minutes)
+app.get("/api/share/:code/view", async (req, res) => {
+  const code = shareCode(req.params.code), x = code && (await shareGet(code));
+  if (!x) return res.status(404).json({ error: "This trade link has expired or was stopped." });
+  if (req.query.me !== "1") { const last = [...x.events].reverse().find((e) => e.t === "open"); if (!last || Date.now() - last.at > 15 * 60e3) { x.events.push({ t: "open", at: Date.now() }); x.events = x.events.slice(-60); await sharePut(code, x); } }
+  res.set("Cache-Control", "no-store").json({ code, made: x.made, exp: x.exp, name: x.opts.name, allow: x.opts.allow, trade: x.trade });
+});
+// their numbers sent back
+app.post("/api/share/:code/counter", express.json({ limit: "64kb" }), async (req, res) => {
+  const code = shareCode(req.params.code), x = code && (await shareGet(code));
+  if (!x) return res.status(404).json({ error: "This trade link has expired or was stopped." });
+  if (!x.opts.allow.send) return res.status(403).json({ error: "Sending numbers back is turned off for this trade." });
+  if (x.counters.length >= 30) return res.status(429).json({ error: "This trade has had a lot of offers sent already. Talk to the trader directly." });
+  const b = req.body || {}, A = x.opts.allow, t = x.trade, ids = new Set(t.get.map((c) => c.id));
+  const cardPct = {}; if (A.pct && b.cardPct && typeof b.cardPct === "object") for (const [k, v] of Object.entries(b.cardPct)) { const n = numIn(v, 0, 200); if (ids.has(k) && n != null) cardPct[k] = n; }
+  const k = { at: Date.now(), pct: A.pct ? numIn(b.pct, 0, 200) ?? t.pct : t.pct, cashPct: A.cash ? numIn(b.cashPct, 0, 200) ?? t.cashPct : t.cashPct,
+    cashIn: A.money ? numIn(b.cashIn, 0, 1e7) || 0 : t.cashIn, cashOut: A.money ? numIn(b.cashOut, 0, 1e7) || 0 : t.cashOut, cardPct, note: str(b.note, 500) };
+  x.counters.push(k); await sharePut(code, x); res.json({ ok: true });
+});
+app.get("/t/:code", (req, res) => res.sendFile("t.html", { root: "public" }));
 
 app.listen(PORT, () => console.log(`Running at http://localhost:${PORT}`));
