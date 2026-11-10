@@ -59,6 +59,19 @@ async function trPrice(c) {
   } catch { c.pxNote = "TCGplayer didn't answer"; }
   trSave(); trDraw(); trPriceHi(c);
 }
+// a trade card saved with just its number ("55"): fill in the full number ("55/122") from TCGplayer, once per card
+const trNumAsked = new Set();
+async function trFullNum(c) {
+  if (!c || /\//.test(c.num || "") || c.cond === "Sealed" || !c.name || !(c.tcgId || c.num)) return;
+  const k = c.tcgId || [c.name, c.set, c.num].join("|"); if (c.numK === k || trNumAsked.has(k)) return; trNumAsked.add(k);
+  try {
+    const j = await getJSON("/api/cardnum?" + new URLSearchParams({ id: c.tcgId || "", name: c.name, set: c.set || "", num: c.num || "" }));
+    c.numK = k;
+    const raw = String(j.num || ""), digits = (x) => String(x || "").split("/")[0].replace(/^0+(?=\d)/, "").toLowerCase();
+    if (raw.includes("/") && (!c.num || digits(raw) === digits(c.num))) { for (const t of [...TRD.give, ...TRD.get]) if ((t.tcgId && t.tcgId === c.tcgId) || t === c) { t.num = raw; t.numK = k; const el = document.querySelector(`.tr [data-tc="${t.id}"] .sn`); if (el) el.outerHTML = snHTML(t.set, t.num, "div"); } }
+    trSave();
+  } catch { trNumAsked.delete(k); }
+}
 // an in-between trade card's second price: TCGplayer's live price for the next better condition
 async function trPriceHi(c) {
   if (!cfOn(c) || trGraded(c) || !c.tcgId) return;
@@ -239,7 +252,7 @@ function renderTrade(box) {
   </div>
   <div class="bar"><button class="pill on" type="button" data-tx="done" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>${TRD.editOf ? "Save changes" : "Complete trade"}</button>${TRD.editOf ? "" : `<button class="pill" type="button" data-tx="save" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>${TRD.savedId ? "Update saved trade" : "Save for later"}</button>`}</div>
   <div class="sm">Your cards count at full market value; theirs at the trade % (set one card's own % in its box). The green or red number is where you stand: trade credit plus cash they add, minus your cards and cash you add. Graded cards use Collectr's price.</div></div>`;
-  for (const c of [...TRD.give, ...TRD.get]) { if (c.pxK !== [c.cond, c.var, c.grade].join("|") && !(c.pid && trEach(c) != null)) trPrice(c); trLoadPrints(c); trLive(c); trPriceHi(c); }
+  for (const c of [...TRD.give, ...TRD.get]) { if (c.pxK !== [c.cond, c.var, c.grade].join("|") && !(c.pid && trEach(c) != null)) trPrice(c); trLoadPrints(c); trLive(c); trPriceHi(c); trFullNum(c); }
 }
 // a live price found for one copy goes to every copy of the same card, condition and printing in all your portfolios
 // (no extra lookups: it's the same TCGplayer price). Graded copies and prices you typed in are left alone.
@@ -1702,7 +1715,7 @@ window.ppAddFromTcg = async (c, print, conds) => {
     if (pf == null) return;
   }
   const tid = c.tcgId || (String(c.tcgUrl || "").match(/product\/(\d+)/) || [])[1] || null;
-  const x = { id: uid(), pf, cat: "Pokemon", set: c.set || "", name, num: c.number || "", rarity: c.rarity || "", var: print || "", grade: "Ungraded", cond, cost: 0, qty: 1,
+  const x = { id: uid(), pf, cat: "Pokemon", set: c.set || "", name, num: c.numberText || (c.number && c.printedTotal && /^\d+$/.test(c.number) ? `${c.number}/${c.printedTotal}` : c.number || ""), rarity: c.rarity || "", var: print || "", grade: "Ungraded", cond, cost: 0, qty: 1,
     mkt: v && v.price != null ? +v.price : null, ...(v && v.price != null ? { mktV: 2, pT: Date.now() } : {}), ovr: 0, watch: false, added: today(), notes: "", tcgId: tid,
     img: tid ? `https://tcgplayer-cdn.tcgplayer.com/product/${tid}_200w.jpg` : undefined, big: tid ? `https://tcgplayer-cdn.tcgplayer.com/product/${tid}_400w.jpg` : undefined, imgT: tid ? Date.now() : 0 };
   const same = P.items.find((y) => y.qty > 0 && keyOf(y) === keyOf(x));

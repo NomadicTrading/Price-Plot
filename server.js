@@ -1202,6 +1202,25 @@ app.get("/api/cardimg", async (req, res) => {
   res.json(out);
 });
 
+// A card's full collector number ("55/122") from TCGplayer, for cards saved with just "55". Found by TCGplayer
+// product id (or name, set and number); remembered for six months.
+app.get("/api/cardnum", async (req, res) => {
+  const id = String(req.query.id || "").replace(/\D/g, "").slice(0, 12), name = String(req.query.name || "").trim().slice(0, 100), set = String(req.query.set || "").trim().slice(0, 100), num = String(req.query.num || "").trim().slice(0, 20);
+  if (!name) return res.status(400).json({ error: "Missing name" });
+  const key = "num:" + (id || [set, name, num].map((x) => norm(x)).join("|")), hit = imgCache.get(key) || (await kv.get(key));
+  if (hit) return imgCache.set(key, hit), res.json(hit);
+  let out = { num: "" };
+  try {
+    for (const q of [`${name} ${set}`, `${name} ${num}`]) {
+      const list = await tcgScan(q, { size: 50 });
+      const m = (id && list.find((c) => c.tcgId === id)) || (!id && list.find((c) => norm(c.name) === norm(name) && sameWords(set, c.set || "") >= 0.5 && cardNo(c.raw) === cardNo(num)));
+      if (m && m.raw) { out = { num: m.raw }; break; }
+    }
+  } catch (e) { return res.status(502).json({ error: "TCGplayer didn't answer" }); }
+  imgCache.set(key, out); await kv.set(key, out, out.num ? 180 * 864e2 : 7 * 864e2);
+  res.json(out);
+});
+
 // Hand-off codes: a Collectr import read in Safari can be picked up in the home-screen app (which keeps its own,
 // separate storage). The cards wait here for 30 minutes under a short code and are deleted once picked up.
 const handoffs = new Map();

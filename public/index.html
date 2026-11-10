@@ -1099,7 +1099,7 @@ $("tcg").onclick=e=>{const dot=e.target.closest&&e.target.closest("[data-tpi]");
  if(d.tsall){tcgAllSold();return}
  if(d.addtr){const c=TM.cards[tci],tid=c.tcgId||(String(c.tcgUrl||"").match(/product\/(\d+)/)||[])[1]||"",cond=tSeal?"Sealed":[...tconds][0]||"Near Mint";
   const v=c.variants.find(v=>v.print===tprint&&(tSeal||v.cond===cond)&&(v.lang||"English")==="English")||c.variants.find(v=>v.print===tprint&&(tSeal||v.cond===cond));
-  if(window.ppTradeFromTcg)ppTradeFromTcg({name:c.name,set:c.set||"",num:c.number||"",var:tprint||"",cond,tcgId:tid||null,img:tid?`https://tcgplayer-cdn.tcgplayer.com/product/${tid}_in_1000x1000.jpg`:"",px:v&&v.price>0?v.price:null});return}
+  if(window.ppTradeFromTcg)ppTradeFromTcg({name:c.name,set:c.set||"",num:c.numberText||(c.number&&c.printedTotal&&/^\d+$/.test(c.number)?c.number+"/"+c.printedTotal:c.number||""),var:tprint||"",cond,tcgId:tid||null,img:tid?`https://tcgplayer-cdn.tcgplayer.com/product/${tid}_in_1000x1000.jpg`:"",px:v&&v.price>0?v.price:null});return}
  if(d.addpf){if(window.ppAddFromTcg)ppAddFromTcg(TM.cards[tci],tprint,[...tconds]);return}
  if(d.tzr){tview=null;if(TG)drawTcgChart(TG.vs,TG.tpd);return}
  tsel=null;tview=null;
@@ -1214,5 +1214,5 @@ setTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
 addEventListener("resize",()=>{if(tab==="ebay")draw()});draw();
 </script>
 <script src="/qr.js?v=1"></script>
-<script src="/portfolio.js?v=140"></script>
+<script src="/portfolio.js?v=141"></script>
 </body></html>
