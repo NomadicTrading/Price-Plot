@@ -382,7 +382,7 @@ function trSummary() {
   const ov = document.createElement("div"); ov.className = "ppm-ov ts-ov";
   const paint = () => { ov.innerHTML = `<div class="ts-wrap" role="dialog" aria-modal="true" aria-label="Trade summary">
     <div class="ts-bar"><label class="ts-tog"><input type="checkbox" data-tsm="1" ${trSumMine ? "checked" : ""}> Show trade % and my position</label><button type="button" class="pill" data-x="1">Close</button></div>
-    ${trSumHTML()}<div class="ts-tip mu">Screenshot this page to send it. Turn off “Show trade % and my position” to share it with the other trader.</div></div>`; };
+    ${trSumHTML()}</div>`; };
   const close = () => { removeEventListener("keydown", key); ov.remove(); }, key = (e) => { if (e.key === "Escape") close(); };
   ov.onclick = (e) => { if (e.target === ov || e.target.closest("[data-x]")) close(); };
   ov.onchange = (e) => { if (e.target.dataset.tsm) { trSumMine = e.target.checked; try { localStorage.setItem("pp_trsum_mine", trSumMine ? "1" : "0"); } catch {} paint(); } };
