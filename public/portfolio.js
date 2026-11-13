@@ -14,10 +14,11 @@ let PFF = (() => { try { const f = JSON.parse(localStorage.getItem("pp_pffilter"
    Their cards: the trader's cards (TCGplayer search or the scanner), counted at a trade % (list-wide, or per card).
    Your position = their trade credit + cash they add − (your cards + cash you add): green when you come out ahead.
    Their cards need = what you give (net of cash) ÷ the trade %: the reverse calculation ($80 at 80% → $100).
-   Graded cards are valued at Collectr's price (from your portfolio); a graded card you don't own needs its price typed.
+   Graded cards are valued at Collectr's price (from your portfolio); a graded card you don't own gets an estimate from recent eBay sales at that grade (Get eBay price), saved for 3 days.
    The trade is saved on this device as you go, and Complete trade updates the portfolio (with Undo). */
 const TR_KEY = "pp_trade";
-const TR_GRADES = ["PSA 10", "PSA 9", "PSA 8", "PSA 7", "CGC 10", "CGC 9.5", "CGC 9", "BGS 10", "BGS 9.5", "BGS 9", "TAG 10", "TAG 9"];
+const TR_GRADES = ["PSA 10", "PSA 9", "PSA 8", "PSA 7", "PSA 6", "PSA 5", "PSA 4", "PSA 3", "PSA 2", "PSA 1", "CGC 10", "CGC 9.5", "CGC 9", "CGC 8.5", "CGC 8", "BGS 10", "BGS 9.5", "BGS 9", "BGS 8.5", "BGS 8", "TAG 10", "TAG 9", "TAG 8", "SGC 10", "SGC 9.5", "SGC 9"];
+const trIsGrade = (v) => /^(PSA|BGS|CGC|TAG|SGC|ACE) \d+(\.5)?$/.test(v);
 let tradeOpen = false, trFind = "", trSug = [], trSugT = 0, trSugSide = "", trSugQ = "", trSugPage = 0, trSugMore = false, trSugBusy = false, trPickN = 20;
 let TRD = (() => { try { const t = JSON.parse(localStorage.getItem(TR_KEY) || "null"); if (t && Array.isArray(t.give) && Array.isArray(t.get)) return t; } catch {} return null; })() || { give: [], get: [], pct: 80, cashPct: 70, cashIn: 0, cashOut: 0 };
 const trSave = () => { try { localStorage.setItem(TR_KEY, JSON.stringify(TRD)); } catch {} };
@@ -48,13 +49,51 @@ function trMath() {
   const missing = [...TRD.give, ...TRD.get].filter((c) => !(trEach(c) > 0)).length;
   return { give, getMk, credit, pos, need: TRD.pct > 0 ? owed / (TRD.pct / 100) : null, cash: getMk * (TRD.cashPct || 0) / 100, missing };
 }
-// TCGplayer price for a card's condition and printing; graded cards take Collectr's price from a matching portfolio card
+// A graded card that isn't in the portfolio: the middle price of its recent eBay sales at that exact grade
+// (last 90 days, newest 12; when there are fewer than 3, the newest 5 of the past year). With no sales at all,
+// the lowest asking price. d is ebayData()'s result.
+function trGradedEst(d, now = Date.now()) {
+  const med = (a) => { a = a.slice().sort((u, w) => u - w); const n = a.length; return n % 2 ? a[(n - 1) / 2] : (a[n / 2 - 1] + a[n / 2]) / 2; };
+  const sold = d.sold.filter((p) => p.t > 0).sort((a, b) => b.t - a.t), r90 = sold.filter((p) => now - p.t <= 90 * 864e5).slice(0, 12);
+  if (r90.length >= 3) return { px: med(r90.map((p) => p.price)), note: `eBay est. · middle of ${r90.length} sales, last 90 days` };
+  const yr = sold.filter((p) => now - p.t <= 365 * 864e5).slice(0, 5);
+  if (yr.length) { const days = Math.max(1, Math.round((now - yr[0].t) / 864e5)); return { px: med(yr.map((p) => p.price)), note: `eBay est. · ${yr.length === 1 ? "1 sale" : "middle of " + yr.length + " sales"}, newest ${days} day${days === 1 ? "" : "s"} ago` }; }
+  const asks = d.act.map((p) => p.price).filter((v) => v > 0).sort((u, w) => u - w);
+  if (asks.length) return { px: asks[0], note: `eBay lowest asking price (no sales found${d.soldOn ? "" : ": sold data is off"})` };
+  return { px: null, note: "no eBay sales or listings at this grade: type a price" };
+}
+// Graded prices looked up on eBay are saved on this device for 3 days, so the same card and grade is free to add again.
+const TR_GPX = "pp_gpx", TR_GPX_MS = 3 * 864e5;
+const trGpx = () => { try { return JSON.parse(localStorage.getItem(TR_GPX) || "{}") || {}; } catch { return {}; } };
+const trGpxKey = (c) => queryFor(c, shortGrade(c.grade)).toLowerCase() + (isJp(c) ? "|jp" : "");
+const trAgo = (t) => { const h = Math.round((Date.now() - t) / 36e5); return h < 1 ? "just now" : h < 24 ? h + "h ago" : Math.round(h / 24) + "d ago"; };
+// a graded card with no price that the row can fetch one for
+const trGAsk = (c) => trGraded(c) && !(c.own > 0) && trEach(c) == null;
+const trGBtn = (c) => (trGAsk(c) ? `<button type="button" class="pill tr-gb" data-tgp="${c.id}" ${c.gBusy ? "disabled" : ""}>${c.gBusy ? "Checking eBay…" : "Get eBay price"}</button>` : "");
+// "Get eBay price": recent eBay sales at that exact grade (one sold lookup, unless that search was pulled in the last 3 days)
+async function trGradedLookup(c) {
+  if (c.gBusy || !trGraded(c)) return; const k = [c.cond, c.var, c.grade].join("|"), sel = shortGrade(c.grade), gi = selGrade(sel);
+  c.gBusy = 1; c.pxNote = ""; trDraw();
+  try {
+    if (!gi) throw new Error("grade");
+    const q = queryFor(c, sel), j = await loadPart("tr|e|" + q, () => getJSON("/api/listings?" + new URLSearchParams({ q, grader: ["PSA", "BGS", "CGC", "TAG"].includes(gi.g) ? gi.g : "all", lite: "1" })));
+    const e = trGradedEst(ebayData(c, j, sel));
+    if (e.px > 0) { const all = trGpx(); for (const key of Object.keys(all)) if (Date.now() - all[key].at > TR_GPX_MS) delete all[key]; all[trGpxKey(c)] = { px: e.px, note: e.note, at: Date.now() }; try { localStorage.setItem(TR_GPX, JSON.stringify(all)); } catch {} }
+    if ([c.cond, c.var, c.grade].join("|") === k) { c.px = e.px; c.pxNote = e.note; }
+  } catch { c.pxNote = "eBay didn't answer: try again or type a price"; }
+  delete c.gBusy; trSave(); trDraw();
+}
+// TCGplayer price for a card's condition and printing. Graded cards: Collectr's price from a matching portfolio card,
+// otherwise an eBay price saved in the last 3 days, otherwise the row offers "Get eBay price"
 async function trPrice(c) {
   const k = [c.cond, c.var, c.grade].join("|"); if (c.pxK === k) return; c.pxK = k; c.px = null; c.pxNote = "";
   if (trGraded(c)) {
     const g = shortGrade(c.grade).toLowerCase(), m = P.items.find((x) => isGraded(x) && x.mkt > 0 && mName(x.name) === mName(c.name) && mNum(x.num) === mNum(c.num) && shortGrade(x.grade).toLowerCase() === g);
-    if (m) { c.px = m.mkt; c.pxNote = "Collectr"; } else c.pxNote = "type Collectr's price";
-    return trDraw();
+    if (m) { c.px = m.mkt; c.pxNote = "Collectr"; return trDraw(); }
+    // not in the portfolio: an eBay price saved on this device in the last 3 days, otherwise the row offers "Get eBay price"
+    const sv = trGpx()[trGpxKey(c)];
+    if (sv && sv.px > 0 && Date.now() - sv.at < TR_GPX_MS) { c.px = sv.px; c.pxNote = sv.note + " · saved " + trAgo(sv.at); } else c.pxNote = "";
+    trSave(); return trDraw();
   }
   trDraw();
   try {
@@ -157,8 +196,26 @@ async function sqToTrade() {
   scanQ = scanQ.filter((x) => !pick.includes(x)); sqSave(); trSave(); render(); sqRender();
   trAddedToast(n, side, full);
 }
+/* PSA cert number: PSA says which card and grade the slab is; the card's name and number go into that column's
+   TCGplayer search, and the card picked from the results comes in at that grade. */
+let trCertOn = null, trCertPend = null, trCertBusy = "";
+async function trCert(side, raw) {
+  const n = String(raw || "").replace(/\D/g, ""); if (n.length < 6) return toast("Type the cert number from the PSA label");
+  if (trCertBusy) return; trCertBusy = side; render();
+  try {
+    const j = await getJSON("/api/psacert?n=" + n);
+    const name = j.subject.replace(/[-\s]+(holo|reverse holo|rev\.? ?foil|reverse foil)\b.*$/i, "").replace(/\s+/g, " ").trim();
+    trCertPend = { side, grade: j.grade, label: [j.grade || j.gradeText, j.subject, j.num ? "#" + j.num : "", [j.year, j.brand].filter(Boolean).join(" "), j.variety].filter(Boolean).join(" · ") };
+    trCertBusy = ""; render();
+    const inp = $("tr-sq-" + side); if (inp) { inp.value = [name, j.num].filter(Boolean).join(" ").toLowerCase(); inp.dispatchEvent(new Event("input", { bubbles: true })); }
+  } catch (e) { trCertBusy = ""; render(); toast(e.message); }
+}
+const trCertHTML = (side) => (trCertOn ? `<div class="tr-cert"><input id="tr-cert-${side}" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="PSA cert #" autocomplete="off" aria-label="PSA cert number"><button type="button" class="pill" data-tcert="${side}" ${trCertBusy ? "disabled" : ""}>${trCertBusy === side ? "…" : "Look up"}</button></div>${trCertPend && trCertPend.side === side ? `<div class="tr-certn" role="note"><span><b>PSA says:</b> ${esc(trCertPend.label)}. Pick the card below.</span><button type="button" class="sq-x" data-tcertx="1" aria-label="Cancel cert lookup">✕</button></div>` : ""}` : "");
 function trAddFound(s, side) {
+  const pend = trCertPend && trCertPend.side === side ? trCertPend : null; if (pend) trCertPend = null;
+  if (pend && pend.grade) s = { ...s, nm: null };
   const c = trCard({ name: s.name, set: s.set, num: s.numberText || s.number, var: s.print || "", tcgId: s.tcgId, img: s.image, cond: "Near Mint", px: s.print && s.nm > 0 && !s.overall ? s.nm : null }, side);
+  if (pend && pend.grade) { c.grade = pend.grade; c.px = null; c.pxK = null; }
   (side === "give" ? TRD.give : TRD.get).push(c); trSave(); trDraw(); if (c.px == null) trPrice(c);
 }
 
@@ -166,10 +223,14 @@ function trAddFound(s, side) {
 const trMoneyIn = (v) => (v > 0 ? (Math.round(v * 100) / 100).toFixed(2) : "");
 // "Set · number" on one line: only the set name gets cut off with "…", the number always shows
 const snHTML = (set, num, tag = "span") => (set || num ? `<${tag} class="mu sn">${set ? `<span class="sn-s">${esc(set)}</span>` : ""}${num ? `<span class="sn-n">${set ? "\u00a0·\u00a0" : ""}${esc(num)}</span>` : ""}</${tag}>` : "");
+function trNote(c) {
+  const each = trEach(c);
+  return c.own > 0 ? "your price" : trSrc(c) && each != null && c.px == null ? "portfolio value" : c.pxNote || (trGAsk(c) ? (c.gBusy ? "" : "not in your portfolio: get eBay's price or type one") : c.px == null && !trGraded(c) ? "looking up…" : cfOn(c) ? (c.pxHi > 0 ? `est. between ${COND_CODE[c.cond]} and ${COND_CODE[cfHi(c.cond)]}` : `looking up ${COND_CODE[cfHi(c.cond)]} price…`) : "");
+}
 function trRow(c) {
   const each = trEach(c), q = trQ(c), get = c.side === "get", pc = trPctOf(c);
-  const opts = cfOptsHTML(c.grade ? "" : c.cond, c.grade ? 0 : c.cp, [...(c.cond === "Sealed" ? ["Sealed"] : []), ...TR_GRADES], c.grade ? shortGrade(c.grade) : c.cond);
-  const note = c.own > 0 ? "your price" : trSrc(c) && each != null && c.px == null ? "portfolio value" : c.pxNote || (c.px == null && !trGraded(c) ? "looking up…" : cfOn(c) ? (c.pxHi > 0 ? `est. between ${COND_CODE[c.cond]} and ${COND_CODE[cfHi(c.cond)]}` : `looking up ${COND_CODE[cfHi(c.cond)]} price…`) : "");
+  const opts = cfOptsHTML(c.grade ? "" : c.cond, c.grade ? 0 : c.cp, [...(c.cond === "Sealed" ? ["Sealed"] : []), ...TR_GRADES, ...(c.grade && !TR_GRADES.includes(shortGrade(c.grade)) ? [shortGrade(c.grade)] : [])], c.grade ? shortGrade(c.grade) : c.cond);
+  const note = trNote(c);
   return `<div class="tr-r" data-tc="${c.id}">
     <button type="button" class="tr-pic" data-tzm="${c.id}" ${c.img ? "" : "disabled"} aria-label="Enlarge picture">${c.img ? `<img src="${esc(c.img)}" alt="" loading="lazy">` : ""}</button>
     <div class="tr-m"><b class="ptn" data-ptn="${c.id}" role="link" tabindex="0" title="Open on the TCGplayer tab">${esc(c.name)}</b>${snHTML(c.set, c.num, "div")}${c.pid ? `<div class="mu tr-fp">from your portfolio</div>` : ""}
@@ -181,7 +242,7 @@ function trRow(c) {
       <label class="tr-q">×<input data-tf="qty" data-tid="${c.id}" type="number" min="1" ${c.max ? `max="${c.max}"` : ""} step="1" inputmode="numeric" value="${q}" aria-label="Quantity"></label>
       <label class="tr-p">$<input data-tf="own" data-tid="${c.id}" type="number" min="0" step="any" inputmode="decimal" value="${trMoneyIn(c.own)}" placeholder="${each != null && !(c.own > 0) ? (Math.round(each * 100) / 100).toFixed(2) : "Price"}" aria-label="Price each (leave blank for market)"></label>
       ${get ? `<label class="tr-c"><input data-tf="pct" data-tid="${c.id}" type="number" min="0" step="any" inputmode="decimal" value="${c.pct != null ? c.pct : ""}" placeholder="${TRD.pct}" aria-label="Trade percent for this card">%</label>` : ""}
-    </div>${note ? `<div class="tr-n mu">${esc(note)}</div>` : ""}</div>`;
+    </div><div class="tr-n mu" data-tn="${c.id}">${esc(note)}</div><div class="tr-gbw" data-tgb="${c.id}">${trGBtn(c)}</div></div>`;
 }
 function trValTxt(c) {
   const each = trEach(c), q = trQ(c);
@@ -204,7 +265,8 @@ function trDraw() {
   const b = $("tr-bal"); if (!b) return render();
   b.innerHTML = trBalHTML();
   { const sb = $("sv-on"); if (sb) sb.innerHTML = svBanner(); }
-  for (const c of [...TRD.give, ...TRD.get]) { const v = document.querySelector(`[data-tv="${c.id}"]`); if (v) v.innerHTML = trValTxt(c); }
+  for (const c of [...TRD.give, ...TRD.get]) { const v = document.querySelector(`[data-tv="${c.id}"]`); if (v) v.innerHTML = trValTxt(c); const n = document.querySelector(`[data-tn="${c.id}"]`); if (n) n.textContent = trNote(c); const gb = document.querySelector(`[data-tgb="${c.id}"]`); if (gb) { const h = trGBtn(c); if (gb.innerHTML !== h) gb.innerHTML = h; } }
+  const m = trMath(); for (const [id, v] of [["tr-tg", m.give], ["tr-tt", m.getMk]]) { const e = $(id); if (e) e.textContent = money(v); }
   const pr = $("tr-pr"); if (pr) pr.querySelectorAll("[data-tpp]").forEach((x) => x.setAttribute("aria-pressed", String(+x.dataset.tpp === TRD.pct)));
   const au = $("tr-cauto"); if (au) au.checked = trCashAuto();
   if (trCashAuto()) for (const [id, k] of [["tr-cin", "cashIn"], ["tr-cout", "cashOut"]]) { const i = $(id); if (i && document.activeElement !== i) i.value = trMoneyIn(TRD[k]); }
@@ -249,19 +311,20 @@ function renderTrade(box) {
     <input type="range" class="sq-rg" id="tr-rg" min="0" max="100" step="1" value="${Math.min(100, Math.round(TRD.pct))}" aria-label="Trade percent for their cards">
     <div class="sq-pp" id="tr-pr">${SQ_PRESETS.map((x) => `<button type="button" class="sq-pb" data-tpp="${x}" aria-pressed="${TRD.pct === x}">${x}%</button>`).join("")}</div></div>
   <div class="tr-cols">
-  <div class="tr-sec tr-you"><div class="tr-h"><b>Your cards</b><span class="mu">${TRD.give.length} card${TRD.give.length === 1 ? "" : "s"}</span></div>
+  <div class="tr-sec tr-you"><div class="tr-h"><b>Your cards</b><span class="tr-hc"><span class="mu">${TRD.give.length} card${TRD.give.length === 1 ? "" : "s"}</span><b id="tr-tg">${money(trMath().give)}</b></span></div>
     <div class="tr-srch"><div class="tr-add"><input id="tr-find" type="search" placeholder="Your portfolio…" value="${esc(trFind)}" autocomplete="off"><button type="button" class="pill tr-cam" data-tx="scang" aria-label="Scan your card">📷</button></div>
     <div class="tr-hits" id="tr-hits">${trPickHTML()}</div>
-    <input id="tr-sq-give" type="search" placeholder="…or TCGplayer" autocomplete="off"><div class="tr-hits" id="tr-sug-give">${trSugHTML("give")}</div></div>
+    <input id="tr-sq-give" type="search" placeholder="…or TCGplayer" autocomplete="off"><div class="tr-hits" id="tr-sug-give">${trSugHTML("give")}</div>${trCertHTML("give")}</div>
     ${TRD.give.map(trRow).join("")}</div>
-  <div class="tr-sec tr-them"><div class="tr-h"><b>Their cards</b><span class="mu">${TRD.get.length} card${TRD.get.length === 1 ? "" : "s"}</span></div>
+  <div class="tr-sec tr-them"><div class="tr-h"><b>Their cards</b><span class="tr-hc"><span class="mu">${TRD.get.length} card${TRD.get.length === 1 ? "" : "s"}</span><b id="tr-tt">${money(trMath().getMk)}</b></span></div>
     <div class="tr-srch"><div class="tr-add"><input id="tr-sq-get" type="search" placeholder="Search TCGplayer" autocomplete="off"><button type="button" class="pill tr-cam" data-tx="scan" aria-label="Scan their card">📷</button></div>
-    <div class="tr-hits" id="tr-sug-get">${trSugHTML("get")}</div></div>
+    <div class="tr-hits" id="tr-sug-get">${trSugHTML("get")}</div>${trCertHTML("get")}</div>
     ${TRD.get.map(trRow).join("")}</div>
   </div>
   <div class="bar"><button class="pill on" type="button" data-tx="done" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>${TRD.editOf ? "Save changes" : "Complete trade"}</button>${TRD.editOf ? "" : `<button class="pill" type="button" data-tx="save" ${TRD.give.length || TRD.get.length ? "" : "disabled"}>${TRD.savedId ? "Update saved trade" : "Save for later"}</button>`}</div>
-  <div class="sm">Your cards count at full market value; theirs at the trade % (set one card's own % in its box). The green or red number is where you stand: trade credit plus cash they add, minus your cards and cash you add. Graded cards use Collectr's price.</div></div>`;
-  for (const c of [...TRD.give, ...TRD.get]) { if (c.pxK !== [c.cond, c.var, c.grade].join("|") && !(c.pid && trEach(c) != null)) trPrice(c); trLoadPrints(c); trLive(c); trPriceHi(c); trFullNum(c); }
+  <div class="sm">Your cards count at full market value; theirs at the trade % (set one card's own % in its box). The green or red number is where you stand: trade credit plus cash they add, minus your cards and cash you add. Graded cards use Collectr's price when the card is in your portfolio, otherwise tap Get eBay price for an estimate from recent eBay sales at that grade.</div></div>`;
+  if (trCertOn === null) { trCertOn = false; getJSON("/api/psacert/check").then((j) => { if (j.on) { trCertOn = true; if (tradeOpen && trView === "an" && !document.activeElement.closest(".tr input")) render(); } }).catch(() => {}); }
+  for (const c of [...TRD.give, ...TRD.get]) { if (c.pxNote === "type Collectr's price" && c.px == null) c.pxK = null; delete c.gBusy; if (c.pxK !== [c.cond, c.var, c.grade].join("|") && !(c.pid && trEach(c) != null)) trPrice(c); trLoadPrints(c); trLive(c); trPriceHi(c); trFullNum(c); }
 }
 // a live price found for one copy goes to every copy of the same card, condition and printing in all your portfolios
 // (no extra lookups: it's the same TCGplayer price). Graded copies and prices you typed in are left alone.
@@ -332,6 +395,9 @@ document.addEventListener("click", (e) => {
   else if (d.tsmore) trSugMoreLoad(d.tsmore);
   else if (d.tpmore) trPickMore();
   else if (d.tsug != null) { const s = trSug[+d.tsug]; if (s) { trAddFound(s, d.tside); trSug = []; trSugSide = ""; render(); } }
+  else if (d.tcert) { const i = $("tr-cert-" + d.tcert); trCert(d.tcert, i ? i.value : ""); }
+  else if (d.tcertx) { trCertPend = null; render(); }
+  else if (d.tgp) { const c = [...TRD.give, ...TRD.get].find((x) => x.id === d.tgp); if (c) trGradedLookup(c); }
   else if (d.tdel) { TRD.give = TRD.give.filter((c) => c.id !== d.tdel); TRD.get = TRD.get.filter((c) => c.id !== d.tdel); trSave(); render(); }
   else if (d.tpp) { TRD.pct = +d.tpp; trSave(); const n = $("tr-pct"), r = $("tr-rg"); if (n) n.value = TRD.pct; if (r) r.value = TRD.pct; trDraw(); trRowsPct(); }
   else if (d.tzm) { const c = [...TRD.give, ...TRD.get].find((x) => x.id === d.tzm); if (c) ppZoom([c.tcgId ? `https://tcgplayer-cdn.tcgplayer.com/product/${c.tcgId}_in_1000x1000.jpg` : "", c.img], c.name); }
@@ -364,7 +430,7 @@ document.addEventListener("input", (e) => {
 document.addEventListener("change", (e) => {
   const t = e.target; if (!t.closest || !t.closest(".tr")) return;
   const c = [...TRD.give, ...TRD.get].find((x) => x.id === t.dataset.tid); if (!c) return;
-  if (t.dataset.tf === "cond") { if (TR_GRADES.includes(t.value)) { c.grade = t.value; c.cond = "Near Mint"; c.cp = 0; } else { const v = cfParse(t.value); c.grade = ""; c.cond = v.cond; c.cp = v.cp; } trSave(); trPrice(c); render(); }
+  if (t.dataset.tf === "cond") { if (TR_GRADES.includes(t.value) || trIsGrade(t.value)) { c.grade = t.value; c.cond = "Near Mint"; c.cp = 0; } else { const v = cfParse(t.value); c.grade = ""; c.cond = v.cond; c.cp = v.cp; } trSave(); trPrice(c); render(); }
   else if (t.dataset.tf === "var") { c.var = t.value; trSave(); trPrice(c); render(); }
   else if (t.dataset.tf === "qty") { t.value = trQ(c); }
 });
@@ -402,7 +468,7 @@ function trSumHTML() {
         + line(`Their cards needed at ${TRD.pct}%`, m.need != null ? money(m.need) : "—")
         + `<div class="ts-pos" style="color:var(${up ? "--up" : "--dn"})"><span>My position</span><b>${up ? "+" : "−"}${money(Math.abs(m.pos))}</b></div>` : ""}
     </div>
-    <div class="ts-ft mu">Raw cards at TCGplayer market price${TRD.give.concat(TRD.get).some(trGraded) ? ", graded cards at Collectr's price" : ""}${TRD.give.concat(TRD.get).some((c) => c.own > 0) ? ", typed prices where set" : ""}.${m.missing ? ` ${m.missing} card${m.missing === 1 ? " has" : "s have"} no price and count${m.missing === 1 ? "s" : ""} as $0.` : ""}</div>
+    <div class="ts-ft mu">Raw cards at TCGplayer market price${TRD.give.concat(TRD.get).some(trGraded) ? ", graded cards at Collectr's price or recent eBay sales" : ""}${TRD.give.concat(TRD.get).some((c) => c.own > 0) ? ", typed prices where set" : ""}.${m.missing ? ` ${m.missing} card${m.missing === 1 ? " has" : "s have"} no price and count${m.missing === 1 ? "s" : ""} as $0.` : ""}</div>
   </div>`;
 }
 function trSummary() {

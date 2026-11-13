@@ -232,11 +232,11 @@ async function compsGet(params) {
 }
 let compsNote = "";
 const pulled = {};
-async function collectComps(q) {
+async function collectComps(q, maxPages = COMPS_MAX_PAGES, refreshMs = COMPS_REFRESH_MS) {
   const bucket = await bucketFor(q);
   if (pulled[q] == null) pulled[q] = (await kv.get("pulled:" + q)) || 0;
-  if (pulled[q] && Date.now() - pulled[q] < COMPS_REFRESH_MS) return Object.values(bucket);
-  const pages = Object.keys(bucket).length ? 1 : COMPS_MAX_PAGES;
+  if (pulled[q] && Date.now() - pulled[q] < refreshMs) return Object.values(bucket);
+  const pages = Object.keys(bucket).length ? 1 : maxPages;
   let days = COMPS_DAYS;
   let got = 0;
   for (let page = 1; page <= pages; page++) {
@@ -266,14 +266,15 @@ async function collectComps(q) {
     if (!j.next_page) break;
   }
   pulled[q] = Date.now();
-  await kv.set("pulled:" + q, pulled[q], COMPS_REFRESH_MS / 1000);
+  await kv.set("pulled:" + q, pulled[q], Math.max(COMPS_REFRESH_MS, LITE_REFRESH_MS) / 1000);
   for (const [u, x] of Object.entries(bucket)) if (Date.now() - new Date(x.date) > YEAR) delete bucket[u];
   await saveBucket(q);
   return Object.values(bucket);
 }
 
 const SOLD_ON = !!COMPS_KEY || ENABLE_SOLD === "true";
-const collectSoldAny = (q) => (COMPS_KEY ? collectComps(q) : collectSold(q));
+const LITE_REFRESH_MS = 72 * 3600e3; // the trade analyzer's graded price lookups reuse a search pulled in the last 3 days
+const collectSoldAny = (q, maxPages, refreshMs) => (COMPS_KEY ? collectComps(q, maxPages, refreshMs) : collectSold(q));
 
 // Optional: re-collect sold sales for these searches every 6 hours, so the
 // year of history keeps growing even when nobody is searching. Use the exact
@@ -392,7 +393,7 @@ app.get("/api/listings", async (req, res) => {
     const [a, s] = await Promise.all([
       active(q),
       SOLD_ON
-        ? collectSoldAny(q).catch((e) => (warnings.push("Sold data unavailable: " + e.message), Object.values(store[q] || {})))
+        ? collectSoldAny(q, req.query.lite ? 1 : undefined, req.query.lite ? LITE_REFRESH_MS : undefined).catch((e) => (warnings.push("Sold data unavailable: " + e.message), Object.values(store[q] || {})))
         : [],
     ]);
     if (COMPS_KEY && compsNote) warnings.push(compsNote);
@@ -1081,6 +1082,34 @@ async function jtById(tid) {
   await kv.set("jtid:" + tid, entry, 6 * 3600);
   return list;
 }
+// PSA cert lookup: a slab's cert number gives back the exact card and grade, from PSA's own public API (free,
+// 100 calls a day). Set PSA_API_TOKEN (from psacard.com/publicapi) to turn it on. A cert never changes, so each
+// answer is kept for 90 days and repeat lookups cost nothing.
+const PSA_TOKEN = process.env.PSA_API_TOKEN;
+const psaMem = new Map();
+function psaCard(j) {
+  const c = j && (j.PSACert || j.psaCert); if (!c || !(c.Subject || c.subject)) return null;
+  const f = (k) => String(c[k] ?? c[k[0].toLowerCase() + k.slice(1)] ?? "").trim();
+  const g = /(\d+(?:\.5)?)(?:\s*\([A-Z]+\))?\s*$/.exec(f("CardGrade"));
+  return { cert: f("CertNumber"), subject: f("Subject"), num: f("CardNumber"), year: f("Year"), brand: f("Brand"), variety: f("Variety"), gradeText: f("CardGrade"), grade: g ? "PSA " + g[1] : "" };
+}
+app.get("/api/psacert/check", (req, res) => res.json({ on: !!PSA_TOKEN }));
+app.get("/api/psacert", async (req, res) => {
+  const n = String(req.query.n || "").replace(/\D/g, "").slice(0, 12);
+  if (n.length < 6) return res.status(400).json({ error: "That doesn't look like a PSA cert number" });
+  if (!PSA_TOKEN) return res.status(503).json({ error: "PSA cert lookup isn't set up yet" });
+  let hit = psaMem.get(n) || (await kv.get("psa:" + n));
+  if (!hit) {
+    const r = await fetch("https://api.psacard.com/publicapi/cert/GetByCertNumber/" + n, { headers: { Authorization: "bearer " + PSA_TOKEN }, signal: AbortSignal.timeout(12000) });
+    if (r.status === 401 || r.status === 403) return res.status(502).json({ error: "PSA didn't accept the app's token" });
+    if (r.status === 429) return res.status(429).json({ error: "Today's PSA lookups are used up (100 a day)" });
+    const j = await r.json().catch(() => null); hit = psaCard(j);
+    if (!r.ok || !hit) return res.status(404).json({ error: (j && j.ServerMessage && !/success/i.test(j.ServerMessage) ? "PSA: " + j.ServerMessage : "PSA has no card under that cert number") });
+    await kv.set("psa:" + n, hit, 90 * 86400);
+  }
+  psaMem.set(n, hit); res.json(hit);
+});
+
 app.get("/api/tcgprice", async (req, res) => {
   const id = String(req.query.id || "").replace(/\D/g, "").slice(0, 12);
   if (!id) return res.status(400).json({ error: "Missing TCGplayer product id" });
